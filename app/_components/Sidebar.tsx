@@ -27,6 +27,7 @@ import {
 
 import * as React from "react";
 import { usePathname } from "next/navigation";
+import { useAuth } from "@/hooks/use-auth";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -64,15 +65,8 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 
-// This is sample data.
-const data = {
-  user: {
-    name: "shadcn",
-    email: "m@example.com",
-    avatar: "/avatars/shadcn.jpg",
-  },
-
-  navMain: [
+// Navigation data
+const navMain = [
     {
       title: "Activity Tracker",
       url: "/tracker",
@@ -98,15 +92,25 @@ const data = {
       url: "/compoff",
       icon: Settings2,
     },
-  ],
-};
+  ];
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { isMobile, state } = useSidebar();
   const pathname = usePathname();
+  const { user, logout } = useAuth();
+
+  // Get user initials for avatar fallback
+  const getUserInitials = () => {
+    if (!user?.name) return "U";
+    const names = user.name.split(" ");
+    if (names.length >= 2) {
+      return (names[0][0] + names[1][0]).toUpperCase();
+    }
+    return user.name[0].toUpperCase();
+  };
 
   // Helper function to check if parent nav item is active
-  const isParentActive = (item: (typeof data.navMain)[0]) => {
+  const isParentActive = (item: (typeof navMain)[0]) => {
     if (pathname === item.url) return true;
     if (item.items) {
       return item.items.some((subItem) => pathname === subItem.url);
@@ -134,7 +138,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       <SidebarContent>
         <SidebarGroup>
           <SidebarMenu>
-            {data.navMain.map((item) =>
+            {navMain.map((item) =>
               item.items && item.items.length > 0 ? (
                 state === "collapsed" ? (
                   // In collapsed mode, use dropdown menu for items with sub-items
@@ -236,16 +240,16 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 >
                   <Avatar className="h-8 w-8">
                     <AvatarImage
-                      src="https://github.com/shadcn.png?size=40"
-                      alt="CN"
+                      src={user?.avatar || ""}
+                      alt={user?.name || "User"}
                     />
-                    <AvatarFallback>CN</AvatarFallback>
+                    <AvatarFallback>{getUserInitials()}</AvatarFallback>
                   </Avatar>
                   <div className="grid flex-1 text-left text-sm leading-tight">
                     <span className="truncate font-heading">
-                      {data.user.name}
+                      {user?.name || "User"}
                     </span>
-                    <span className="truncate text-xs">{data.user.email}</span>
+                    <span className="truncate text-xs">{user?.email || ""}</span>
                   </div>
                   <ChevronsUpDown className="ml-auto size-8 group-data-[collapsible=icon]:hidden" />
                 </SidebarMenuButton>
@@ -260,17 +264,17 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
                     <Avatar className="h-8 w-8">
                       <AvatarImage
-                        src="https://github.com/shadcn.png?size=40"
-                        alt="CN"
+                        src={user?.avatar || ""}
+                        alt={user?.name || "User"}
                       />
-                      <AvatarFallback>CN</AvatarFallback>
+                      <AvatarFallback>{getUserInitials()}</AvatarFallback>
                     </Avatar>
                     <div className="grid flex-1 text-left text-sm leading-tight">
                       <span className="truncate font-heading">
-                        {data.user.name}
+                        {user?.name || "User"}
                       </span>
                       <span className="truncate text-xs">
-                        {data.user.email}
+                        {user?.email || ""}
                       </span>
                     </div>
                   </div>
@@ -298,7 +302,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   </DropdownMenuItem>
                 </DropdownMenuGroup>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem>
+                <DropdownMenuItem onClick={logout}>
                   <LogOut />
                   Log out
                 </DropdownMenuItem>
