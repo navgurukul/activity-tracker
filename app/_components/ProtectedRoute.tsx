@@ -21,7 +21,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
       // Save the intended destination for post-login redirect
-      const returnUrl = pathname !== "/" ? pathname : "/dashboard";
+      const returnUrl = pathname !== "/" ? pathname : "/";
       sessionStorage.setItem("returnUrl", returnUrl);
       router.push("/auth/login");
     }

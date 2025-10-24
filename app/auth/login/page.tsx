@@ -1,16 +1,16 @@
-'use client';
+"use client";
 
 /**
  * Login Page
  * Google OAuth authentication page
  */
 
-import React, { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { Command } from 'lucide-react';
-import { GoogleLoginButton } from '@/app/_components/GoogleLoginButton';
-import { useAuth } from '@/hooks/use-auth';
-import { useGoogleLogin } from '@/hooks/use-google-login';
+import React, { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { Command } from "lucide-react";
+import { GoogleLoginButton } from "@/app/_components/GoogleLoginButton";
+import { useAuth } from "@/hooks/use-auth";
+import { useGoogleLogin } from "@/hooks/use-google-login";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -20,7 +20,7 @@ export default function LoginPage() {
   // Redirect to dashboard if already authenticated
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
-      router.push('/dashboard');
+      router.push("/");
     }
   }, [isAuthenticated, authLoading, router]);
 
@@ -54,7 +54,9 @@ export default function LoginPage() {
 
         {/* Welcome Section */}
         <div className="flex flex-col items-center gap-2 text-center">
-          <h2 className="font-heading text-xl text-foreground">Welcome to NavTrack</h2>
+          <h2 className="font-heading text-xl text-foreground">
+            Welcome to NavTrack
+          </h2>
           <p className="text-sm text-foreground opacity-70">
             Track your daily activities and manage your time effectively
           </p>
