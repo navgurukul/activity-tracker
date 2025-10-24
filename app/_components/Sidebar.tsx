@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 
 import * as React from "react";
+import { usePathname } from "next/navigation";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -73,18 +74,12 @@ const data = {
 
   navMain: [
     {
-      title: "Dashboard",
-      url: "/",
-      icon: SquareTerminal,
-      isActive: true,
-    },
-    {
       title: "Activity Tracker",
       url: "/tracker",
       icon: Bot,
     },
     {
-      title: "Leave Application",
+      title: "Leaves",
       url: "/leaves",
       icon: BookOpen,
       items: [
@@ -107,7 +102,17 @@ const data = {
 };
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
-  const { isMobile } = useSidebar();
+  const { isMobile, state } = useSidebar();
+  const pathname = usePathname();
+
+  // Helper function to check if parent nav item is active
+  const isParentActive = (item: (typeof data.navMain)[0]) => {
+    if (pathname === item.url) return true;
+    if (item.items) {
+      return item.items.some((subItem) => pathname === subItem.url);
+    }
+    return false;
+  };
 
   return (
     <Sidebar collapsible="icon" {...props}>
@@ -131,42 +136,81 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           <SidebarMenu>
             {data.navMain.map((item) =>
               item.items && item.items.length > 0 ? (
-                <Collapsible
-                  key={item.title}
-                  asChild
-                  defaultOpen={item.isActive}
-                  className="group/collapsible"
-                >
-                  <SidebarMenuItem>
-                    <CollapsibleTrigger asChild>
-                      <SidebarMenuButton
-                        className="data-[state=open]:bg-main data-[state=open]:outline-border data-[state=open]:text-main-foreground"
-                        tooltip={item.title}
+                state === "collapsed" ? (
+                  // In collapsed mode, use dropdown menu for items with sub-items
+                  <SidebarMenuItem key={item.title} className="mt-2">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <SidebarMenuButton
+                          isActive={isParentActive(item)}
+                          tooltip={item.title}
+                        >
+                          {item.icon && <item.icon />}
+                          <span>{item.title}</span>
+                        </SidebarMenuButton>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent
+                        side={isMobile ? "bottom" : "right"}
+                        align="start"
+                        className="min-w-48"
                       >
-                        {item.icon && <item.icon />}
-                        <span>{item.title}</span>
-                        <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-                      </SidebarMenuButton>
-                    </CollapsibleTrigger>
-                    <CollapsibleContent>
-                      <SidebarMenuSub>
                         {item.items?.map((subItem) => (
-                          <SidebarMenuSubItem key={subItem.title}>
-                            <SidebarMenuSubButton asChild>
-                              <a href={subItem.url}>
-                                <span>{subItem.title}</span>
-                              </a>
-                            </SidebarMenuSubButton>
-                          </SidebarMenuSubItem>
+                          <DropdownMenuItem key={subItem.title} asChild>
+                            <a href={subItem.url} className="cursor-pointer">
+                              {subItem.title}
+                            </a>
+                          </DropdownMenuItem>
                         ))}
-                      </SidebarMenuSub>
-                    </CollapsibleContent>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </SidebarMenuItem>
-                </Collapsible>
+                ) : (
+                  // In expanded mode, use collapsible
+                  <Collapsible
+                    key={item.title}
+                    asChild
+                    defaultOpen={isParentActive(item)}
+                    className="group/collapsible"
+                  >
+                    <SidebarMenuItem className="mt-2">
+                      <CollapsibleTrigger asChild>
+                        <SidebarMenuButton
+                          isActive={isParentActive(item)}
+                          className="data-[state=open]:bg-main data-[state=open]:outline-border data-[state=open]:text-main-foreground"
+                          tooltip={item.title}
+                        >
+                          {item.icon && <item.icon />}
+                          <span>{item.title}</span>
+                          <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+                        </SidebarMenuButton>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent>
+                        <SidebarMenuSub>
+                          {item.items?.map((subItem) => (
+                            <SidebarMenuSubItem
+                              key={subItem.title}
+                              className="mt-2"
+                            >
+                              <SidebarMenuSubButton
+                                asChild
+                                isActive={pathname === subItem.url}
+                              >
+                                <a href={subItem.url}>
+                                  <span>{subItem.title}</span>
+                                </a>
+                              </SidebarMenuSubButton>
+                            </SidebarMenuSubItem>
+                          ))}
+                        </SidebarMenuSub>
+                      </CollapsibleContent>
+                    </SidebarMenuItem>
+                  </Collapsible>
+                )
               ) : (
-                <SidebarMenuItem key={item.title}>
+                <SidebarMenuItem key={item.title} className="mt-2">
                   <SidebarMenuButton
                     asChild
+                    isActive={pathname === item.url}
                     className="data-[state=open]:bg-main data-[state=open]:outline-border data-[state=open]:text-main-foreground"
                     tooltip={item.title}
                   >
