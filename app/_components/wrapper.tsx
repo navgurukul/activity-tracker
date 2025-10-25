@@ -2,8 +2,8 @@ import { cn } from "@/lib/utils";
 
 function PageWrapper({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-[100dvh] bg-background bg-[linear-gradient(to_right,#80808033_1px,transparent_1px),linear-gradient(to_bottom,#80808033_1px,transparent_1px)] bg-[size:70px_70px] px-5 pt-[70px] prose-h4:xl:text-2xl prose-h4:lg:text-xl prose-h4:text-lg">
-      <div className="py-16 mx-auto w-container max-w-full text-foreground text-left">
+    <div className="min-h-[100dvh] bg-background bg-[linear-gradient(to_right,#80808033_1px,transparent_1px),linear-gradient(to_bottom,#80808033_1px,transparent_1px)] bg-[size:70px_70px] px-5 flex items-center prose-h4:xl:text-2xl prose-h4:lg:text-xl prose-h4:text-lg">
+      <div className="mx-auto w-container max-w-full text-foreground text-left">
         {children}
       </div>
     </div>
@@ -17,7 +17,7 @@ function PageHeading({
   return (
     <h1
       className={cn(
-        "font-heading text-center 2xl:text-4xl xl:text-3xl text-2xl",
+        "font-heading text-center 2xl:text-5xl xl:text-4xl text-3xl",
         className
       )}
       {...props}
@@ -31,7 +31,7 @@ function PageHeader({
   ...props
 }: React.HTMLAttributes<HTMLDivElement> & { children: React.ReactNode }) {
   return (
-    <div className={cn("mb-[50px] flex flex-col gap-2", className)} {...props}>
+    <div className={cn("mb-10 flex flex-col gap-2", className)} {...props}>
       {children}
     </div>
   );
@@ -44,7 +44,7 @@ function PageDescription({
   return (
     <p
       className={cn(
-        "font-base 2xl:text-2xl xl:text-xl md:text-lg sm:text-lg text-base text-center",
+        "font-base 2xl:text-3xl xl:text-2xl md:text-xl sm:text-xl text-base text-center",
         className
       )}
       {...props}
