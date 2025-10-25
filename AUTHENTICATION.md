@@ -57,14 +57,16 @@ Your backend API must implement the following endpoints:
 **POST** `/v1/auth/login`
 
 Request:
+
 ```json
 {
-  "googleIdToken": "string",
+  "idToken": "string",
   "email": "string"
 }
 ```
 
 Response (200 OK):
+
 ```json
 {
   "access": "string",
@@ -83,6 +85,7 @@ Response (200 OK):
 **POST** `/v1/auth/refresh`
 
 Request:
+
 ```json
 {
   "refresh": "string"
@@ -90,6 +93,7 @@ Request:
 ```
 
 Response (200 OK):
+
 ```json
 {
   "access": "string",
@@ -201,22 +205,23 @@ The sidebar displays authenticated user information:
 Use the provided `apiClient` for all backend API calls:
 
 ```typescript
-import apiClient from '@/lib/api-client';
+import apiClient from "@/lib/api-client";
 
 // Example: Fetch user data
-const response = await apiClient.get('/v1/user/profile');
+const response = await apiClient.get("/v1/user/profile");
 const userData = response.data;
 
 // Example: Submit leave request
 const leaveData = {
-  type: 'annual',
-  startDate: '2024-01-01',
-  endDate: '2024-01-05',
+  type: "annual",
+  startDate: "2024-01-01",
+  endDate: "2024-01-05",
 };
-const response = await apiClient.post('/v1/leaves', leaveData);
+const response = await apiClient.post("/v1/leaves", leaveData);
 ```
 
 The API client automatically:
+
 - Injects the Authorization header with the access token
 - Handles 401 errors by refreshing the token
 - Retries the original request after successful refresh

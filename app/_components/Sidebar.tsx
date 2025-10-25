@@ -67,32 +67,32 @@ import {
 
 // Navigation data
 const navMain = [
-    {
-      title: "Activity Tracker",
-      url: "/tracker",
-      icon: Bot,
-    },
-    {
-      title: "Leaves",
-      url: "/leaves",
-      icon: BookOpen,
-      items: [
-        {
-          title: "Leave Application",
-          url: "/leaves/application",
-        },
-        {
-          title: "Leave History",
-          url: "/leaves/history",
-        },
-      ],
-    },
-    {
-      title: "Comp-Off Request",
-      url: "/compoff",
-      icon: Settings2,
-    },
-  ];
+  {
+    title: "Activity Tracker",
+    url: "/tracker",
+    icon: Bot,
+  },
+  {
+    title: "Leaves",
+    url: "/leaves",
+    icon: BookOpen,
+    items: [
+      {
+        title: "Leave Application",
+        url: "/leaves/application",
+      },
+      {
+        title: "Leave History",
+        url: "/leaves/history",
+      },
+    ],
+  },
+  {
+    title: "Comp-Off Request",
+    url: "/compoff",
+    icon: Settings2,
+  },
+];
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { isMobile, state } = useSidebar();
@@ -240,7 +240,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 >
                   <Avatar className="h-8 w-8">
                     <AvatarImage
-                      src={user?.avatar || ""}
+                      src={user?.avatarUrl || ""}
                       alt={user?.name || "User"}
                     />
                     <AvatarFallback>{getUserInitials()}</AvatarFallback>
@@ -249,7 +249,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                     <span className="truncate font-heading">
                       {user?.name || "User"}
                     </span>
-                    <span className="truncate text-xs">{user?.email || ""}</span>
+                    <span className="truncate text-xs">
+                      {user?.email || ""}
+                    </span>
                   </div>
                   <ChevronsUpDown className="ml-auto size-8 group-data-[collapsible=icon]:hidden" />
                 </SidebarMenuButton>
@@ -264,7 +266,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
                     <Avatar className="h-8 w-8">
                       <AvatarImage
-                        src={user?.avatar || ""}
+                        src={user?.avatarUrl || ""}
                         alt={user?.name || "User"}
                       />
                       <AvatarFallback>{getUserInitials()}</AvatarFallback>

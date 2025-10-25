@@ -4,22 +4,26 @@
  */
 
 export interface UserData {
-  id?: string;
+  id?: number;
   email: string;
   name?: string;
-  avatar?: string;
+  avatarUrl?: string;
+  orgId?: number;
+  roles?: string[];
+  permissions?: string[];
+  managerId?: number | null;
 }
 
-const ACCESS_TOKEN_KEY = 'access_token';
-const REFRESH_TOKEN_KEY = 'refresh_token';
-const USER_DATA_KEY = 'AUTH';
+const ACCESS_TOKEN_KEY = "access_token";
+const REFRESH_TOKEN_KEY = "refresh_token";
+const USER_DATA_KEY = "AUTH";
 
 export const tokenService = {
   /**
    * Get access token from localStorage
    */
   getAccessToken(): string | null {
-    if (typeof window === 'undefined') return null;
+    if (typeof window === "undefined") return null;
     return localStorage.getItem(ACCESS_TOKEN_KEY);
   },
 
@@ -27,7 +31,7 @@ export const tokenService = {
    * Get refresh token from localStorage
    */
   getRefreshToken(): string | null {
-    if (typeof window === 'undefined') return null;
+    if (typeof window === "undefined") return null;
     return localStorage.getItem(REFRESH_TOKEN_KEY);
   },
 
@@ -35,7 +39,7 @@ export const tokenService = {
    * Get user data from localStorage
    */
   getUserData(): UserData | null {
-    if (typeof window === 'undefined') return null;
+    if (typeof window === "undefined") return null;
     const data = localStorage.getItem(USER_DATA_KEY);
     if (!data) return null;
     try {
@@ -49,7 +53,7 @@ export const tokenService = {
    * Set authentication tokens
    */
   setTokens(accessToken: string, refreshToken: string): void {
-    if (typeof window === 'undefined') return;
+    if (typeof window === "undefined") return;
     localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
     localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
   },
@@ -58,7 +62,7 @@ export const tokenService = {
    * Set user data
    */
   setUserData(userData: UserData): void {
-    if (typeof window === 'undefined') return;
+    if (typeof window === "undefined") return;
     localStorage.setItem(USER_DATA_KEY, JSON.stringify(userData));
   },
 
@@ -66,7 +70,7 @@ export const tokenService = {
    * Clear all authentication data
    */
   clearAll(): void {
-    if (typeof window === 'undefined') return;
+    if (typeof window === "undefined") return;
     localStorage.removeItem(ACCESS_TOKEN_KEY);
     localStorage.removeItem(REFRESH_TOKEN_KEY);
     localStorage.removeItem(USER_DATA_KEY);

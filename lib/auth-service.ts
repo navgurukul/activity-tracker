@@ -3,9 +3,9 @@
  * Core authentication logic for Google OAuth and backend integration
  */
 
-import { jwtDecode } from 'jwt-decode';
-import apiClient from './api-client';
-import { tokenService, UserData } from './token-service';
+import { jwtDecode } from "jwt-decode";
+import apiClient from "./api-client";
+import { tokenService, UserData } from "./token-service";
 
 export interface GoogleCredentialResponse {
   credential: string;
@@ -28,9 +28,19 @@ export interface DecodedGoogleToken {
 }
 
 export interface AuthResponse {
-  access: string;
-  refresh: string;
-  user?: UserData;
+  accessToken: string;
+  refreshToken: string;
+  expiresIn?: string;
+  user?: {
+    id: number;
+    email: string;
+    name?: string;
+    orgId: number;
+    roles: string[];
+    permissions: string[];
+    managerId: number | null;
+    avatarUrl?: string;
+  };
 }
 
 export const authService = {
@@ -40,8 +50,8 @@ export const authService = {
    */
   initializeGoogleOAuth(clientId: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      if (typeof window === 'undefined') {
-        reject(new Error('Window is not defined'));
+      if (typeof window === "undefined") {
+        reject(new Error("Window is not defined"));
         return;
       }
 
@@ -56,8 +66,8 @@ export const authService = {
       }
 
       // Load Google Identity Services script
-      const script = document.createElement('script');
-      script.src = 'https://accounts.google.com/gsi/client';
+      const script = document.createElement("script");
+      script.src = "https://accounts.google.com/gsi/client";
       script.async = true;
       script.defer = true;
       script.onload = () => {
@@ -68,11 +78,11 @@ export const authService = {
           });
           resolve();
         } else {
-          reject(new Error('Google Identity Services not loaded'));
+          reject(new Error("Google Identity Services not loaded"));
         }
       };
       script.onerror = () => {
-        reject(new Error('Failed to load Google Identity Services'));
+        reject(new Error("Failed to load Google Identity Services"));
       };
       document.head.appendChild(script);
     });
@@ -85,7 +95,7 @@ export const authService = {
     try {
       return jwtDecode<DecodedGoogleToken>(token);
     } catch (error) {
-      throw new Error('Failed to decode Google token');
+      throw new Error("Failed to decode Google token");
     }
   },
 
@@ -98,15 +108,25 @@ export const authService = {
     try {
       const { credential } = credentialResponse;
 
+      console.log("Google credential received:", {
+        hasCredential: !!credential,
+        credentialLength: credential?.length,
+      });
+
       if (!credential) {
-        throw new Error('No credential received from Google');
+        throw new Error("No credential received from Google");
       }
 
       // Decode token to get user email
       const decoded = this.decodeGoogleToken(credential);
+      console.log("Decoded Google token:", {
+        email: decoded.email,
+        emailVerified: decoded.email_verified,
+        name: decoded.name,
+      });
 
       if (!decoded.email_verified) {
-        throw new Error('Email not verified');
+        throw new Error("Email not verified");
       }
 
       // Send to backend for authentication
@@ -114,20 +134,31 @@ export const authService = {
 
       // Store user data if provided
       if (response.user) {
-        tokenService.setUserData(response.user);
+        const userData: UserData = {
+          id: response.user.id,
+          email: response.user.email,
+          name: response.user.name,
+          avatarUrl: response.user.avatarUrl,
+          orgId: response.user.orgId,
+          roles: response.user.roles,
+          permissions: response.user.permissions,
+          managerId: response.user.managerId,
+        };
+        tokenService.setUserData(userData);
       } else {
-        // Create user data from decoded token
+        // Fallback: Create user data from decoded token
         const userData: UserData = {
           email: decoded.email,
           name: decoded.name,
-          avatar: decoded.picture,
+          avatarUrl: decoded.picture,
         };
         tokenService.setUserData(userData);
       }
 
+      console.log("Google authentication complete, user data stored");
       return response;
     } catch (error) {
-      console.error('Google authentication error:', error);
+      console.error("Google authentication error:", error);
       throw error;
     }
   },
@@ -135,21 +166,43 @@ export const authService = {
   /**
    * Authenticate with backend using Google ID token
    */
-  async login(googleIdToken: string, email: string): Promise<AuthResponse> {
+  async login(idToken: string, email: string): Promise<AuthResponse> {
     try {
-      const response = await apiClient.post<AuthResponse>('/v1/auth/login', {
-        googleIdToken,
+      console.log("Attempting backend login with:", {
+        email,
+        idTokenLength: idToken?.length,
+      });
+
+      const response = await apiClient.post<AuthResponse>("/v1/auth/login", {
+        idToken,
         email,
       });
 
-      const { access, refresh } = response.data;
+      console.log("Backend login successful:", {
+        hasAccessToken: !!response.data.accessToken,
+        hasRefreshToken: !!response.data.refreshToken,
+        hasUser: !!response.data.user,
+      });
+
+      const { accessToken, refreshToken } = response.data;
+
+      // Validate tokens before storing
+      if (!accessToken || !refreshToken) {
+        console.error("Missing tokens in response:", response.data);
+        throw new Error("Invalid token response from server");
+      }
 
       // Store tokens
-      tokenService.setTokens(access, refresh);
+      tokenService.setTokens(accessToken, refreshToken);
 
       return response.data;
-    } catch (error) {
-      console.error('Backend login error:', error);
+    } catch (error: any) {
+      console.error("Backend login error:", {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        message: error.message,
+      });
       throw error;
     }
   },
@@ -161,13 +214,13 @@ export const authService = {
     tokenService.clearAll();
 
     // Revoke Google session if available
-    if (typeof window !== 'undefined' && window.google?.accounts?.id) {
+    if (typeof window !== "undefined" && window.google?.accounts?.id) {
       window.google.accounts.id.disableAutoSelect();
     }
 
     // Redirect to login page
-    if (typeof window !== 'undefined') {
-      window.location.href = '/auth/login';
+    if (typeof window !== "undefined") {
+      window.location.href = "/auth/login";
     }
   },
 
@@ -199,23 +252,28 @@ export const authService = {
     const refreshToken = tokenService.getRefreshToken();
 
     if (!refreshToken) {
-      throw new Error('No refresh token available');
+      throw new Error("No refresh token available");
     }
 
     try {
-      const response = await apiClient.post<{ access: string; refresh?: string }>(
-        '/v1/auth/refresh',
-        {
-          refresh: refreshToken,
-        }
-      );
+      const response = await apiClient.post<{
+        accessToken: string;
+        refreshToken?: string;
+      }>("/v1/auth/refresh", {
+        refreshToken,
+      });
 
-      const { access, refresh } = response.data;
+      const { accessToken, refreshToken: newRefreshToken } = response.data;
+
+      // Validate token before storing
+      if (!accessToken) {
+        throw new Error("Invalid token response from server");
+      }
 
       // Update tokens
-      tokenService.setTokens(access, refresh || refreshToken);
+      tokenService.setTokens(accessToken, newRefreshToken || refreshToken);
 
-      return access;
+      return accessToken;
     } catch (error) {
       // Refresh failed, clear tokens
       tokenService.clearAll();
@@ -230,8 +288,21 @@ declare global {
     google?: {
       accounts: {
         id: {
-          initialize: (config: { client_id: string; callback: (response: GoogleCredentialResponse) => void }) => void;
-          renderButton: (parent: HTMLElement, options: { theme?: string; size?: string; type?: string; shape?: string; text?: string; logo_alignment?: string }) => void;
+          initialize: (config: {
+            client_id: string;
+            callback: (response: GoogleCredentialResponse) => void;
+          }) => void;
+          renderButton: (
+            parent: HTMLElement,
+            options: {
+              theme?: string;
+              size?: string;
+              type?: string;
+              shape?: string;
+              text?: string;
+              logo_alignment?: string;
+            }
+          ) => void;
           prompt: () => void;
           disableAutoSelect: () => void;
         };

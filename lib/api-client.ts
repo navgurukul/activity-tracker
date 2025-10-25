@@ -3,16 +3,22 @@
  * Configured Axios instance with request/response interceptors
  */
 
-import axios, { AxiosInstance, InternalAxiosRequestConfig, AxiosResponse, AxiosError } from 'axios';
-import { tokenService } from './token-service';
+import axios, {
+  AxiosInstance,
+  InternalAxiosRequestConfig,
+  AxiosResponse,
+  AxiosError,
+} from "axios";
+import { tokenService } from "./token-service";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 
 // Create axios instance
 const apiClient: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
   headers: {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
   },
   timeout: 10000,
 });
@@ -39,9 +45,16 @@ const processQueue = (error: Error | null, token: string | null = null) => {
 // Request interceptor - inject access token
 apiClient.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
-    const accessToken = tokenService.getAccessToken();
-    if (accessToken && config.headers) {
-      config.headers.Authorization = `Bearer ${accessToken}`;
+    // Don't add Authorization header for login and refresh endpoints
+    const isAuthEndpoint =
+      config.url?.includes("/auth/login") ||
+      config.url?.includes("/auth/refresh");
+
+    if (!isAuthEndpoint) {
+      const accessToken = tokenService.getAccessToken();
+      if (accessToken && config.headers) {
+        config.headers.Authorization = `Bearer ${accessToken}`;
+      }
     }
     return config;
   },
@@ -56,7 +69,17 @@ apiClient.interceptors.response.use(
     return response;
   },
   async (error: AxiosError) => {
-    const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
+    const originalRequest = error.config as InternalAxiosRequestConfig & {
+      _retry?: boolean;
+    };
+
+    // Don't handle 401 for auth endpoints (login/refresh) - let them fail naturally
+    const isAuthEndpoint =
+      originalRequest.url?.includes("/auth/login") ||
+      originalRequest.url?.includes("/auth/refresh");
+    if (isAuthEndpoint) {
+      return Promise.reject(error);
+    }
 
     // If error is 401 and we haven't retried yet
     if (error.response?.status === 401 && !originalRequest._retry) {
@@ -83,10 +106,10 @@ apiClient.interceptors.response.use(
 
       if (!refreshToken) {
         // No refresh token, redirect to login
-        processQueue(new Error('No refresh token'), null);
+        processQueue(new Error("No refresh token"), null);
         isRefreshing = false;
-        if (typeof window !== 'undefined') {
-          window.location.href = '/auth/login';
+        if (typeof window !== "undefined") {
+          window.location.href = "/auth/login";
         }
         return Promise.reject(error);
       }
@@ -118,8 +141,8 @@ apiClient.interceptors.response.use(
 
         // Refresh failed, clear tokens and redirect to login
         tokenService.clearAll();
-        if (typeof window !== 'undefined') {
-          window.location.href = '/auth/login';
+        if (typeof window !== "undefined") {
+          window.location.href = "/auth/login";
         }
 
         return Promise.reject(refreshError);
