@@ -2,10 +2,8 @@ import { cn } from "@/lib/utils";
 
 function PageWrapper({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-[100dvh] bg-background bg-[linear-gradient(to_right,#80808033_1px,transparent_1px),linear-gradient(to_bottom,#80808033_1px,transparent_1px)] bg-[size:70px_70px] px-5 flex items-center prose-h4:xl:text-2xl prose-h4:lg:text-xl prose-h4:text-lg">
-      <div className="mx-auto w-container max-w-full text-foreground text-left">
-        {children}
-      </div>
+    <div className="min-h-dvh bg-[linear-gradient(to_right,#80808033_1px,transparent_1px),linear-gradient(to_bottom,#80808033_1px,transparent_1px)] bg-[size:70px_70px] p-5 prose-h4:xl:text-2xl prose-h4:lg:text-xl prose-h4:text-lg">
+      <div className="mx-auto text-foreground text-left">{children}</div>
     </div>
   );
 }

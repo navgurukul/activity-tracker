@@ -82,7 +82,7 @@ export function GoogleLoginButton() {
 
   if (isLoading) {
     return (
-      <Button size="xl" disabled>
+      <Button size="xl" disabled variant="neutral">
         <Loader2 className="animate-spin" />
         Signing in...
       </Button>

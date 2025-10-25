@@ -9,8 +9,46 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+} from "@/components/ui/card";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { Button } from "@/components/ui/button";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { PageWrapper } from "@/app/_components/wrapper";
 
 export default function TrackerPage() {
+  const formSchema = z.object({
+    username: z.string().min(2, {
+      message: "Username must be at least 2 characters.",
+    }),
+  });
+
+  const form = useForm<z.infer<typeof formSchema>>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      username: "",
+    },
+  });
+
+  function onSubmit(values: z.infer<typeof formSchema>) {
+    console.log(values);
+  }
   return (
     <>
       <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:h-12">
@@ -29,20 +67,44 @@ export default function TrackerPage() {
           </Breadcrumb>
         </div>
       </header>
-      <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
-        <div className="grid auto-rows-min gap-4 md:grid-cols-2">
-          <div className="aspect-video rounded-base bg-background/50 border-2 border-border" />
-          <div className="aspect-video rounded-base bg-background/50 border-2 border-border" />
+      <PageWrapper>
+        <div className="flex w-full justify-center p-4">
+          <Card className="mx-auto w-full min-w-[280px] max-w-[90vw] sm:max-w-md md:max-w-lg lg:max-w-xl xl:max-w-2xl 2xl:max-w-3xl">
+            <CardHeader>
+              <CardTitle className="text-2xl mb-4">Activity Tracker</CardTitle>
+              <CardDescription className="text-muted-foreground">
+                Track your daily activities and manage your time effectively.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Form {...form}>
+                <form
+                  onSubmit={form.handleSubmit(onSubmit)}
+                  className="space-y-8"
+                >
+                  <FormField
+                    control={form.control}
+                    name="username"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Username</FormLabel>
+                        <FormControl>
+                          <Input placeholder="ekmas" {...field} />
+                        </FormControl>
+                        <FormDescription>
+                          This is your public display name.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <Button type="submit">Submit</Button>
+                </form>
+              </Form>
+            </CardContent>
+          </Card>
         </div>
-        <div className="min-h-[100vh] flex-1 rounded-base bg-background/50 border-2 border-border md:min-h-min">
-          <div className="p-6">
-            <h1 className="text-2xl font-heading mb-4">Activity Tracker</h1>
-            <p className="text-muted-foreground">
-              Track your daily activities and manage your time effectively.
-            </p>
-          </div>
-        </div>
-      </div>
+      </PageWrapper>
     </>
   );
 }
