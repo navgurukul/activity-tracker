@@ -120,10 +120,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
   return (
     <Sidebar collapsible="icon" {...props}>
-      <SidebarHeader>
+      <SidebarHeader className="h-14 justify-center">
         <SidebarMenu>
           <SidebarMenuItem>
-            <div className="flex gap-2 text-sm group-data-[collapsible=icon]:p-0! p-1">
+            <div className="flex align-center gap-2 text-sm group-data-[collapsible=icon]:p-0!">
               <div className="flex aspect-square size-8 items-center justify-center rounded-base">
                 <Command className="size-5" />
               </div>

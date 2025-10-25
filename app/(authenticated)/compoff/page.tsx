@@ -1,34 +1,16 @@
 "use client";
 
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
-import { SidebarTrigger } from "@/components/ui/sidebar";
+import { AppHeader } from "@/app/_components/AppHeader";
 
 export default function CompOffPage() {
   return (
     <>
-      <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:h-12">
-        <div className="flex items-center gap-2 px-4">
-          <SidebarTrigger className="-ml-1" />
-          <Breadcrumb>
-            <BreadcrumbList>
-              <BreadcrumbItem>
-                <BreadcrumbLink href="/">Dashboard</BreadcrumbLink>
-              </BreadcrumbItem>
-              <BreadcrumbSeparator />
-              <BreadcrumbItem>
-                <BreadcrumbPage>Comp-Off Request</BreadcrumbPage>
-              </BreadcrumbItem>
-            </BreadcrumbList>
-          </Breadcrumb>
-        </div>
-      </header>
+      <AppHeader
+        crumbs={[
+          { label: "Dashboard", href: "/" },
+          { label: "Comp-Off Request" },
+        ]}
+      />
       <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
         <div className="rounded-base bg-background/50 border-2 border-border p-6">
           <h1 className="text-2xl font-heading mb-4">Comp-Off Request</h1>
