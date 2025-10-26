@@ -11,6 +11,9 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
+import { Button } from "@/components/ui/button";
+import { Moon, Sun } from "lucide-react";
+import { useTheme } from "@/hooks/use-theme";
 
 export type Crumb = {
   label: string;
@@ -27,6 +30,7 @@ export function AppHeader({
   right?: React.ReactNode;
 }) {
   const lastIndex = crumbs.length - 1;
+  const { effectiveTheme, toggleTheme } = useTheme();
 
   return (
     <header
@@ -59,7 +63,16 @@ export function AppHeader({
           </BreadcrumbList>
         </Breadcrumb>
       </div>
-      {right ? <div className="ml-auto px-4">{right}</div> : null}
+      <div className="ml-auto px-4 flex items-center gap-2">
+        {right}
+        <Button size="icon" onClick={toggleTheme}>
+          {effectiveTheme === "light" ? (
+            <Sun className="h-5 w-5" />
+          ) : (
+            <Moon className="h-5 w-5" />
+          )}
+        </Button>
+      </div>
     </header>
   );
 }

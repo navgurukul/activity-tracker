@@ -64,6 +64,17 @@
 }
   
 @layer base {
+  * {
+    @apply transition-colors duration-200 ease-in-out;
+  }
+
+  /* Respect user preference for reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      @apply transition-none;
+    }
+  }
+
   body {
     @apply text-foreground font-base bg-background;
   }
