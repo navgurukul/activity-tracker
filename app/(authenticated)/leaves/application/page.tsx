@@ -1,8 +1,25 @@
 "use client";
 
 import { AppHeader } from "@/app/_components/AppHeader";
+import { PageWrapper } from "@/app/_components/wrapper";
+import { LeaveApplicationForm } from "./_components/LeaveApplicationForm";
+import {
+  AllocatedLeavesTable,
+  type AllocatedLeave,
+} from "./_components/AllocatedLeavesTable";
+import { mockDataService } from "@/lib/mock-data";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 
 export default function LeaveApplicationPage() {
+  // Mock data - will be replaced with actual API calls
+  const userData = mockDataService.getCurrentUser();
+  const allocatedLeaves = mockDataService.getAllocatedLeaves();
+
   return (
     <>
       <AppHeader
@@ -11,30 +28,26 @@ export default function LeaveApplicationPage() {
           { label: "Leave Application" },
         ]}
       />
-      <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
-        <div className="rounded-base bg-background/50 border-2 border-border p-6">
-          <h1 className="text-2xl font-heading mb-4">Leave Application</h1>
-          <p className="text-muted-foreground mb-6">
-            Submit your leave request by filling out the form below.
-          </p>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="aspect-video rounded-base bg-background border-2 border-border flex items-center justify-center">
-              <span className="text-muted-foreground">
-                Leave Type Selection
-              </span>
-            </div>
-            <div className="aspect-video rounded-base bg-background border-2 border-border flex items-center justify-center">
-              <span className="text-muted-foreground">Date Range Picker</span>
-            </div>
+      <PageWrapper>
+        <div className="w-full p-4 flex flex-col gap-4">
+          <div className="mx-auto w-full min-w-[120px] max-w-[80vw] sm:max-w-xs md:max-w-lg lg:max-w-2xl xl:max-w-3xl">
+            <Accordion type="single" collapsible defaultValue="item-1">
+              <AccordionItem value="item-1">
+                <AccordionTrigger>
+                  <span className="text-lg font-semibold">
+                    Allocated Leaves
+                  </span>
+                </AccordionTrigger>
+                <AccordionContent>
+                  <AllocatedLeavesTable leaves={allocatedLeaves} />
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
           </div>
+
+          <LeaveApplicationForm userEmail={userData.email} />
         </div>
-        <div className="min-h-[50vh] rounded-base bg-background/50 border-2 border-border p-6">
-          <h2 className="text-lg font-heading mb-2">Leave Details Form</h2>
-          <p className="text-sm text-muted-foreground">
-            Additional form fields will be implemented here.
-          </p>
-        </div>
-      </div>
+      </PageWrapper>
     </>
   );
 }

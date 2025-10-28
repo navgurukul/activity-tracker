@@ -1,17 +1,18 @@
 import type { NextConfig } from "next";
+import { DEV_PROXY, HEADERS, AUTH_ROUTES } from "./lib/constants";
 
-const BACKEND_URL = process.env.BACKEND_PROXY_TARGET || "http://localhost:9900";
+const BACKEND_URL = DEV_PROXY.BACKEND_URL;
 
 const nextConfig: NextConfig = {
   async headers() {
     return [
       // Ensure Google Identity popup can postMessage back
       {
-        source: "/auth/login",
+        source: AUTH_ROUTES.LOGIN,
         headers: [
           {
             key: "Cross-Origin-Opener-Policy",
-            value: "same-origin-allow-popups",
+            value: HEADERS.CROSS_ORIGIN_OPENER_POLICY,
           },
         ],
       },
@@ -21,7 +22,7 @@ const nextConfig: NextConfig = {
         headers: [
           {
             key: "Cross-Origin-Opener-Policy",
-            value: "same-origin-allow-popups",
+            value: HEADERS.CROSS_ORIGIN_OPENER_POLICY,
           },
         ],
       },
@@ -32,7 +33,7 @@ const nextConfig: NextConfig = {
       // Dev proxy to avoid CORS: call /api/* from the frontend,
       // which will be proxied to your backend at BACKEND_URL.
       {
-        source: "/api/:path*",
+        source: `${DEV_PROXY.FRONTEND_API_PREFIX}/:path*`,
         destination: `${BACKEND_URL}/:path*`,
       },
     ];

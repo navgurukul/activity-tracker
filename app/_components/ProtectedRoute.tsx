@@ -8,6 +8,7 @@
 import React, { useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
+import { AUTH_ROUTES } from "@/lib/constants";
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -23,7 +24,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
       // Save the intended destination for post-login redirect
       const returnUrl = pathname !== "/" ? pathname : "/";
       sessionStorage.setItem("returnUrl", returnUrl);
-      router.push("/auth/login");
+      router.push(AUTH_ROUTES.LOGIN);
     }
   }, [isAuthenticated, isLoading, router, pathname]);
 

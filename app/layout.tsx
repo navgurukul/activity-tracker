@@ -3,6 +3,7 @@ import { DM_Sans } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "./_components/AuthProvider";
 import { ThemeProvider } from "./_components/ThemeProvider";
+import { Toaster } from "@/components/ui/sonner";
 
 const dmSans = DM_Sans({
   subsets: ["latin"],
@@ -40,6 +41,7 @@ export default function RootLayout({
         <AuthProvider>
           <ThemeProvider>{children}</ThemeProvider>
         </AuthProvider>
+        <Toaster />
       </body>
     </html>
   );

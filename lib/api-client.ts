@@ -10,17 +10,21 @@ import axios, {
   AxiosError,
 } from "axios";
 import { tokenService } from "./token-service";
-
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+import {
+  API,
+  API_PATHS,
+  AUTH_ROUTES,
+  AUTH_ENDPOINT_SUBSTRINGS,
+  HEADERS,
+} from "./constants";
 
 // Create axios instance
 const apiClient: AxiosInstance = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: API.BASE_URL,
   headers: {
-    "Content-Type": "application/json",
+    "Content-Type": HEADERS.CONTENT_TYPE_JSON,
   },
-  timeout: 10000,
+  timeout: API.TIMEOUT_MS,
 });
 
 // Flag to prevent multiple refresh attempts
@@ -47,8 +51,8 @@ apiClient.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     // Don't add Authorization header for login and refresh endpoints
     const isAuthEndpoint =
-      config.url?.includes("/auth/login") ||
-      config.url?.includes("/auth/refresh");
+      config.url?.includes(AUTH_ENDPOINT_SUBSTRINGS.LOGIN) ||
+      config.url?.includes(AUTH_ENDPOINT_SUBSTRINGS.REFRESH);
 
     if (!isAuthEndpoint) {
       const accessToken = tokenService.getAccessToken();
@@ -75,8 +79,8 @@ apiClient.interceptors.response.use(
 
     // Don't handle 401 for auth endpoints (login/refresh) - let them fail naturally
     const isAuthEndpoint =
-      originalRequest.url?.includes("/auth/login") ||
-      originalRequest.url?.includes("/auth/refresh");
+      originalRequest.url?.includes(AUTH_ENDPOINT_SUBSTRINGS.LOGIN) ||
+      originalRequest.url?.includes(AUTH_ENDPOINT_SUBSTRINGS.REFRESH);
     if (isAuthEndpoint) {
       return Promise.reject(error);
     }
@@ -109,16 +113,19 @@ apiClient.interceptors.response.use(
         processQueue(new Error("No refresh token"), null);
         isRefreshing = false;
         if (typeof window !== "undefined") {
-          window.location.href = "/auth/login";
+          window.location.href = AUTH_ROUTES.LOGIN;
         }
         return Promise.reject(error);
       }
 
       try {
         // Attempt to refresh token
-        const response = await axios.post(`${API_BASE_URL}/v1/auth/refresh`, {
-          refresh: refreshToken,
-        });
+        const response = await axios.post(
+          `${API.BASE_URL}${API_PATHS.AUTH_REFRESH}`,
+          {
+            refresh: refreshToken,
+          }
+        );
 
         const { access, refresh } = response.data;
 
@@ -142,7 +149,7 @@ apiClient.interceptors.response.use(
         // Refresh failed, clear tokens and redirect to login
         tokenService.clearAll();
         if (typeof window !== "undefined") {
-          window.location.href = "/auth/login";
+          window.location.href = AUTH_ROUTES.LOGIN;
         }
 
         return Promise.reject(refreshError);

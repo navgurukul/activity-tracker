@@ -6,6 +6,7 @@
 import { jwtDecode } from "jwt-decode";
 import apiClient from "./api-client";
 import { tokenService, UserData } from "./token-service";
+import { API_PATHS, AUTH_ROUTES } from "./constants";
 
 export interface GoogleCredentialResponse {
   credential: string;
@@ -173,10 +174,13 @@ export const authService = {
         idTokenLength: idToken?.length,
       });
 
-      const response = await apiClient.post<AuthResponse>("/v1/auth/login", {
-        idToken,
-        email,
-      });
+      const response = await apiClient.post<AuthResponse>(
+        API_PATHS.AUTH_LOGIN,
+        {
+          idToken,
+          email,
+        }
+      );
 
       console.log("Backend login successful:", {
         hasAccessToken: !!response.data.accessToken,
@@ -220,7 +224,7 @@ export const authService = {
 
     // Redirect to login page
     if (typeof window !== "undefined") {
-      window.location.href = "/auth/login";
+      window.location.href = AUTH_ROUTES.LOGIN;
     }
   },
 
@@ -259,7 +263,7 @@ export const authService = {
       const response = await apiClient.post<{
         accessToken: string;
         refreshToken?: string;
-      }>("/v1/auth/refresh", {
+      }>(API_PATHS.AUTH_REFRESH, {
         refreshToken,
       });
 
