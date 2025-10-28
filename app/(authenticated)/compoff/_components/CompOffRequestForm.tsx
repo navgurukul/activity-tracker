@@ -40,12 +40,7 @@ import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import apiClient from "@/lib/api-client";
 import { toast } from "sonner";
-import {
-  API_PATHS,
-  DATE_FORMATS,
-  BUTTON_VARIANTS,
-  VALIDATION,
-} from "@/lib/constants";
+import { API_PATHS, DATE_FORMATS, VALIDATION } from "@/lib/constants";
 import { mockDataService } from "@/lib/mock-data";
 
 const formSchema = z
@@ -94,7 +89,7 @@ export function CompOffRequestForm() {
       setIsLoadingEmails(true);
       try {
         // Replace with actual API endpoint when available
-        const response = await apiClient.get("/v1/employees");
+        const response = await apiClient.get(API_PATHS.EMPLOYEES);
 
         if (response.data && Array.isArray(response.data)) {
           const emails = response.data.map((emp: any) => emp.email);
@@ -127,7 +122,7 @@ export function CompOffRequestForm() {
       };
 
       // Replace with actual API endpoint when available
-      const response = await apiClient.post("/v1/compoff/request", payload);
+      const response = await apiClient.post(API_PATHS.COMPOFF_REQUEST, payload);
 
       if (response.status === 200 || response.status === 201) {
         toast.success("Comp-Off request submitted successfully!", {
@@ -243,7 +238,7 @@ export function CompOffRequestForm() {
                         <PopoverTrigger asChild>
                           <FormControl>
                             <Button
-                              variant={BUTTON_VARIANTS.NO_SHADOW}
+                              variant="noShadow"
                               className={cn(
                                 "w-full justify-start text-left font-normal",
                                 !field.value && "text-muted-foreground"
@@ -285,7 +280,7 @@ export function CompOffRequestForm() {
                         <PopoverTrigger asChild>
                           <FormControl>
                             <Button
-                              variant={BUTTON_VARIANTS.NO_SHADOW}
+                              variant="noShadow"
                               className={cn(
                                 "w-full justify-start text-left font-normal",
                                 !field.value && "text-muted-foreground"

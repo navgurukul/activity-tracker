@@ -35,7 +35,7 @@ export function AppHeader({
   return (
     <header
       className={cn(
-        "flex h-14 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:h-14 border-b-2 border-b-border",
+        "flex h-14 sm:pe-6 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:h-14 border-b-2 border-b-border",
         className
       )}
     >
@@ -65,12 +65,14 @@ export function AppHeader({
       </div>
       <div className="ml-auto px-4 flex items-center gap-2">
         {right}
-        <Button size="icon" onClick={toggleTheme}>
-          {effectiveTheme === "light" ? (
-            <Sun className="h-5 w-5" />
-          ) : (
-            <Moon className="h-5 w-5" />
-          )}
+        <Button
+          variant="neutral"
+          size="icon"
+          className="size-9 p-0 [&_svg]:size-5"
+          onClick={toggleTheme}
+        >
+          <Sun className="hidden dark:inline stroke-foreground" />
+          <Moon className="inline dark:hidden stroke-foreground" />
         </Button>
       </div>
     </header>

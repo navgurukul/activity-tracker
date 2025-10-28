@@ -231,7 +231,7 @@ export function LeaveApplicationForm({ userEmail }: LeaveApplicationFormProps) {
                         <PopoverTrigger asChild>
                           <FormControl>
                             <Button
-                              variant={BUTTON_VARIANTS.NO_SHADOW}
+                              variant="noShadow"
                               className={cn(
                                 "w-full justify-start text-left font-normal",
                                 !field.value && "text-muted-foreground"
@@ -273,7 +273,7 @@ export function LeaveApplicationForm({ userEmail }: LeaveApplicationFormProps) {
                         <PopoverTrigger asChild>
                           <FormControl>
                             <Button
-                              variant={BUTTON_VARIANTS.NO_SHADOW}
+                              variant="noShadow"
                               className={cn(
                                 "w-full justify-start text-left font-normal",
                                 !field.value && "text-muted-foreground"

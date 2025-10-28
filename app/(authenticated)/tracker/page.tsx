@@ -285,7 +285,7 @@ export default function TrackerPage() {
                             <PopoverTrigger asChild>
                               <FormControl>
                                 <Button
-                                  variant={BUTTON_VARIANTS.NO_SHADOW}
+                                  variant="noShadow"
                                   className={cn(
                                     "w-full md:w-[280px] justify-start text-left font-normal",
                                     !field.value && "text-muted-foreground"
@@ -330,7 +330,7 @@ export default function TrackerPage() {
                       </h3>
                       <Button
                         type="button"
-                        variant={BUTTON_VARIANTS.NO_SHADOW}
+                        variant="noShadow"
                         size="sm"
                         onClick={addProjectEntry}
                       >
@@ -351,7 +351,7 @@ export default function TrackerPage() {
                           {fields.length > 1 && (
                             <Button
                               type="button"
-                              variant={BUTTON_VARIANTS.NO_SHADOW}
+                              variant="noShadow"
                               size="sm"
                               onClick={() => remove(index)}
                             >

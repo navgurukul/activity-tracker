@@ -26,6 +26,9 @@ export const API_PATHS = {
   AUTH_REFRESH: "/v1/auth/refresh",
   ACTIVITIES_SUBMIT: "/v1/activities/submit",
   LEAVES_APPLICATION: "/v1/leaves/application",
+  LEAVES_HISTORY: "/v1/leaves/history",
+  EMPLOYEES: "/v1/employees",
+  COMPOFF_REQUEST: "/v1/compoff/request",
 } as const;
 
 export type ApiPathKey = keyof typeof API_PATHS;
@@ -86,10 +89,6 @@ export const HEADERS = {
 // =============================================================================
 // UI Constants
 // =============================================================================
-
-export const BUTTON_VARIANTS = {
-  NO_SHADOW: "noShadow",
-} as const;
 
 export const RESPONSIVE_WIDTHS = {
   /** Maximum width for two-column layout container */

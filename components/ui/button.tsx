@@ -17,13 +17,15 @@ const buttonVariants = cva(
           "bg-secondary-background text-foreground border-2 border-border shadow-shadow hover:translate-x-boxShadowX hover:translate-y-boxShadowY hover:shadow-none",
         reverse:
           "text-main-foreground bg-main border-2 border-border hover:translate-x-reverseBoxShadowX hover:translate-y-reverseBoxShadowY hover:shadow-shadow",
+        transparent:
+          "bg-transparent text-main-foreground border-2 border-border ",
       },
       size: {
         default: "h-10 px-4 py-2",
         sm: "h-9 px-3",
         lg: "h-11 px-8",
         xl: "h-12 px-10",
-        icon: "size-10",
+        icon: "size-9",
       },
     },
     defaultVariants: {

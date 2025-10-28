@@ -40,6 +40,17 @@ export interface DurationTypeOption {
   label: string;
 }
 
+export interface LeaveHistoryRecord {
+  id: string;
+  leaveType: string;
+  startDate: string;
+  endDate: string;
+  duration: string;
+  reason: string;
+  status: "pending" | "approved" | "rejected";
+  appliedDate: string;
+}
+
 /**
  * Available leave types for leave application
  * In production, this will be fetched from backend API
@@ -104,6 +115,93 @@ export const MOCK_ALLOCATED_LEAVES: AllocatedLeave[] = [
   },
 ];
 
+/**
+ * Mock leave history records
+ * In production, this will be fetched from backend API
+ */
+export const MOCK_LEAVE_HISTORY: LeaveHistoryRecord[] = [
+  {
+    id: "1",
+    leaveType: "Annual Leave",
+    startDate: "2025-11-15",
+    endDate: "2025-11-17",
+    duration: "3 Days (Full Day)",
+    reason: "Family vacation",
+    status: "pending",
+    appliedDate: "2025-10-28",
+  },
+  {
+    id: "2",
+    leaveType: "Sick Leave",
+    startDate: "2025-10-20",
+    endDate: "2025-10-20",
+    duration: "1 Day (Full Day)",
+    reason: "Medical appointment",
+    status: "approved",
+    appliedDate: "2025-10-19",
+  },
+  {
+    id: "3",
+    leaveType: "Casual Leave",
+    startDate: "2025-10-10",
+    endDate: "2025-10-10",
+    duration: "0.5 Days (Half Day)",
+    reason: "Personal work",
+    status: "approved",
+    appliedDate: "2025-10-08",
+  },
+  {
+    id: "4",
+    leaveType: "Annual Leave",
+    startDate: "2025-09-25",
+    endDate: "2025-09-27",
+    duration: "3 Days (Full Day)",
+    reason: "Extended weekend trip",
+    status: "approved",
+    appliedDate: "2025-09-10",
+  },
+  {
+    id: "5",
+    leaveType: "Sick Leave",
+    startDate: "2025-09-15",
+    endDate: "2025-09-15",
+    duration: "1 Day (Full Day)",
+    reason: "Flu symptoms",
+    status: "rejected",
+    appliedDate: "2025-09-15",
+  },
+  {
+    id: "6",
+    leaveType: "Casual Leave",
+    startDate: "2025-08-28",
+    endDate: "2025-08-29",
+    duration: "2 Days (Full Day)",
+    reason: "Attending wedding",
+    status: "approved",
+    appliedDate: "2025-08-15",
+  },
+  {
+    id: "7",
+    leaveType: "Annual Leave",
+    startDate: "2025-08-05",
+    endDate: "2025-08-09",
+    duration: "5 Days (Full Day)",
+    reason: "Summer vacation",
+    status: "approved",
+    appliedDate: "2025-07-20",
+  },
+  {
+    id: "8",
+    leaveType: "Casual Leave",
+    startDate: "2025-12-01",
+    endDate: "2025-12-01",
+    duration: "1 Day (Full Day)",
+    reason: "Holiday shopping",
+    status: "pending",
+    appliedDate: "2025-10-28",
+  },
+];
+
 // =============================================================================
 // Activity Tracker Mock Data
 // =============================================================================
@@ -155,6 +253,7 @@ export const mockDataService = {
   getLeaveTypes: (): LeaveTypeOption[] => MOCK_LEAVE_TYPES,
   getDurationTypes: (): DurationTypeOption[] => MOCK_DURATION_TYPES,
   getAllocatedLeaves: (): AllocatedLeave[] => MOCK_ALLOCATED_LEAVES,
+  getLeaveHistory: (): LeaveHistoryRecord[] => MOCK_LEAVE_HISTORY,
 
   // Activity tracker
   getWorkingDepartments: (): DepartmentOption[] => MOCK_WORKING_DEPARTMENTS,

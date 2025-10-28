@@ -1,28 +1,13 @@
 "use client";
 
 import {
-  AudioWaveform,
-  BadgeCheck,
-  Bell,
-  BookOpen,
-  Bot,
+  CalendarSync,
   ChevronRight,
   ChevronsUpDown,
   Command,
-  CreditCard,
-  Folder,
-  Forward,
-  Frame,
-  GalleryVerticalEnd,
   LogOut,
-  Map,
-  MoreHorizontal,
-  PieChart,
-  Plus,
-  Settings2,
-  Sparkles,
-  SquareTerminal,
-  Trash2,
+  Target,
+  TreePalm,
 } from "lucide-react";
 
 import * as React from "react";
@@ -50,12 +35,8 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
-  SidebarGroupAction,
-  SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
-  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSub,
@@ -70,12 +51,12 @@ const navMain = [
   {
     title: "Activity Tracker",
     url: "/tracker",
-    icon: Bot,
+    icon: Target,
   },
   {
     title: "Leaves",
     url: "/leaves",
-    icon: BookOpen,
+    icon: TreePalm,
     items: [
       {
         title: "Leave Application",
@@ -90,7 +71,7 @@ const navMain = [
   {
     title: "Comp-Off Request",
     url: "/compoff",
-    icon: Settings2,
+    icon: CalendarSync,
   },
 ];
 
@@ -282,7 +263,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuGroup>
+                {/* <DropdownMenuGroup>
                   <DropdownMenuItem>
                     <Sparkles />
                     Upgrade to Pro
@@ -302,8 +283,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                     <Bell />
                     Notifications
                   </DropdownMenuItem>
-                </DropdownMenuGroup>
-                <DropdownMenuSeparator />
+                </DropdownMenuGroup> */}
+                {/* <DropdownMenuSeparator /> */}
                 <DropdownMenuItem onClick={logout}>
                   <LogOut />
                   Log out
