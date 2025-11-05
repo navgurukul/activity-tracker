@@ -37,16 +37,11 @@ import {
 import { Calendar } from "@/components/ui/calendar";
 import { format } from "date-fns";
 import { Calendar as CalendarIcon } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import apiClient from "@/lib/api-client";
 import { toast } from "sonner";
-import {
-  API_PATHS,
-  DATE_FORMATS,
-  BUTTON_VARIANTS,
-  VALIDATION,
-} from "@/lib/constants";
+import { API_PATHS, DATE_FORMATS, VALIDATION } from "@/lib/constants";
 import { mockDataService } from "@/lib/mock-data";
 
 const formSchema = z
@@ -77,9 +72,40 @@ interface LeaveApplicationFormProps {
 }
 
 export function LeaveApplicationForm({ userEmail }: LeaveApplicationFormProps) {
-  // Get mock data from centralized service
-  const leaveTypes = mockDataService.getLeaveTypes();
+  // Get mock data from centralized service (duration types)
   const durationTypes = mockDataService.getDurationTypes();
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const [leaveTypes, setLeaveTypes] = useState<
+    { value: string; label: string }[]
+  >([]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function fetchLeaveTypes() {
+      try {
+        const res = await apiClient.get(API_PATHS.LEAVES_TYPES);
+        const types = Array.isArray(res.data) ? res.data : [];
+        const options = types.map((t: any) => ({
+          value: t.code,
+          label: t.name,
+        }));
+        if (isMounted) {
+          setLeaveTypes(options);
+        }
+      } catch (error) {
+        // Fallback to mock data if API fails
+        setLeaveTypes(mockDataService.getLeaveTypes());
+      }
+    }
+
+    fetchLeaveTypes();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -92,8 +118,6 @@ export function LeaveApplicationForm({ userEmail }: LeaveApplicationFormProps) {
       durationType: "",
     },
   });
-
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsSubmitting(true);

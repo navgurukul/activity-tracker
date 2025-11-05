@@ -43,12 +43,7 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import apiClient from "@/lib/api-client";
 import { toast } from "sonner";
-import {
-  API_PATHS,
-  DATE_FORMATS,
-  VALIDATION,
-  BUTTON_VARIANTS,
-} from "@/lib/constants";
+import { API_PATHS, DATE_FORMATS, VALIDATION } from "@/lib/constants";
 import { mockDataService } from "@/lib/mock-data";
 
 export default function TrackerPage() {

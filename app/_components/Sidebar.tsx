@@ -5,7 +5,10 @@ import {
   ChevronRight,
   ChevronsUpDown,
   Command,
+  FolderKanban,
+  LayoutDashboard,
   LogOut,
+  Shield,
   Target,
   TreePalm,
 } from "lucide-react";
@@ -35,6 +38,7 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -45,9 +49,10 @@ import {
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
+import Link from "next/link";
 
 // Navigation data
-const navMain = [
+const navLinks = [
   {
     title: "Activity Tracker",
     url: "/tracker",
@@ -75,6 +80,24 @@ const navMain = [
   },
 ];
 
+const adminLinks = [
+  {
+    title: "Project Management",
+    url: "/admin/projects",
+    icon: FolderKanban,
+  },
+  {
+    title: "Admin Dashboard",
+    url: "/admin/dashboard",
+    icon: LayoutDashboard,
+  },
+  {
+    title: "Access Control",
+    url: "/admin/access-control",
+    icon: Shield,
+  },
+];
+
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { isMobile, state } = useSidebar();
   const pathname = usePathname();
@@ -91,7 +114,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   };
 
   // Helper function to check if parent nav item is active
-  const isParentActive = (item: (typeof navMain)[0]) => {
+  const isParentActive = (item: (typeof navLinks)[0]) => {
     if (pathname === item.url) return true;
     if (item.items) {
       return item.items.some((subItem) => pathname === subItem.url);
@@ -108,10 +131,13 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               <div className="flex aspect-square size-8 items-center justify-center rounded-base">
                 <Command className="size-5" />
               </div>
-              <div className="grid flex-1 text-left text-sm leading-tight">
+              <Link
+                href="/"
+                className="grid flex-1 text-left text-sm leading-tight"
+              >
                 <h1 className="truncate font-heading">NavTrack</h1>
                 <span className="truncate text-xs">Daily Activity Tracker</span>
-              </div>
+              </Link>
             </div>
           </SidebarMenuItem>
         </SidebarMenu>
@@ -119,7 +145,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       <SidebarContent>
         <SidebarGroup>
           <SidebarMenu>
-            {navMain.map((item) =>
+            {navLinks.map((item) =>
               item.items && item.items.length > 0 ? (
                 state === "collapsed" ? (
                   // In collapsed mode, use dropdown menu for items with sub-items
@@ -207,6 +233,26 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 </SidebarMenuItem>
               )
             )}
+          </SidebarMenu>
+        </SidebarGroup>
+        <SidebarGroup>
+          <SidebarGroupLabel>Admin</SidebarGroupLabel>
+          <SidebarMenu>
+            {adminLinks.map((item) => (
+              <SidebarMenuItem key={item.title} className="mt-2">
+                <SidebarMenuButton
+                  asChild
+                  isActive={pathname === item.url}
+                  className="data-[state=open]:bg-main data-[state=open]:outline-border data-[state=open]:text-main-foreground"
+                  tooltip={item.title}
+                >
+                  <a href={item.url}>
+                    {item.icon && <item.icon />}
+                    <span>{item.title}</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            ))}
           </SidebarMenu>
         </SidebarGroup>
       </SidebarContent>
