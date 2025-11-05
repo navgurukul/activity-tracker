@@ -49,19 +49,21 @@ export default function LoginPage() {
 
   return (
     <PageWrapper>
-      <PageHeader>
-        {/* <div className="items-center gap-2"> */}
-        <div className="flex items-center gap-2 justify-center">
-          <Command className="size-10 text-main" />
-          <PageHeading>NavTrack</PageHeading>
+      <div className="flex h-screen items-center">
+        <PageHeader>
+          {/* <div className="items-center gap-2"> */}
+          <div className="flex items-center gap-2 justify-center">
+            <Command className="size-10 text-main" />
+            <PageHeading>NavTrack</PageHeading>
+          </div>
+          <PageDescription>
+            Sign in with your Google account to get started.
+          </PageDescription>
+          {/* </div> */}
+        </PageHeader>
+        <div className="flex justify-center">
+          <GoogleLoginButton />
         </div>
-        <PageDescription>
-          Sign in with your Google account to get started.
-        </PageDescription>
-        {/* </div> */}
-      </PageHeader>
-      <div className="flex justify-center">
-        <GoogleLoginButton />
       </div>
 
       {/* <ShowcaseContainer items={TEMPLATES} /> */}

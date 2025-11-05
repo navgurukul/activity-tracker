@@ -30,6 +30,7 @@ export const API_PATHS = {
   EMPLOYEES: "/v1/employees",
   COMPOFF_REQUEST: "/v1/compoff/request",
   LEAVES_TYPES: "/v1/leaves/types",
+  PROJECTS: "/v1/projects",
 } as const;
 
 export type ApiPathKey = keyof typeof API_PATHS;
