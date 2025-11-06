@@ -24,7 +24,8 @@ export const DEV_PROXY = {
 export const API_PATHS = {
   AUTH_LOGIN: "/v1/auth/login",
   AUTH_REFRESH: "/v1/auth/refresh",
-  ACTIVITIES_SUBMIT: "/v1/activities/submit",
+  ACTIVITIES_SUBMIT: "/v1/timesheets",
+  MONTHLY_TIMESHEET: "/v1/timesheets/monthly",
   LEAVES_APPLICATION: "/v1/leaves/application",
   LEAVES_REQUESTS: "/v1/leaves/requests",
   LEAVES_HISTORY: "/v1/leaves/history",
@@ -33,6 +34,7 @@ export const API_PATHS = {
   COMPOFF_REQUEST: "/v1/compoff/request",
   LEAVES_TYPES: "/v1/leaves/types",
   PROJECTS: "/v1/projects",
+  DEPARTMENTS: "/v1/departments",
 } as const;
 
 export type ApiPathKey = keyof typeof API_PATHS;
@@ -75,8 +77,6 @@ export const VALIDATION = {
   HOURS_INPUT_STEP: 0.5,
   /** Minimum characters for task description */
   MIN_TASK_DESCRIPTION_LENGTH: 10,
-  /** Maximum characters for task title */
-  MAX_TASK_TITLE_LENGTH: 200,
   /** Minimum characters for leave reason */
   MIN_LEAVE_REASON_LENGTH: 10,
 } as const;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -46,17 +46,72 @@ import { AppHeader } from "@/app/_components/AppHeader";
 import { PageWrapper } from "@/app/_components/wrapper";
 import apiClient from "@/lib/api-client";
 import { API_PATHS, DATE_FORMATS, VALIDATION } from "@/lib/constants";
-import { mockDataService } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 
 export default function TrackerPage() {
   // Get authenticated user data
-  const { user } = useAuth();
+  const { user, isLoading } = useAuth();
 
   // Get mock data from centralized service
-  const workingDepartments = mockDataService.getWorkingDepartments();
-  const projects = mockDataService.getProjects();
+
+  const [departments, setDepartments] = useState<
+    { id: number; name: string; code: string; description?: string | null }[]
+  >([]);
+
+  const [projectsByDept, setProjectsByDept] = useState<
+    Record<string, { id: number; name: string; code: string }[]>
+  >({});
+
+  useEffect(() => {
+    if (isLoading) return;
+    const orgId = user?.orgId;
+    if (!orgId) return;
+
+    const fetchDepartments = async () => {
+      try {
+        const res = await apiClient.get(API_PATHS.DEPARTMENTS, {
+          params: { orgId },
+        });
+        const list = Array.isArray(res.data) ? res.data : res.data?.data || [];
+        setDepartments(list);
+      } catch (error: any) {
+        console.error("Failed to load departments:", error);
+        toast.error("Failed to load departments", {
+          description:
+            error.response?.data?.message ||
+            error.message ||
+            "Please try again.",
+        });
+      }
+    };
+
+    fetchDepartments();
+  }, [isLoading, user?.orgId]);
+
+  const fetchProjectsForDepartment = async (deptCode: string) => {
+    if (isLoading) return;
+    const orgId = user?.orgId;
+    if (!orgId || !deptCode) return;
+    if (projectsByDept[deptCode]?.length) return;
+
+    const dept = departments.find((d) => d.code === deptCode);
+    if (!dept?.id) return;
+
+    try {
+      const res = await apiClient.get(API_PATHS.PROJECTS, {
+        params: { orgId, departmentId: dept.id },
+      });
+      const list = Array.isArray(res.data) ? res.data : res.data?.data || [];
+      setProjectsByDept((prev) => ({ ...prev, [deptCode]: list }));
+    } catch (error: any) {
+      console.error("Failed to load projects:", error);
+      toast.error("Failed to load projects", {
+        description:
+          error.response?.data?.message || error.message || "Please try again.",
+      });
+    }
+  };
 
   const formSchema = z.object({
     employeeEmail: z.string().email(),
@@ -80,20 +135,12 @@ export default function TrackerPage() {
               `Maximum ${VALIDATION.MAX_HOURS_PER_ENTRY} hours allowed per entry.`
             ),
           projectId: z.string().min(1, "Please select a project."),
-          taskTitle: z
-            .string()
-            .min(1, "Task title is required.")
-            .max(
-              VALIDATION.MAX_TASK_TITLE_LENGTH,
-              `Task title cannot exceed ${VALIDATION.MAX_TASK_TITLE_LENGTH} characters.`
-            ),
           taskDescription: z
             .string()
             .min(
               VALIDATION.MIN_TASK_DESCRIPTION_LENGTH,
               `Please provide at least ${VALIDATION.MIN_TASK_DESCRIPTION_LENGTH} characters describing your task.`
             ),
-          tags: z.array(z.string()),
         })
       )
       .min(1, "At least one project entry is required."),
@@ -111,9 +158,7 @@ export default function TrackerPage() {
           currentWorkingDepartment: "",
           hoursSpent: 0,
           projectId: "",
-          taskTitle: "",
           taskDescription: "",
-          tags: [],
         },
       ],
     },
@@ -132,16 +177,12 @@ export default function TrackerPage() {
     try {
       // Transform form data to match API schema
       const payload = {
-        entries: values.projectEntries.map((entry, index) => ({
-          id: 0, // Backend will generate the actual ID
+        workDate: format(values.activityDate, DATE_FORMATS.API),
+        notes: "",
+        entries: values.projectEntries.map((entry) => ({
           projectId: parseInt(entry.projectId, 10),
-          taskTitle: entry.taskTitle,
           taskDescription: entry.taskDescription,
           hours: entry.hoursSpent,
-          tags:
-            entry.tags.length > 0
-              ? entry.tags
-              : [entry.currentWorkingDepartment],
         })),
       };
 
@@ -149,10 +190,8 @@ export default function TrackerPage() {
       const isValid = payload.entries.every(
         (entry) =>
           typeof entry.projectId === "number" &&
-          entry.taskTitle &&
           entry.taskDescription &&
-          typeof entry.hours === "number" &&
-          Array.isArray(entry.tags)
+          typeof entry.hours === "number"
       );
 
       if (!isValid) {
@@ -198,9 +237,7 @@ export default function TrackerPage() {
       currentWorkingDepartment: "",
       hoursSpent: 0,
       projectId: "",
-      taskTitle: "",
       taskDescription: "",
-      tags: [],
     });
   }
   return (
@@ -371,7 +408,14 @@ export default function TrackerPage() {
                                   Current Working Department
                                 </FormLabel>
                                 <Select
-                                  onValueChange={field.onChange}
+                                  onValueChange={(value) => {
+                                    field.onChange(value);
+                                    form.setValue(
+                                      `projectEntries.${index}.projectId`,
+                                      ""
+                                    );
+                                    fetchProjectsForDepartment(value);
+                                  }}
                                   defaultValue={field.value}
                                 >
                                   <FormControl>
@@ -380,12 +424,12 @@ export default function TrackerPage() {
                                     </SelectTrigger>
                                   </FormControl>
                                   <SelectContent>
-                                    {workingDepartments.map((dept) => (
+                                    {departments.map((dept) => (
                                       <SelectItem
-                                        key={dept.value}
-                                        value={dept.value}
+                                        key={dept.id}
+                                        value={dept.code}
                                       >
-                                        {dept.label}
+                                        {dept.name}
                                       </SelectItem>
                                     ))}
                                   </SelectContent>
@@ -398,32 +442,39 @@ export default function TrackerPage() {
                           <FormField
                             control={form.control}
                             name={`projectEntries.${index}.projectId`}
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Project</FormLabel>
-                                <Select
-                                  onValueChange={field.onChange}
-                                  defaultValue={field.value}
-                                >
-                                  <FormControl>
-                                    <SelectTrigger>
-                                      <SelectValue placeholder="Select project" />
-                                    </SelectTrigger>
-                                  </FormControl>
-                                  <SelectContent>
-                                    {projects.map((project) => (
-                                      <SelectItem
-                                        key={project.value}
-                                        value={project.value}
-                                      >
-                                        {project.label}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                                <FormMessage />
-                              </FormItem>
-                            )}
+                            render={({ field }) => {
+                              const selectedDeptCode = form.watch(
+                                `projectEntries.${index}.currentWorkingDepartment`
+                              );
+                              const projectOptions =
+                                projectsByDept[selectedDeptCode] || [];
+                              return (
+                                <FormItem>
+                                  <FormLabel>Project</FormLabel>
+                                  <Select
+                                    onValueChange={field.onChange}
+                                    defaultValue={field.value}
+                                  >
+                                    <FormControl>
+                                      <SelectTrigger>
+                                        <SelectValue placeholder="Select project" />
+                                      </SelectTrigger>
+                                    </FormControl>
+                                    <SelectContent>
+                                      {projectOptions.map((project) => (
+                                        <SelectItem
+                                          key={project.id}
+                                          value={project.id.toString()}
+                                        >
+                                          {project.name}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                  <FormMessage />
+                                </FormItem>
+                              );
+                            }}
                           />
                         </div>
 
@@ -456,26 +507,6 @@ export default function TrackerPage() {
 
                         <FormField
                           control={form.control}
-                          name={`projectEntries.${index}.taskTitle`}
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Task Title</FormLabel>
-                              <FormControl>
-                                <Input
-                                  placeholder="Enter task title"
-                                  {...field}
-                                />
-                              </FormControl>
-                              <FormDescription>
-                                Provide a concise title for your task
-                              </FormDescription>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-
-                        <FormField
-                          control={form.control}
                           name={`projectEntries.${index}.taskDescription`}
                           render={({ field }) => (
                             <FormItem>
@@ -489,33 +520,6 @@ export default function TrackerPage() {
                               </FormControl>
                               <FormDescription>
                                 Provide a detailed description of your work
-                              </FormDescription>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-
-                        <FormField
-                          control={form.control}
-                          name={`projectEntries.${index}.tags`}
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Tags (Optional)</FormLabel>
-                              <FormControl>
-                                <Input
-                                  placeholder="Enter tags separated by commas (e.g., frontend, bug-fix)"
-                                  value={field.value?.join(", ") || ""}
-                                  onChange={(e) => {
-                                    const tags = e.target.value
-                                      .split(",")
-                                      .map((tag) => tag.trim())
-                                      .filter((tag) => tag.length > 0);
-                                    field.onChange(tags);
-                                  }}
-                                />
-                              </FormControl>
-                              <FormDescription>
-                                Add tags to categorize your task
                               </FormDescription>
                               <FormMessage />
                             </FormItem>
