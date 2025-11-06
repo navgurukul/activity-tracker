@@ -33,7 +33,9 @@ interface LeaveType {
 interface LeaveBalanceItem {
   id: number;
   leaveTypeId: number;
-  balanceHours: string;
+  balanceHours: number;
+  pendingHours: number;
+  bookedHours: number;
   asOfDate: string;
   leaveType: LeaveType;
 }
@@ -65,10 +67,9 @@ export default function LeaveApplicationPage() {
         const mapped: AllocatedLeave[] = balances.map((balance) => ({
           leaveType:
             balance.leaveType?.name ?? balance.leaveType?.code ?? "Unknown",
-          allotted: 0, // Not provided by API
-          balance: parseFloat(balance.balanceHours ?? "0"),
-          booked: 0, // Not provided by API
-          pending: 0, // Not provided by API
+          balance: balance.balanceHours / 8,
+          booked: balance.bookedHours / 8,
+          pending: balance.pendingHours / 8,
         }));
 
         setAllocatedLeaves(mapped);

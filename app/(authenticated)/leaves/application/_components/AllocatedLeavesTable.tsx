@@ -11,7 +11,6 @@ import {
 
 export interface AllocatedLeave {
   leaveType: string;
-  allotted: number;
   balance: number;
   booked: number;
   pending: number;
@@ -28,7 +27,6 @@ export function AllocatedLeavesTable({ leaves }: AllocatedLeavesTableProps) {
         <TableHeader>
           <TableRow>
             <TableHead>Leave Type</TableHead>
-            <TableHead className="text-center">Allotted</TableHead>
             <TableHead className="text-center">Balance</TableHead>
             <TableHead className="text-center">Booked</TableHead>
             <TableHead className="text-center">Pending</TableHead>
@@ -38,7 +36,6 @@ export function AllocatedLeavesTable({ leaves }: AllocatedLeavesTableProps) {
           {leaves.map((leave) => (
             <TableRow key={leave.leaveType}>
               <TableCell className="font-medium">{leave.leaveType}</TableCell>
-              <TableCell className="text-center">{leave.allotted}</TableCell>
               <TableCell className="text-center">{leave.balance}</TableCell>
               <TableCell className="text-center">{leave.booked}</TableCell>
               <TableCell className="text-center">{leave.pending}</TableCell>
