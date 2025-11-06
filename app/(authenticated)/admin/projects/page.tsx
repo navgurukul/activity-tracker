@@ -1,7 +1,11 @@
 "use client";
 
-import { AppHeader } from "@/app/_components/AppHeader";
-import { PageWrapper } from "@/app/_components/wrapper";
+import { useState, useEffect } from "react";
+
+import { Plus } from "lucide-react";
+import { toast } from "sonner";
+
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardHeader,
@@ -9,17 +13,15 @@ import {
   CardDescription,
   CardContent,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
-import { useState, useEffect } from "react";
-import apiClient from "@/lib/api-client";
-import { API_PATHS } from "@/lib/constants";
-import { toast } from "sonner";
-import { useAuth } from "@/hooks/use-auth";
+import { AppHeader } from "@/app/_components/AppHeader";
+import { PageWrapper } from "@/app/_components/wrapper";
+import { EmptyState } from "./_components/EmptyState";
+import { LoadingState } from "./_components/LoadingState";
 import { ProjectFilters } from "./_components/ProjectFilters";
 import { ProjectsTable, Project } from "./_components/ProjectsTable";
-import { LoadingState } from "./_components/LoadingState";
-import { EmptyState } from "./_components/EmptyState";
+import apiClient from "@/lib/api-client";
+import { API_PATHS } from "@/lib/constants";
+import { useAuth } from "@/hooks/use-auth";
 
 export default function ProjectManagementPage() {
   const { user, isLoading: authLoading } = useAuth();
@@ -30,7 +32,12 @@ export default function ProjectManagementPage() {
   const [searchInput, setSearchInput] = useState("");
 
   // Fetch projects from API
-  const fetchProjects = async () => {
+  useEffect(() => {
+    if (authLoading) return;
+    fetchProjects();
+  }, [statusFilter, searchTerm, user?.orgId, authLoading]);
+
+  const fetchProjects = async (): Promise<void> => {
     // Don't fetch if auth is still loading
     if (authLoading) return;
 
@@ -79,32 +86,22 @@ export default function ProjectManagementPage() {
     }
   };
 
-  // Fetch projects on component mount and when filters change
-  useEffect(() => {
-    if (authLoading) return;
-    fetchProjects();
-  }, [statusFilter, searchTerm, user?.orgId, authLoading]);
-
-  // Handle search button click
-  const handleSearch = () => {
+  const handleSearch = (): void => {
     setSearchTerm(searchInput);
   };
 
-  // Handle search input key press (Enter key)
-  const handleSearchKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleSearchKeyPress = (e: React.KeyboardEvent<HTMLInputElement>): void => {
     if (e.key === "Enter") {
       handleSearch();
     }
   };
 
-  // Clear search
-  const handleClearSearch = () => {
+  const handleClearSearch = (): void => {
     setSearchInput("");
     setSearchTerm("");
   };
 
-  // Handle status filter change
-  const handleStatusChange = (value: string) => {
+  const handleStatusChange = (value: string): void => {
     setStatusFilter(value);
   };
 

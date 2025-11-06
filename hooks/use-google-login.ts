@@ -1,23 +1,33 @@
 "use client";
 
+import { useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
+
+import { authService } from "@/lib/auth-service";
+import { useAuth } from "./use-auth";
+
+import type { GoogleCredentialResponse } from "@/lib/auth-service";
+
+interface UseGoogleLoginReturn {
+  handleGoogleLogin: (credentialResponse: GoogleCredentialResponse) => Promise<void>;
+  handleGoogleError: () => void;
+  isLoading: boolean;
+  error: string | null;
+  clearError: () => void;
+}
+
 /**
  * useGoogleLogin Hook
  * Custom hook for Google OAuth login functionality
  */
-
-import { useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
-import { authService, GoogleCredentialResponse } from "@/lib/auth-service";
-import { useAuth } from "./use-auth";
-
-export function useGoogleLogin() {
+export function useGoogleLogin(): UseGoogleLoginReturn {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const { login } = useAuth();
 
   const handleGoogleLogin = useCallback(
-    async (credentialResponse: GoogleCredentialResponse) => {
+    async (credentialResponse: GoogleCredentialResponse): Promise<void> => {
       setIsLoading(true);
       setError(null);
 
@@ -47,7 +57,7 @@ export function useGoogleLogin() {
     [router, login]
   );
 
-  const handleGoogleError = useCallback(() => {
+  const handleGoogleError = useCallback((): void => {
     setError("Google sign-in was cancelled or failed. Please try again.");
     setIsLoading(false);
   }, []);
@@ -57,6 +67,6 @@ export function useGoogleLogin() {
     handleGoogleError,
     isLoading,
     error,
-    clearError: () => setError(null),
+    clearError: (): void => setError(null),
   };
 }

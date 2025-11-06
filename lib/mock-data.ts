@@ -69,8 +69,8 @@ export const MOCK_LEAVE_TYPES: LeaveTypeOption[] = [
  * In production, this may be fetched from backend API
  */
 export const MOCK_DURATION_TYPES: DurationTypeOption[] = [
-  { value: "full", label: "Full Day" },
-  { value: "half", label: "Half Day" },
+  { value: "full_day", label: "Full Day" },
+  { value: "half_day", label: "Half Day" },
 ];
 
 /**

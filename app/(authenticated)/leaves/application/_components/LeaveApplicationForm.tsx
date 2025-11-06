@@ -44,6 +44,17 @@ import { toast } from "sonner";
 import { API_PATHS, DATE_FORMATS, VALIDATION } from "@/lib/constants";
 import { mockDataService } from "@/lib/mock-data";
 
+// TypeScript interfaces for API response
+interface LeaveTypeResponse {
+  id: number;
+  code: string;
+  name: string;
+  paid: boolean;
+  requiresApproval: boolean;
+  description?: string;
+  maxPerRequestHours?: number;
+}
+
 const formSchema = z
   .object({
     employeeEmail: z.string().email(),
@@ -61,11 +72,24 @@ const formSchema = z
       message: "End date is required.",
     }),
     durationType: z.string().min(1, "Please select a duration type."),
+    halfDaySegment: z.string().optional(),
   })
   .refine((data) => data.endDate >= data.startDate, {
     message: "End date must be on or after the start date.",
     path: ["endDate"],
-  });
+  })
+  .refine(
+    (data) => {
+      if (data.durationType === "half_day") {
+        return data.startDate.getTime() === data.endDate.getTime();
+      }
+      return true;
+    },
+    {
+      message: "Half-day leave must be for a single day only.",
+      path: ["endDate"],
+    }
+  );
 
 interface LeaveApplicationFormProps {
   userEmail: string;
@@ -77,9 +101,8 @@ export function LeaveApplicationForm({ userEmail }: LeaveApplicationFormProps) {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [leaveTypes, setLeaveTypes] = useState<
-    { value: string; label: string }[]
-  >([]);
+  const [leaveTypes, setLeaveTypes] = useState<LeaveTypeResponse[]>([]);
+  const [selectedDurationType, setSelectedDurationType] = useState<string>("");
 
   useEffect(() => {
     let isMounted = true;
@@ -88,16 +111,13 @@ export function LeaveApplicationForm({ userEmail }: LeaveApplicationFormProps) {
       try {
         const res = await apiClient.get(API_PATHS.LEAVES_TYPES);
         const types = Array.isArray(res.data) ? res.data : [];
-        const options = types.map((t: any) => ({
-          value: t.code,
-          label: t.name,
-        }));
         if (isMounted) {
-          setLeaveTypes(options);
+          setLeaveTypes(types);
         }
       } catch (error) {
-        // Fallback to mock data if API fails
-        setLeaveTypes(mockDataService.getLeaveTypes());
+        console.error("Error fetching leave types:", error);
+        // Fallback to empty array if API fails
+        setLeaveTypes([]);
       }
     }
 
@@ -116,6 +136,7 @@ export function LeaveApplicationForm({ userEmail }: LeaveApplicationFormProps) {
       startDate: undefined,
       endDate: undefined,
       durationType: "",
+      halfDaySegment: "",
     },
   });
 
@@ -123,18 +144,56 @@ export function LeaveApplicationForm({ userEmail }: LeaveApplicationFormProps) {
     setIsSubmitting(true);
 
     try {
-      const payload = {
-        leaveType: values.leaveType,
-        reason: values.reason,
+      // Find the selected leave type to get its ID
+      const selectedLeaveType = leaveTypes.find(
+        (type) => type.code === values.leaveType
+      );
+
+      if (!selectedLeaveType) {
+        toast.error("Invalid leave type selected");
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Calculate hours based on duration type
+      const startDate = new Date(values.startDate);
+      const endDate = new Date(values.endDate);
+      const daysDifference =
+        Math.ceil(
+          (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+        ) + 1;
+
+      let hours = 0;
+      if (values.durationType === "full_day") {
+        hours = daysDifference * 8; // Assuming 8 hours per full day
+      } else if (values.durationType === "half_day") {
+        hours = 4; // Half day is 4 hours
+      }
+
+      // Transform form data to match API payload structure
+      const payload: {
+        leaveTypeId: number;
+        startDate: string;
+        endDate: string;
+        hours: number;
+        reason: string;
+        durationType: string;
+        halfDaySegment?: string;
+      } = {
+        leaveTypeId: selectedLeaveType.id,
         startDate: format(values.startDate, DATE_FORMATS.API),
         endDate: format(values.endDate, DATE_FORMATS.API),
+        hours: hours,
+        reason: values.reason,
         durationType: values.durationType,
       };
 
-      const response = await apiClient.post(
-        API_PATHS.LEAVES_APPLICATION,
-        payload
-      );
+      // Add halfDaySegment only if durationType is half_day
+      if (values.durationType === "half_day" && values.halfDaySegment) {
+        payload.halfDaySegment = values.halfDaySegment;
+      }
+
+      const response = await apiClient.post(API_PATHS.LEAVES_REQUESTS, payload);
 
       if (response.status === 200 || response.status === 201) {
         toast.success("Leave application submitted successfully!", {
@@ -143,13 +202,20 @@ export function LeaveApplicationForm({ userEmail }: LeaveApplicationFormProps) {
 
         form.reset();
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error submitting leave application:", error);
 
       const errorMessage =
-        error.response?.data?.message ||
-        error.message ||
-        "Failed to submit leave application. Please try again.";
+        typeof error === "object" &&
+        error !== null &&
+        "response" in error &&
+        (error as { response?: { data?: { message?: string } } }).response?.data
+          ?.message
+          ? (error as { response?: { data?: { message?: string } } }).response
+              ?.data?.message
+          : error instanceof Error
+          ? error.message
+          : "Failed to submit leave application. Please try again.";
 
       toast.error("Submission failed", {
         description: errorMessage,
@@ -209,8 +275,8 @@ export function LeaveApplicationForm({ userEmail }: LeaveApplicationFormProps) {
                       </FormControl>
                       <SelectContent>
                         {leaveTypes.map((type) => (
-                          <SelectItem key={type.value} value={type.value}>
-                            {type.label}
+                          <SelectItem key={type.id} value={type.code}>
+                            {type.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -274,7 +340,13 @@ export function LeaveApplicationForm({ userEmail }: LeaveApplicationFormProps) {
                           <Calendar
                             mode="single"
                             selected={field.value}
-                            onSelect={field.onChange}
+                            onSelect={(date) => {
+                              field.onChange(date);
+                              // If half-day is selected, automatically update end date
+                              if (selectedDurationType === "half_day" && date) {
+                                form.setValue("endDate", date);
+                              }
+                            }}
                             initialFocus
                           />
                         </PopoverContent>
@@ -298,6 +370,7 @@ export function LeaveApplicationForm({ userEmail }: LeaveApplicationFormProps) {
                           <FormControl>
                             <Button
                               variant="noShadow"
+                              disabled={selectedDurationType === "half_day"}
                               className={cn(
                                 "w-full justify-start text-left font-normal",
                                 !field.value && "text-muted-foreground"
@@ -322,7 +395,9 @@ export function LeaveApplicationForm({ userEmail }: LeaveApplicationFormProps) {
                         </PopoverContent>
                       </Popover>
                       <FormDescription>
-                        Select the end date of your leave
+                        {selectedDurationType === "half_day"
+                          ? "End date is automatically set to start date for half-day leave"
+                          : "Select the end date of your leave"}
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -337,7 +412,18 @@ export function LeaveApplicationForm({ userEmail }: LeaveApplicationFormProps) {
                   <FormItem>
                     <FormLabel>Duration Type</FormLabel>
                     <Select
-                      onValueChange={field.onChange}
+                      onValueChange={(value) => {
+                        field.onChange(value);
+                        setSelectedDurationType(value);
+
+                        // When half-day is selected, set end date to match start date
+                        if (value === "half_day") {
+                          const startDate = form.getValues("startDate");
+                          if (startDate) {
+                            form.setValue("endDate", startDate);
+                          }
+                        }
+                      }}
                       defaultValue={field.value}
                     >
                       <FormControl>
@@ -360,6 +446,39 @@ export function LeaveApplicationForm({ userEmail }: LeaveApplicationFormProps) {
                   </FormItem>
                 )}
               />
+
+              {/* Conditional Half Day Segment field */}
+              {selectedDurationType === "half_day" && (
+                <FormField
+                  control={form.control}
+                  name="halfDaySegment"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Half Day Segment</FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        defaultValue={field.value}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select half day segment" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="first_half">First Half</SelectItem>
+                          <SelectItem value="second_half">
+                            Second Half
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>
+                        Select which half of the day you'll be taking leave
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
             </div>
 
             <div className="flex justify-end pt-4">

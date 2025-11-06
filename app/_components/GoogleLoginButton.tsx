@@ -1,16 +1,17 @@
 "use client";
 
+import { useEffect, useCallback, useRef } from "react";
+
+import { Loader2 } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { useGoogleLogin } from "@/hooks/use-google-login";
+
 /**
  * Google Login Button Component
  * Renders Google Sign-In button with OAuth integration
  * Styled to match application's button design system
  */
-
-import React, { useEffect, useCallback, useRef } from "react";
-import { Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { useGoogleLogin } from "@/hooks/use-google-login";
-
 export function GoogleLoginButton() {
   const { handleGoogleLogin, handleGoogleError, isLoading } = useGoogleLogin();
   const hiddenButtonRef = useRef<HTMLDivElement>(null);
@@ -27,7 +28,7 @@ export function GoogleLoginButton() {
     }
 
     // Initialize Google Identity Services and render hidden button
-    const initialize = () => {
+    const initialize = (): void => {
       if (window.google?.accounts?.id) {
         window.google.accounts.id.initialize({
           client_id: clientId,
@@ -56,7 +57,7 @@ export function GoogleLoginButton() {
     initialize();
   }, [handleGoogleLogin, isLoading]);
 
-  const handleClick = useCallback(() => {
+  const handleClick = useCallback((): void => {
     if (typeof window === "undefined") return;
 
     if (!window.google?.accounts?.id) {

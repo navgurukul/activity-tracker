@@ -1,5 +1,9 @@
 "use client";
 
+import { Fragment } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+
 import {
   CalendarSync,
   ChevronRight,
@@ -13,10 +17,6 @@ import {
   TreePalm,
 } from "lucide-react";
 
-import * as React from "react";
-import { usePathname } from "next/navigation";
-import { useAuth } from "@/hooks/use-auth";
-
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Collapsible,
@@ -26,11 +26,9 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
-  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -49,7 +47,7 @@ import {
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
-import Link from "next/link";
+import { useAuth } from "@/hooks/use-auth";
 
 // Navigation data
 const navLinks = [
@@ -104,23 +102,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { user, logout } = useAuth();
 
   // Get user initials for avatar fallback
-  const getUserInitials = () => {
-    if (!user?.name) return "U";
-    const names = user.name.split(" ");
-    if (names.length >= 2) {
-      return (names[0][0] + names[1][0]).toUpperCase();
-    }
-    return user.name[0].toUpperCase();
-  };
-
-  // Helper function to check if parent nav item is active
-  const isParentActive = (item: (typeof navLinks)[0]) => {
-    if (pathname === item.url) return true;
-    if (item.items) {
-      return item.items.some((subItem) => pathname === subItem.url);
-    }
-    return false;
-  };
+  const userInitials = getUserInitials(user?.name);
 
   return (
     <Sidebar collapsible="icon" {...props}>
@@ -153,7 +135,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <SidebarMenuButton
-                          isActive={isParentActive(item)}
+                          isActive={isParentActive(item, pathname)}
                           tooltip={item.title}
                         >
                           {item.icon && <item.icon />}
@@ -180,13 +162,13 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   <Collapsible
                     key={item.title}
                     asChild
-                    defaultOpen={isParentActive(item)}
+                    defaultOpen={isParentActive(item, pathname)}
                     className="group/collapsible"
                   >
                     <SidebarMenuItem className="mt-2">
                       <CollapsibleTrigger asChild>
                         <SidebarMenuButton
-                          isActive={isParentActive(item)}
+                          isActive={isParentActive(item, pathname)}
                           className="data-[state=open]:bg-main data-[state=open]:outline-border data-[state=open]:text-main-foreground"
                           tooltip={item.title}
                         >
@@ -270,7 +252,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                       src={user?.avatarUrl || ""}
                       alt={user?.name || "User"}
                     />
-                    <AvatarFallback>{getUserInitials()}</AvatarFallback>
+                    <AvatarFallback>{userInitials}</AvatarFallback>
                   </Avatar>
                   <div className="grid flex-1 text-left text-sm leading-tight">
                     <span className="truncate font-heading">
@@ -296,7 +278,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                         src={user?.avatarUrl || ""}
                         alt={user?.name || "User"}
                       />
-                      <AvatarFallback>{getUserInitials()}</AvatarFallback>
+                      <AvatarFallback>{userInitials}</AvatarFallback>
                     </Avatar>
                     <div className="grid flex-1 text-left text-sm leading-tight">
                       <span className="truncate font-heading">
@@ -309,28 +291,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                {/* <DropdownMenuGroup>
-                  <DropdownMenuItem>
-                    <Sparkles />
-                    Upgrade to Pro
-                  </DropdownMenuItem>
-                </DropdownMenuGroup>
-                <DropdownMenuSeparator />
-                <DropdownMenuGroup>
-                  <DropdownMenuItem>
-                    <BadgeCheck />
-                    Account
-                  </DropdownMenuItem>
-                  <DropdownMenuItem>
-                    <CreditCard />
-                    Billing
-                  </DropdownMenuItem>
-                  <DropdownMenuItem>
-                    <Bell />
-                    Notifications
-                  </DropdownMenuItem>
-                </DropdownMenuGroup> */}
-                {/* <DropdownMenuSeparator /> */}
                 <DropdownMenuItem onClick={logout}>
                   <LogOut />
                   Log out
@@ -343,4 +303,25 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       <SidebarRail />
     </Sidebar>
   );
+}
+
+// Helper functions
+function getUserInitials(name?: string): string {
+  if (!name) return "U";
+  const names = name.split(" ");
+  if (names.length >= 2) {
+    return (names[0][0] + names[1][0]).toUpperCase();
+  }
+  return name[0].toUpperCase();
+}
+
+function isParentActive(
+  item: (typeof navLinks)[0],
+  pathname: string
+): boolean {
+  if (pathname === item.url) return true;
+  if (item.items) {
+    return item.items.some((subItem) => pathname === subItem.url);
+  }
+  return false;
 }

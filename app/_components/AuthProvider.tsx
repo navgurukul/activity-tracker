@@ -1,17 +1,7 @@
 "use client";
 
-/**
- * Authentication Provider
- * Global authentication state management using React Context
- */
+import { createContext, useContext, useEffect, useState, useCallback } from "react";
 
-import React, {
-  createContext,
-  useContext,
-  useEffect,
-  useState,
-  useCallback,
-} from "react";
 import { authService } from "@/lib/auth-service";
 import { UserData } from "@/lib/token-service";
 
@@ -26,7 +16,15 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
+interface AuthProviderProps {
+  children: React.ReactNode;
+}
+
+/**
+ * Authentication Provider
+ * Global authentication state management using React Context
+ */
+export function AuthProvider({ children }: AuthProviderProps) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState<UserData | null>(null);
   const [isLoading, setIsLoading] = useState(true);

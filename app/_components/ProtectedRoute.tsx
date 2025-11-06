@@ -1,12 +1,8 @@
 "use client";
 
-/**
- * Protected Route Component
- * Wrapper component to protect routes from unauthorized access
- */
-
-import React, { useEffect } from "react";
+import { useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
+
 import { useAuth } from "@/hooks/use-auth";
 import { AUTH_ROUTES } from "@/lib/constants";
 
@@ -14,6 +10,10 @@ interface ProtectedRouteProps {
   children: React.ReactNode;
 }
 
+/**
+ * Protected Route Component
+ * Wrapper component to protect routes from unauthorized access
+ */
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
   const router = useRouter();
   const pathname = usePathname();
