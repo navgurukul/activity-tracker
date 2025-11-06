@@ -41,7 +41,7 @@ export function ActivityEntryCard({ type, entry }: ActivityEntryCardProps) {
   if (type === "timesheet") {
     const timesheetEntry = entry as TimesheetEntry;
     return (
-      <Card className="border-2 border-border">
+      <Card>
         <CardContent className="pt-4">
           <div className="space-y-3">
             <div className="flex items-start justify-between">
@@ -75,7 +75,7 @@ export function ActivityEntryCard({ type, entry }: ActivityEntryCardProps) {
   const leaveEntry = entry as LeaveEntry;
 
   return (
-    <Card className="border-2 border-border bg-muted/30">
+    <Card>
       <CardContent className="pt-4">
         <div className="space-y-3">
           <div className="flex items-start justify-between">
@@ -88,7 +88,11 @@ export function ActivityEntryCard({ type, entry }: ActivityEntryCardProps) {
               </div>
               <p className="text-sm text-muted-foreground mt-1">
                 {leaveEntry.durationType === "half_day"
-                  ? `Half Day (${leaveEntry.halfDaySegment === "first_half" ? "First Half" : "Second Half"})`
+                  ? `Half Day (${
+                      leaveEntry.halfDaySegment === "first_half"
+                        ? "First Half"
+                        : "Second Half"
+                    })`
                   : "Full Day"}
               </p>
             </div>
@@ -99,8 +103,13 @@ export function ActivityEntryCard({ type, entry }: ActivityEntryCardProps) {
                   {leaveEntry.hours === 1 ? "hr" : "hrs"}
                 </span>
               </div>
-              <Badge variant={leaveEntry.state === "approved" ? "default" : "neutral"}>
-                {leaveEntry.state.charAt(0).toUpperCase() + leaveEntry.state.slice(1)}
+              <Badge
+                variant={
+                  leaveEntry.state === "approved" ? "default" : "neutral"
+                }
+              >
+                {leaveEntry.state.charAt(0).toUpperCase() +
+                  leaveEntry.state.slice(1)}
               </Badge>
             </div>
           </div>

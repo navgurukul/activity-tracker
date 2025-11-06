@@ -11,10 +11,7 @@ import { PageWrapper } from "@/app/_components/wrapper";
 import { Calendar } from "@/components/ui/calendar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import {
-  ActivityEntryCard,
-  EmptyActivityState,
-} from "./_components";
+import { ActivityEntryCard, EmptyActivityState } from "./_components";
 import type { TimesheetEntry, LeaveEntry } from "./_components";
 import apiClient from "@/lib/api-client";
 import { API_PATHS, DATE_FORMATS } from "@/lib/constants";
@@ -269,6 +266,39 @@ export default function DashboardPage() {
               {/* Activity Details Section - Left */}
               <Card className="lg:order-1">
                 <CardHeader>
+                  <CardTitle className="text-xl">Calendar</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {error ? (
+                    <div className="text-center py-8">
+                      <p className="text-destructive mb-4">{error}</p>
+                      <Button
+                        onClick={() => setCurrentMonth(new Date(currentMonth))}
+                      >
+                        Retry
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex justify-center">
+                      <Calendar
+                        mode="single"
+                        selected={selectedDate}
+                        onSelect={(date) => date && setSelectedDate(date)}
+                        month={currentMonth}
+                        onMonthChange={setCurrentMonth}
+                        disabled={isLoading ? true : disabledDays}
+                        modifiers={modifiers}
+                        modifiersClassNames={modifiersClassNames}
+                        className="rounded-base border-2 border-border"
+                      />
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Calendar Section - Right */}
+              <Card className="lg:order-2">
+                <CardHeader>
                   <div>
                     <CardTitle className="text-xl">
                       Activities for{" "}
@@ -285,7 +315,7 @@ export default function DashboardPage() {
                     )}
                   </div>
                 </CardHeader>
-                <CardContent className="max-h-[600px] overflow-y-auto">
+                <CardContent className="max-h-[500px] overflow-y-auto pb-2">
                   {isLoading ? (
                     <div className="space-y-3">
                       {[1, 2, 3].map((i) => (
@@ -322,39 +352,6 @@ export default function DashboardPage() {
                           entry={entry}
                         />
                       ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Calendar Section - Right */}
-              <Card className="lg:order-2">
-                <CardHeader>
-                  <CardTitle className="text-xl">Calendar</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {error ? (
-                    <div className="text-center py-8">
-                      <p className="text-destructive mb-4">{error}</p>
-                      <Button
-                        onClick={() => setCurrentMonth(new Date(currentMonth))}
-                      >
-                        Retry
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="flex justify-center">
-                      <Calendar
-                        mode="single"
-                        selected={selectedDate}
-                        onSelect={(date) => date && setSelectedDate(date)}
-                        month={currentMonth}
-                        onMonthChange={setCurrentMonth}
-                        disabled={isLoading ? true : disabledDays}
-                        modifiers={modifiers}
-                        modifiersClassNames={modifiersClassNames}
-                        className="rounded-base border-2 border-border"
-                      />
                     </div>
                   )}
                 </CardContent>
