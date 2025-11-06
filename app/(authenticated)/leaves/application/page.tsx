@@ -1,24 +1,102 @@
 "use client";
 
-import { AppHeader } from "@/app/_components/AppHeader";
-import { PageWrapper } from "@/app/_components/wrapper";
-import { LeaveApplicationForm } from "./_components/LeaveApplicationForm";
-import {
-  AllocatedLeavesTable,
-  type AllocatedLeave,
-} from "./_components/AllocatedLeavesTable";
-import { mockDataService } from "@/lib/mock-data";
+import { useEffect, useState } from "react";
+
+import { toast } from "sonner";
+
 import {
   Accordion,
   AccordionContent,
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { AppHeader } from "@/app/_components/AppHeader";
+import { PageWrapper } from "@/app/_components/wrapper";
+import {
+  AllocatedLeavesTable,
+  type AllocatedLeave,
+} from "./_components/AllocatedLeavesTable";
+import { LeaveApplicationForm } from "./_components/LeaveApplicationForm";
+import apiClient from "@/lib/api-client";
+import { API_PATHS } from "@/lib/constants";
+import { useAuth } from "@/hooks/use-auth";
+
+// TypeScript interfaces for API response
+interface LeaveType {
+  id: number;
+  code: string;
+  name: string;
+  paid: boolean;
+  requiresApproval: boolean;
+}
+
+interface LeaveBalanceItem {
+  id: number;
+  leaveTypeId: number;
+  balanceHours: number;
+  pendingHours: number;
+  bookedHours: number;
+  asOfDate: string;
+  leaveType: LeaveType;
+}
+
+interface LeaveBalancesResponse {
+  userId: number;
+  balances: LeaveBalanceItem[];
+}
 
 export default function LeaveApplicationPage() {
-  // Mock data - will be replaced with actual API calls
-  const userData = mockDataService.getCurrentUser();
-  const allocatedLeaves = mockDataService.getAllocatedLeaves();
+  const { user, isLoading: authLoading } = useAuth();
+  const [allocatedLeaves, setAllocatedLeaves] = useState<AllocatedLeave[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  // Fetch leave balances from API
+  useEffect(() => {
+    if (authLoading) return;
+
+    const fetchLeaveBalances = async (): Promise<void> => {
+      setLoading(true);
+      try {
+        const response = await apiClient.get(API_PATHS.LEAVES_BALANCES);
+
+        // Defensive check for response structure
+        const data = response.data as LeaveBalancesResponse | undefined;
+        const balances = Array.isArray(data?.balances) ? data.balances : [];
+
+        // Transform API data to match AllocatedLeavesTable format
+        const mapped: AllocatedLeave[] = balances.map((balance) => ({
+          leaveType:
+            balance.leaveType?.name ?? balance.leaveType?.code ?? "Unknown",
+          balance: balance.balanceHours / 8,
+          booked: balance.bookedHours / 8,
+          pending: balance.pendingHours / 8,
+        }));
+
+        setAllocatedLeaves(mapped);
+      } catch (error) {
+        console.error("Error fetching leave balances:", error);
+        const errorMessage =
+          typeof error === "object" &&
+          error !== null &&
+          "response" in error &&
+          (error as { response?: { data?: { message?: string } } }).response
+            ?.data?.message
+            ? (error as { response?: { data?: { message?: string } } }).response
+                ?.data?.message
+            : error instanceof Error
+            ? error.message
+            : "Failed to load leave balances.";
+        toast.error("Failed to load leave balances", {
+          description: errorMessage,
+        });
+        setAllocatedLeaves([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchLeaveBalances();
+  }, [authLoading]);
 
   return (
     <>
@@ -45,7 +123,7 @@ export default function LeaveApplicationPage() {
             </Accordion>
           </div>
 
-          <LeaveApplicationForm userEmail={userData.email} />
+          <LeaveApplicationForm userEmail={user?.email ?? ""} />
         </div>
       </PageWrapper>
     </>

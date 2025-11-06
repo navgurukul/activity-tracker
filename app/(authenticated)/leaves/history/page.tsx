@@ -1,9 +1,10 @@
 "use client";
 
-import { AppHeader } from "@/app/_components/AppHeader";
-import { PageWrapper } from "@/app/_components/wrapper";
-import { useState, useMemo } from "react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useState, useMemo, useEffect } from "react";
+
+import { format, parseISO } from "date-fns";
+
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -19,14 +20,80 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { mockDataService, LeaveHistoryRecord } from "@/lib/mock-data";
-import { format, parseISO } from "date-fns";
-import { DATE_FORMATS } from "@/lib/constants";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AppHeader } from "@/app/_components/AppHeader";
+import { PageWrapper } from "@/app/_components/wrapper";
+import { DATE_FORMATS, API_PATHS } from "@/lib/constants";
+import apiClient from "@/lib/api-client";
+import { Skeleton } from "@/components/ui/skeleton";
+import { toast } from "sonner";
+
+// TypeScript interfaces for API response
+interface LeaveRequest {
+  id: number;
+  user: {
+    id: number;
+    name: string;
+    email: string;
+  };
+  managerId: number;
+  leaveType: {
+    id: number;
+    name: string;
+    code: string;
+  };
+  state: "pending" | "approved" | "rejected";
+  startDate: string;
+  endDate: string;
+  durationType: "full_day" | "half_day";
+  halfDaySegment: "first_half" | "second_half" | null;
+  hours: number;
+  reason: string;
+  requestedAt: string;
+  updatedAt: string;
+  decidedByUserId: number | null;
+}
 
 export default function LeaveHistoryPage() {
   const [selectedMonth, setSelectedMonth] = useState<string>("all");
-  const leaveHistory = mockDataService.getLeaveHistory();
+  const [leaveHistory, setLeaveHistory] = useState<LeaveRequest[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Fetch leave requests from API (single call, all states mixed)
+  useEffect(() => {
+    let isMounted = true;
+
+    async function fetchLeaveRequests() {
+      setIsLoading(true);
+      try {
+        // Fetch all leave requests in a single call
+        const response = await apiClient.get(API_PATHS.LEAVES_REQUESTS);
+
+        const allRequests = Array.isArray(response.data) ? response.data : [];
+
+        if (isMounted) {
+          setLeaveHistory(allRequests);
+        }
+      } catch (error) {
+        console.error("Error fetching leave requests:", error);
+        toast.error("Failed to load leave history", {
+          description: "Unable to fetch leave requests. Please try again.",
+        });
+        if (isMounted) {
+          setLeaveHistory([]);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    fetchLeaveRequests();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Generate month options from leave history data
   const monthOptions = useMemo(() => {
@@ -55,19 +122,45 @@ export default function LeaveHistoryPage() {
     });
   }, [leaveHistory, selectedMonth]);
 
-  // Separate leaves by status
+  // Separate leaves by state (client-side split)
   const pendingLeaves = filteredLeaves.filter(
-    (leave) => leave.status === "pending"
+    (leave) => leave.state === "pending"
   );
   const approvedLeaves = filteredLeaves.filter(
-    (leave) => leave.status === "approved"
+    (leave) => leave.state === "approved"
   );
   const rejectedLeaves = filteredLeaves.filter(
-    (leave) => leave.status === "rejected"
+    (leave) => leave.state === "rejected"
+  );
+
+  // Helper function to format duration
+  const formatDuration = (leave: LeaveRequest) => {
+    if (leave.durationType === "half_day") {
+      const segment =
+        leave.halfDaySegment === "first_half" ? "First Half" : "Second Half";
+      return `Half Day (${segment})`;
+    }
+    const days = leave.hours / 8;
+    return days === 1 ? "1 Day" : `${days} Days`;
+  };
+
+  // Loading skeleton component
+  const LoadingSkeleton = () => (
+    <div className="space-y-3">
+      {[1, 2, 3].map((i) => (
+        <div key={i} className="flex gap-4">
+          <Skeleton className="h-12 w-full" />
+        </div>
+      ))}
+    </div>
   );
 
   // Table component for displaying leave records
-  const LeaveTable = ({ leaves }: { leaves: LeaveHistoryRecord[] }) => {
+  const LeaveTable = ({ leaves }: { leaves: LeaveRequest[] }) => {
+    if (isLoading) {
+      return <LoadingSkeleton />;
+    }
+
     if (leaves.length === 0) {
       return (
         <div className="text-center py-8 text-muted-foreground">
@@ -77,7 +170,6 @@ export default function LeaveHistoryPage() {
     }
 
     return (
-      // <div className="rounded-base border-2 border-border overflow-hidden">
       <Table>
         <TableHeader>
           <TableRow>
@@ -86,21 +178,27 @@ export default function LeaveHistoryPage() {
             <TableHead>End Date</TableHead>
             <TableHead>Duration</TableHead>
             <TableHead>Reason</TableHead>
+            <TableHead>Requested At</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {leaves.map((leave) => (
             <TableRow key={leave.id}>
-              <TableCell className="font-medium">{leave.leaveType}</TableCell>
+              <TableCell className="font-medium">
+                {leave.leaveType.name}
+              </TableCell>
               <TableCell>
                 {format(parseISO(leave.startDate), DATE_FORMATS.DISPLAY)}
               </TableCell>
               <TableCell>
                 {format(parseISO(leave.endDate), DATE_FORMATS.DISPLAY)}
               </TableCell>
-              <TableCell>{leave.duration}</TableCell>
+              <TableCell>{formatDuration(leave)}</TableCell>
               <TableCell className="max-w-xs truncate">
                 {leave.reason}
+              </TableCell>
+              <TableCell>
+                {format(parseISO(leave.requestedAt), DATE_FORMATS.DISPLAY)}
               </TableCell>
             </TableRow>
           ))}

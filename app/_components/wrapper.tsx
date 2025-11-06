@@ -1,6 +1,10 @@
 import { cn } from "@/lib/utils";
 
-function PageWrapper({ children }: { children: React.ReactNode }) {
+interface PageWrapperProps {
+  children: React.ReactNode;
+}
+
+function PageWrapper({ children }: PageWrapperProps) {
   return (
     <div className="min-h-dvh bg-[linear-gradient(to_right,#80808033_1px,transparent_1px),linear-gradient(to_bottom,#80808033_1px,transparent_1px)] bg-[size:70px_70px] p-5 prose-h4:xl:text-2xl prose-h4:lg:text-xl prose-h4:text-lg">
       <div className="mx-auto text-foreground text-left">{children}</div>
@@ -23,11 +27,11 @@ function PageHeading({
   );
 }
 
-function PageHeader({
-  children,
-  className,
-  ...props
-}: React.HTMLAttributes<HTMLDivElement> & { children: React.ReactNode }) {
+interface PageHeaderProps extends React.HTMLAttributes<HTMLDivElement> {
+  children: React.ReactNode;
+}
+
+function PageHeader({ children, className, ...props }: PageHeaderProps) {
   return (
     <div className={cn("mb-10 flex flex-col gap-2", className)} {...props}>
       {children}

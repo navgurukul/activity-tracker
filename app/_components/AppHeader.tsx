@@ -1,8 +1,9 @@
 "use client";
 
-import * as React from "react";
-import { cn } from "@/lib/utils";
-import { SidebarTrigger } from "@/components/ui/sidebar";
+import { Fragment } from "react";
+
+import { Moon, Sun } from "lucide-react";
+
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -12,7 +13,8 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
-import { Moon, Sun } from "lucide-react";
+import { SidebarTrigger } from "@/components/ui/sidebar";
+import { cn } from "@/lib/utils";
 import { useTheme } from "@/hooks/use-theme";
 
 export type Crumb = {
@@ -20,15 +22,13 @@ export type Crumb = {
   href?: string;
 };
 
-export function AppHeader({
-  crumbs,
-  className,
-  right,
-}: {
+interface AppHeaderProps {
   crumbs: Crumb[];
   className?: string;
   right?: React.ReactNode;
-}) {
+}
+
+export function AppHeader({ crumbs, className, right }: AppHeaderProps) {
   const lastIndex = crumbs.length - 1;
   const { effectiveTheme, toggleTheme } = useTheme();
 
@@ -46,7 +46,7 @@ export function AppHeader({
             {crumbs.map((crumb, i) => {
               const isLast = i === lastIndex;
               return (
-                <React.Fragment key={`${crumb.label}-${i}`}>
+                <Fragment key={`${crumb.label}-${i}`}>
                   <BreadcrumbItem>
                     {isLast ? (
                       <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
@@ -57,7 +57,7 @@ export function AppHeader({
                     )}
                   </BreadcrumbItem>
                   {!isLast && <BreadcrumbSeparator />}
-                </React.Fragment>
+                </Fragment>
               );
             })}
           </BreadcrumbList>

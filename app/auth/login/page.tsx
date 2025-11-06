@@ -1,23 +1,24 @@
 "use client";
 
-/**
- * Login Page
- * Google OAuth authentication page
- */
-
-import React, { useEffect } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+
 import { Command } from "lucide-react";
+
 import { GoogleLoginButton } from "@/app/_components/GoogleLoginButton";
-import { useAuth } from "@/hooks/use-auth";
-import { useGoogleLogin } from "@/hooks/use-google-login";
 import {
   PageDescription,
   PageHeader,
   PageHeading,
   PageWrapper,
 } from "@/app/_components/wrapper";
+import { useAuth } from "@/hooks/use-auth";
+import { useGoogleLogin } from "@/hooks/use-google-login";
 
+/**
+ * Login Page
+ * Google OAuth authentication page
+ */
 export default function LoginPage() {
   const router = useRouter();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
@@ -49,22 +50,20 @@ export default function LoginPage() {
 
   return (
     <PageWrapper>
-      <PageHeader>
-        {/* <div className="items-center gap-2"> */}
-        <div className="flex items-center gap-2 justify-center">
-          <Command className="size-10 text-main" />
-          <PageHeading>NavTrack</PageHeading>
+      <div className="flex h-screen items-center">
+        <PageHeader>
+          <div className="flex items-center gap-2 justify-center">
+            <Command className="size-10 text-main" />
+            <PageHeading>NavTrack</PageHeading>
+          </div>
+          <PageDescription>
+            Sign in with your Google account to get started.
+          </PageDescription>
+        </PageHeader>
+        <div className="flex justify-center">
+          <GoogleLoginButton />
         </div>
-        <PageDescription>
-          Sign in with your Google account to get started.
-        </PageDescription>
-        {/* </div> */}
-      </PageHeader>
-      <div className="flex justify-center">
-        <GoogleLoginButton />
       </div>
-
-      {/* <ShowcaseContainer items={TEMPLATES} /> */}
     </PageWrapper>
   );
 }

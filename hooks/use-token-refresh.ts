@@ -1,4 +1,15 @@
-'use client';
+"use client";
+
+import { useState, useCallback } from "react";
+
+import { authService } from "@/lib/auth-service";
+
+interface UseTokenRefreshReturn {
+  refreshToken: () => Promise<boolean>;
+  isRefreshing: boolean;
+  error: string | null;
+  clearError: () => void;
+}
 
 /**
  * useTokenRefresh Hook
@@ -6,15 +17,11 @@
  * Note: Token refresh is primarily handled by API client interceptors
  * This hook can be used for manual refresh triggers if needed
  */
-
-import { useState, useCallback } from 'react';
-import { authService } from '@/lib/auth-service';
-
-export function useTokenRefresh() {
+export function useTokenRefresh(): UseTokenRefreshReturn {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const refreshToken = useCallback(async () => {
+  const refreshToken = useCallback(async (): Promise<boolean> => {
     setIsRefreshing(true);
     setError(null);
 
@@ -23,9 +30,9 @@ export function useTokenRefresh() {
       return true;
     } catch (err) {
       const errorMessage =
-        err instanceof Error ? err.message : 'Failed to refresh token';
+        err instanceof Error ? err.message : "Failed to refresh token";
       setError(errorMessage);
-      console.error('Token refresh error:', err);
+      console.error("Token refresh error:", err);
       return false;
     } finally {
       setIsRefreshing(false);
@@ -36,6 +43,6 @@ export function useTokenRefresh() {
     refreshToken,
     isRefreshing,
     error,
-    clearError: () => setError(null),
+    clearError: (): void => setError(null),
   };
 }

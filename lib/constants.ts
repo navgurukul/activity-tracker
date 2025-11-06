@@ -26,10 +26,13 @@ export const API_PATHS = {
   AUTH_REFRESH: "/v1/auth/refresh",
   ACTIVITIES_SUBMIT: "/v1/activities/submit",
   LEAVES_APPLICATION: "/v1/leaves/application",
+  LEAVES_REQUESTS: "/v1/leaves/requests",
   LEAVES_HISTORY: "/v1/leaves/history",
+  LEAVES_BALANCES: "/v1/leaves/balances",
   EMPLOYEES: "/v1/employees",
   COMPOFF_REQUEST: "/v1/compoff/request",
   LEAVES_TYPES: "/v1/leaves/types",
+  PROJECTS: "/v1/projects",
 } as const;
 
 export type ApiPathKey = keyof typeof API_PATHS;

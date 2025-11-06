@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useEffect, useState } from "react";
+import { createContext, useEffect, useState } from "react";
 
 type Theme = "light" | "dark" | "system";
 type EffectiveTheme = "light" | "dark";
@@ -20,39 +20,13 @@ interface ThemeProviderProps {
   children: React.ReactNode;
 }
 
+/**
+ * Theme Provider
+ * Manages application theme state (light/dark/system) with localStorage persistence
+ */
 export function ThemeProvider({ children }: ThemeProviderProps) {
   const [theme, setThemeState] = useState<Theme>("system");
   const [effectiveTheme, setEffectiveTheme] = useState<EffectiveTheme>("light");
-
-  // Get system preference
-  const getSystemTheme = (): EffectiveTheme => {
-    if (typeof window !== "undefined") {
-      return window.matchMedia("(prefers-color-scheme: dark)").matches
-        ? "dark"
-        : "light";
-    }
-    return "light";
-  };
-
-  // Calculate effective theme based on current theme and system preference
-  const calculateEffectiveTheme = (currentTheme: Theme): EffectiveTheme => {
-    if (currentTheme === "system") {
-      return getSystemTheme();
-    }
-    return currentTheme as EffectiveTheme;
-  };
-
-  // Apply theme to HTML element
-  const applyTheme = (themeToApply: EffectiveTheme) => {
-    if (typeof window !== "undefined") {
-      const root = document.documentElement;
-      if (themeToApply === "dark") {
-        root.classList.add("dark");
-      } else {
-        root.classList.remove("dark");
-      }
-    }
-  };
 
   // Initialize theme on mount
   useEffect(() => {
@@ -80,8 +54,8 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     if (typeof window === "undefined") return;
 
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-    
-    const handleChange = (e: MediaQueryListEvent) => {
+
+    const handleChange = (e: MediaQueryListEvent): void => {
       if (theme === "system") {
         const newEffectiveTheme = e.matches ? "dark" : "light";
         setEffectiveTheme(newEffectiveTheme);
@@ -97,7 +71,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const handleStorageChange = (e: StorageEvent) => {
+    const handleStorageChange = (e: StorageEvent): void => {
       if (e.key === "theme-preference" && e.newValue) {
         const newTheme = e.newValue as Theme;
         setThemeState(newTheme);
@@ -111,9 +85,9 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     return () => window.removeEventListener("storage", handleStorageChange);
   }, []);
 
-  const setTheme = (newTheme: Theme) => {
+  const setTheme = (newTheme: Theme): void => {
     setThemeState(newTheme);
-    
+
     // Persist to localStorage
     try {
       localStorage.setItem("theme-preference", newTheme);
@@ -127,7 +101,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     applyTheme(effective);
   };
 
-  const toggleTheme = () => {
+  const toggleTheme = (): void => {
     // Toggle between light and dark (ignore system preference when toggling)
     const newTheme = effectiveTheme === "light" ? "dark" : "light";
     setTheme(newTheme);
@@ -145,4 +119,32 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
       {children}
     </ThemeContext.Provider>
   );
+}
+
+// Helper functions
+function getSystemTheme(): EffectiveTheme {
+  if (typeof window !== "undefined") {
+    return window.matchMedia("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light";
+  }
+  return "light";
+}
+
+function calculateEffectiveTheme(currentTheme: Theme): EffectiveTheme {
+  if (currentTheme === "system") {
+    return getSystemTheme();
+  }
+  return currentTheme as EffectiveTheme;
+}
+
+function applyTheme(themeToApply: EffectiveTheme): void {
+  if (typeof window !== "undefined") {
+    const root = document.documentElement;
+    if (themeToApply === "dark") {
+      root.classList.add("dark");
+    } else {
+      root.classList.remove("dark");
+    }
+  }
 }
