@@ -41,6 +41,13 @@ export interface AuthResponse {
     permissions: string[];
     managerId: number | null;
     avatarUrl?: string;
+    departmentId?: number;
+    department?: {
+      id: number;
+      name: string;
+      code: string;
+      description?: string | null;
+    };
   };
 }
 
@@ -144,6 +151,8 @@ export const authService = {
           roles: response.user.roles,
           permissions: response.user.permissions,
           managerId: response.user.managerId,
+          departmentId: response.user.departmentId,
+          department: response.user.department,
         };
         tokenService.setUserData(userData);
       } else {

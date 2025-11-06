@@ -12,6 +12,13 @@ export interface UserData {
   roles?: string[];
   permissions?: string[];
   managerId?: number | null;
+  departmentId?: number;
+  department?: {
+    id: number;
+    name: string;
+    code: string;
+    description?: string | null;
+  };
 }
 
 const ACCESS_TOKEN_KEY = "access_token";

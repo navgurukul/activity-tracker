@@ -48,10 +48,13 @@ import apiClient from "@/lib/api-client";
 import { API_PATHS, DATE_FORMATS, VALIDATION } from "@/lib/constants";
 import { mockDataService } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/use-auth";
 
 export default function TrackerPage() {
+  // Get authenticated user data
+  const { user } = useAuth();
+
   // Get mock data from centralized service
-  const userData = mockDataService.getCurrentUser();
   const workingDepartments = mockDataService.getWorkingDepartments();
   const projects = mockDataService.getProjects();
 
@@ -99,9 +102,9 @@ export default function TrackerPage() {
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      employeeEmail: userData.email,
-      employeeName: userData.name,
-      employeeDepartment: userData.department,
+      employeeEmail: user?.email || "",
+      employeeName: user?.name || "",
+      employeeDepartment: user?.department?.name || "",
       activityDate: new Date(),
       projectEntries: [
         {
