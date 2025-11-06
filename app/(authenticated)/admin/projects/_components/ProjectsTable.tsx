@@ -11,7 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { StatusBadge } from "./StatusBadge";
+import { Badge } from "@/components/ui/badge";
 
 export interface Project {
   id: number;
@@ -44,7 +44,12 @@ export function ProjectsTable({ projects }: ProjectsTableProps) {
             <TableCell className="font-medium">{project.name}</TableCell>
             <TableCell>{project.code}</TableCell>
             <TableCell>
-              <StatusBadge status={project.status} />
+              <Badge
+                variant={project.status.toLowerCase() === "active" ? "default" : "neutral"}
+                className={project.status.toLowerCase() === "archived" ? "bg-yellow-100 text-yellow-800 border-yellow-300" : ""}
+              >
+                {project.status.charAt(0).toUpperCase() + project.status.slice(1)}
+              </Badge>
             </TableCell>
             <TableCell className="max-w-md truncate">
               {project.description || "-"}
