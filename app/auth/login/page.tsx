@@ -50,7 +50,8 @@ export default function LoginPage() {
 
   return (
     <PageWrapper>
-      <div className="flex h-screen items-center">
+      <div className="flex h-screen items-center justify-center">
+    <div>
         <PageHeader>
           <div className="flex items-center gap-2 justify-center">
             <Command className="size-10 text-main" />
@@ -62,6 +63,7 @@ export default function LoginPage() {
         </PageHeader>
         <div className="flex justify-center">
           <GoogleLoginButton />
+        </div>
         </div>
       </div>
     </PageWrapper>

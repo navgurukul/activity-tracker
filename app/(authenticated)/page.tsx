@@ -204,9 +204,6 @@ export default function DashboardPage() {
     holiday: "bg-red-50 dark:bg-red-950/20",
   };
 
-  // No disabled days - allow future date selection
-  const disabledDays = undefined;
-
   return (
     <>
       <AppHeader crumbs={[{ label: "Dashboard" }]} />
@@ -286,7 +283,7 @@ export default function DashboardPage() {
                         onSelect={(date) => date && setSelectedDate(date)}
                         month={currentMonth}
                         onMonthChange={setCurrentMonth}
-                        disabled={isLoading ? true : disabledDays}
+                        disabled={isLoading}
                         modifiers={modifiers}
                         modifiersClassNames={modifiersClassNames}
                         className="rounded-base border-2 border-border"
