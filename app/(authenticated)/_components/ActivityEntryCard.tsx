@@ -41,8 +41,8 @@ export function ActivityEntryCard({ type, entry }: ActivityEntryCardProps) {
   if (type === "timesheet") {
     const timesheetEntry = entry as TimesheetEntry;
     return (
-      <Card className="bg-subtle">
-        <CardContent className="pt-4">
+      <Card className="bg-main">
+        <CardContent >
           <div className="space-y-3">
             <div className="flex items-start justify-between">
               <div className="flex-1">
