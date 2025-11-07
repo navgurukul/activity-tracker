@@ -114,6 +114,14 @@ export default function DashboardPage() {
       .map((day) => parseISO(day.date));
   }, [monthlyData]);
 
+  // Get days with only leave entries (no timesheet entries)
+  const daysWithOnlyLeave = useMemo(() => {
+    if (!monthlyData) return [];
+    return monthlyData.days
+      .filter((day) => day.leaves !== null && day.timesheet === null)
+      .map((day) => parseISO(day.date));
+  }, [monthlyData]);
+
   // Get data for selected date
   const selectedDayData = useMemo(() => {
     if (!monthlyData) return null;
@@ -126,13 +134,11 @@ export default function DashboardPage() {
     if (!selectedDayData) return { totalHours: 0, totalEntries: 0 };
 
     const timesheetHours = selectedDayData.timesheet?.totalHours || 0;
-    const leaveHours = selectedDayData.leaves?.totalHours || 0;
     const timesheetEntries = selectedDayData.timesheet?.entries.length || 0;
-    const leaveEntries = selectedDayData.leaves?.entries.length || 0;
 
     return {
-      totalHours: timesheetHours + leaveHours,
-      totalEntries: timesheetEntries + leaveEntries,
+      totalHours: timesheetHours,
+      totalEntries: timesheetEntries,
     };
   }, [selectedDayData]);
 
@@ -140,6 +146,7 @@ export default function DashboardPage() {
   const modifiers = useMemo(
     () => ({
       hasData: daysWithData,
+      hasOnlyLeave: daysWithOnlyLeave,
       weekend:
         monthlyData?.days
           .filter((d) => d.isWeekend)
@@ -149,7 +156,7 @@ export default function DashboardPage() {
           .filter((d) => d.isHoliday)
           .map((d) => parseISO(d.date)) || [],
     }),
-    [daysWithData, monthlyData]
+    [daysWithData, daysWithOnlyLeave, monthlyData]
   );
 
   // Calculate if selected date is in the future
@@ -200,6 +207,8 @@ export default function DashboardPage() {
   const modifiersClassNames = {
     hasData:
       "bg-main/20 font-semibold hover:bg-main/30 text-foreground relative after:absolute after:bottom-1 after:left-1/2 after:-translate-x-1/2 after:w-1 after:h-1 after:rounded-full after:bg-main",
+    hasOnlyLeave:
+      "bg-main/20 font-semibold hover:bg-main/30 text-foreground relative after:absolute after:bottom-1 after:left-1/2 after:-translate-x-1/2 after:w-1 after:h-1 after:rounded-full after:bg-subtle-foreground",
     weekend: "text-muted-foreground",
     holiday: "bg-red-50 dark:bg-red-950/20",
   };
@@ -213,7 +222,7 @@ export default function DashboardPage() {
             {/* Statistics Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Card>
-                <CardContent className="pt-6">
+                <CardContent>
                   <div className="space-y-2">
                     <p className="text-sm font-medium text-muted-foreground">
                       Total Hours Tracked
@@ -228,7 +237,7 @@ export default function DashboardPage() {
                 </CardContent>
               </Card>
               <Card>
-                <CardContent className="pt-6">
+                <CardContent>
                   <div className="space-y-2">
                     <p className="text-sm font-medium text-muted-foreground">
                       Leave Hours
@@ -243,7 +252,7 @@ export default function DashboardPage() {
                 </CardContent>
               </Card>
               <Card>
-                <CardContent className="pt-6">
+                <CardContent>
                   <div className="space-y-2">
                     <p className="text-sm font-medium text-muted-foreground">
                       Total Hours
@@ -287,6 +296,9 @@ export default function DashboardPage() {
                         modifiers={modifiers}
                         modifiersClassNames={modifiersClassNames}
                         className="rounded-base border-2 border-border"
+                        classNames={{
+                          day_selected: "bg-subtle text-foreground hover:bg-subtle-foreground hover:text-foreground focus:bg-subtle focus:text-foreground border-2 border-border"
+                        }}
                       />
                     </div>
                   )}
