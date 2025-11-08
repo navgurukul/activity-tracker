@@ -80,35 +80,30 @@ export const MOCK_DURATION_TYPES: DurationTypeOption[] = [
 export const MOCK_ALLOCATED_LEAVES: AllocatedLeave[] = [
   {
     leaveType: "Annual Leave",
-    allotted: 20,
     balance: 12,
     booked: 6,
     pending: 2,
   },
   {
     leaveType: "Sick Leave",
-    allotted: 10,
     balance: 8,
     booked: 2,
     pending: 0,
   },
   {
     leaveType: "Casual Leave",
-    allotted: 12,
     balance: 7,
     booked: 3,
     pending: 2,
   },
   {
     leaveType: "Maternity Leave",
-    allotted: 90,
     balance: 90,
     booked: 0,
     pending: 0,
   },
   {
     leaveType: "Paternity Leave",
-    allotted: 15,
     balance: 15,
     booked: 0,
     pending: 0,
