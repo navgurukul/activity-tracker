@@ -76,14 +76,15 @@ const navLinks = [
     url: "/compoff",
     icon: CalendarSync,
   },
+  {
+    title: "Project Management",
+    url: "/projects",
+    icon: FolderKanban,
+  },
 ];
 
 const adminLinks = [
-  {
-    title: "Project Management",
-    url: "/admin/projects",
-    icon: FolderKanban,
-  },
+  
   {
     title: "Admin Dashboard",
     url: "/admin/dashboard",
