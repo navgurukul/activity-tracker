@@ -1,36 +1,121 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Activity Tracker
+
+A modern HR management web application built with React 19, featuring Google OAuth authentication, activity tracking, leave management, and admin capabilities.
+
+## Tech Stack
+
+- **Framework**: React 19 with Vite
+- **Routing**: React Router v6
+- **Language**: TypeScript
+- **Styling**: Tailwind CSS v4
+- **UI Components**: Radix UI primitives
+- **Forms**: React Hook Form with Zod validation
+- **Authentication**: Google OAuth
+- **HTTP Client**: Axios
+- **Icons**: Lucide React
+
+## Prerequisites
+
+- Node.js 20+ 
+- pnpm (enforced via preinstall script)
 
 ## Getting Started
 
-First, run the development server:
+1. **Clone the repository**
+
+2. **Install dependencies**
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+3. **Set up environment variables**
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Copy `.env.example` to `.env` and configure:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+VITE_API_BASE_URL=http://localhost:8000
+VITE_BACKEND_PROXY_TARGET=http://localhost:9900
+```
 
-## Learn More
+4. **Run the development server**
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+pnpm dev
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Available Scripts
 
-## Deploy on Vercel
+- `pnpm dev` - Start development server with hot reload
+- `pnpm build` - Build for production
+- `pnpm preview` - Preview production build locally
+- `pnpm lint` - Run ESLint
+- `pnpm type-check` - Run TypeScript type checking
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Project Structure
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```
+src/
+├── components/
+│   ├── ui/              # Reusable UI components (Radix-based)
+│   └── layout/          # Layout components (Sidebar, Auth, Theme)
+├── pages/               # Page components for each route
+│   ├── Admin/          # Admin pages
+│   ├── Leaves/         # Leave management pages
+│   └── ...             # Other feature pages
+├── hooks/              # Custom React hooks
+├── lib/                # Utilities and services
+│   ├── api-client.ts   # Axios instance and interceptors
+│   ├── auth-service.ts # Authentication logic
+│   ├── constants.ts    # App constants
+│   └── utils.ts        # Helper functions
+├── routes/             # React Router configuration
+├── App.tsx             # Root app component
+├── main.tsx            # Application entry point
+└── index.css           # Global styles and Tailwind directives
+```
+
+## Features
+
+- **Authentication**: Google OAuth login with JWT token management
+- **Activity Tracker**: Track daily work activities and submit timesheets
+- **Leave Management**: Apply for leaves, view allocation, and check history
+- **Compensatory Off**: Request and manage comp-off days
+- **Project Management**: View and manage projects
+- **Admin Panel**: Dashboard and access control for administrators
+- **Theme Support**: Light/dark mode with system preference detection
+- **Responsive Design**: Mobile-friendly interface
+
+## Development
+
+### Adding New Routes
+
+1. Create a page component in `src/pages/`
+2. Add the route in `src/routes/AppRoutes.tsx`
+3. Update sidebar navigation in `src/components/layout/Sidebar.tsx` if needed
+
+### API Integration
+
+The app uses a development proxy configured in `vite.config.ts` to avoid CORS issues:
+- Frontend calls `/api/*` 
+- Proxied to backend at `VITE_BACKEND_PROXY_TARGET`
+
+## Deployment
+
+Build the production bundle:
+
+```bash
+pnpm build
+```
+
+The `dist/` folder contains static files ready for deployment to:
+- Vercel
+- Netlify  
+- AWS S3 + CloudFront
+- Any static hosting service
+
+## License
+
+Private project
