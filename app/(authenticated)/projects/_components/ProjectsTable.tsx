@@ -21,6 +21,23 @@ export interface Project {
   description?: string;
   createdAt?: string;
   updatedAt?: string;
+  department?: {
+    id: number;
+    name: string;
+    code: string;
+    description: string | null;
+  };
+  projectManager?: {
+    id: number;
+    name: string;
+    email: string;
+  };
+  budgetAmount?: string;
+  budgetAmountMinor?: string;
+  budgetCurrency?: string;
+  startDate?: string;
+  endDate?: string | null;
+  members?: any[];
 }
 
 interface ProjectsTableProps {
@@ -35,14 +52,21 @@ export function ProjectsTable({ projects }: ProjectsTableProps) {
           <TableHead>Department</TableHead>
           <TableHead>Project Name</TableHead>
           <TableHead>PM Email</TableHead>
+          <TableHead>Budget</TableHead>
           <TableHead>Status</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {projects.map((project) => (
           <TableRow key={project.id}>
-            <TableCell className="font-medium">{project.name}</TableCell>
-            <TableCell>{project.code}</TableCell>
+            <TableCell className="font-medium">{project.department?.name || "-"}</TableCell>
+            <TableCell>{project.name}</TableCell>
+            <TableCell>{project.projectManager?.email || "-"}</TableCell>
+            <TableCell>
+              {project.budgetAmount && project.budgetCurrency 
+                ? `${project.budgetCurrency} ${parseFloat(project.budgetAmount).toLocaleString()}` 
+                : "-"}
+            </TableCell>
             <TableCell>
               <Badge
                 variant={project.status.toLowerCase() === "active" ? "default" : "neutral"}
@@ -50,9 +74,6 @@ export function ProjectsTable({ projects }: ProjectsTableProps) {
               >
                 {project.status.charAt(0).toUpperCase() + project.status.slice(1)}
               </Badge>
-            </TableCell>
-            <TableCell className="max-w-md truncate">
-              {project.description || "-"}
             </TableCell>
           </TableRow>
         ))}
