@@ -24,14 +24,15 @@ export const DEV_PROXY = {
 export const API_PATHS = {
   AUTH_LOGIN: "/v1/auth/login",
   AUTH_REFRESH: "/v1/auth/refresh",
+  AUTH_ME: "/v1/auth/me",
   ACTIVITIES_SUBMIT: "/v1/timesheets",
   MONTHLY_TIMESHEET: "/v1/timesheets/monthly",
   LEAVES_APPLICATION: "/v1/leaves/application",
   LEAVES_REQUESTS: "/v1/leaves/requests",
   LEAVES_HISTORY: "/v1/leaves/history",
   LEAVES_BALANCES: "/v1/leaves/balances",
-  EMPLOYEES: "/v1/employees",
-  COMPOFF_REQUEST: "/v1/compoff/request",
+  EMPLOYEES: "/v1/users",
+  COMPOFF_REQUEST: "/v1/leaves/comp-offs",
   LEAVES_TYPES: "/v1/leaves/types",
   PROJECTS: "/v1/projects",
   DEPARTMENTS: "/v1/departments",
@@ -51,6 +52,7 @@ export const AUTH_ROUTES = {
 export const AUTH_ENDPOINT_SUBSTRINGS = {
   LOGIN: "/auth/login",
   REFRESH: "/auth/refresh",
+  ME: "/auth/me",
 } as const;
 
 // =============================================================================
@@ -73,6 +75,8 @@ export const VALIDATION = {
   MIN_HOURS_PER_ENTRY: 0.5,
   /** Maximum hours allowed per activity entry */
   MAX_HOURS_PER_ENTRY: 15,
+  /** Maximum total hours allowed per day across all entries */
+  MAX_TOTAL_HOURS_PER_DAY: 15,
   /** Step value for hours input field */
   HOURS_INPUT_STEP: 0.5,
   /** Minimum characters for task description */

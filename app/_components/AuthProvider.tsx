@@ -1,6 +1,12 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, useCallback } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useCallback,
+} from "react";
 
 import { authService } from "@/lib/auth-service";
 import { UserData } from "@/lib/token-service";
@@ -30,28 +36,79 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [isLoading, setIsLoading] = useState(true);
 
   // Initialize auth state
-  const initializeAuth = useCallback(() => {
-    const authenticated = authService.isAuthenticated();
-    const userData = authService.getUserData();
+  const initializeAuth = useCallback(async () => {
+    setIsLoading(true);
 
-    setIsAuthenticated(authenticated);
-    setUser(userData);
-    setIsLoading(false);
+    try {
+      // Check if we have an access token
+      const hasToken = authService.isAuthenticated();
+
+      if (!hasToken) {
+        // No token, user is not authenticated
+        setIsAuthenticated(false);
+        setUser(null);
+        return;
+      }
+
+      // Token exists, fetch current user from backend
+      try {
+        const userData = await authService.getCurrentUser();
+        setIsAuthenticated(true);
+        setUser(userData);
+      } catch (error: any) {
+        // If /auth/me fails with 401, try to refresh the token
+        if (error.response?.status === 401) {
+          try {
+            await authService.refreshAccessToken();
+            // Retry fetching user after refresh
+            const userData = await authService.getCurrentUser();
+            setIsAuthenticated(true);
+            setUser(userData);
+          } catch (refreshError) {
+            // Refresh failed, logout user
+            console.error(
+              "Token refresh failed during initialization:",
+              refreshError
+            );
+            authService.logout();
+            setIsAuthenticated(false);
+            setUser(null);
+          }
+        } else {
+          // Other error, logout user
+          console.error("Failed to fetch user during initialization:", error);
+          authService.logout();
+          setIsAuthenticated(false);
+          setUser(null);
+        }
+      }
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
-  // Refresh user data from storage
-  const refreshUser = useCallback(() => {
-    const userData = authService.getUserData();
-    setUser(userData);
+  // Refresh user data from backend
+  const refreshUser = useCallback(async () => {
+    try {
+      const userData = await authService.getCurrentUser();
+      setUser(userData);
+    } catch (error) {
+      console.error("Failed to refresh user data:", error);
+      // Optionally handle error by logging out
+    }
   }, []);
 
-  // Login handler (for manual login trigger if needed)
-  const login = useCallback(() => {
-    const authenticated = authService.isAuthenticated();
-    const userData = authService.getUserData();
-
-    setIsAuthenticated(authenticated);
-    setUser(userData);
+  // Login handler - fetch user from backend after authentication
+  const login = useCallback(async () => {
+    try {
+      const userData = await authService.getCurrentUser();
+      setIsAuthenticated(true);
+      setUser(userData);
+    } catch (error) {
+      console.error("Failed to fetch user after login:", error);
+      setIsAuthenticated(false);
+      setUser(null);
+    }
   }, []);
 
   // Logout handler

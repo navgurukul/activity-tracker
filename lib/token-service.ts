@@ -58,9 +58,20 @@ export const tokenService = {
 
   /**
    * Set authentication tokens
+   * Validates tokens before storing
    */
   setTokens(accessToken: string, refreshToken: string): void {
     if (typeof window === "undefined") return;
+
+    // Validate tokens are non-empty
+    if (!accessToken || !refreshToken) {
+      console.error("Attempted to set invalid tokens:", {
+        hasAccessToken: !!accessToken,
+        hasRefreshToken: !!refreshToken,
+      });
+      throw new Error("Cannot store empty tokens");
+    }
+
     localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
     localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
   },

@@ -114,9 +114,6 @@ export default function TrackerPage() {
   };
 
   const formSchema = z.object({
-    employeeEmail: z.string().email(),
-    employeeName: z.string().min(1),
-    employeeDepartment: z.string().min(1),
     activityDate: z.date(),
     projectEntries: z
       .array(
@@ -143,15 +140,24 @@ export default function TrackerPage() {
             ),
         })
       )
-      .min(1, "At least one project entry is required."),
+      .min(1, "At least one project entry is required.")
+      .refine(
+        (entries) => {
+          const totalHours = entries.reduce(
+            (sum, entry) => sum + entry.hoursSpent,
+            0
+          );
+          return totalHours <= VALIDATION.MAX_TOTAL_HOURS_PER_DAY;
+        },
+        {
+          message: `Total hours per day cannot exceed ${VALIDATION.MAX_TOTAL_HOURS_PER_DAY} hours across all project entries.`,
+        }
+      ),
   });
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      employeeEmail: user?.email || "",
-      employeeName: user?.name || "",
-      employeeDepartment: user?.department?.name || "",
       activityDate: new Date(),
       projectEntries: [
         {
@@ -263,54 +269,6 @@ export default function TrackerPage() {
                   onSubmit={form.handleSubmit(onSubmit)}
                   className="space-y-6"
                 >
-                  {/* Employee Information Section - Read Only */}
-                  <div className="space-y-4 pb-4 border-b">
-                    <h3 className="text-lg font-semibold">
-                      Employee Information
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <FormField
-                        control={form.control}
-                        name="employeeEmail"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Employee Email</FormLabel>
-                            <FormControl>
-                              <Input {...field} disabled className="bg-muted" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="employeeName"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Employee Name</FormLabel>
-                            <FormControl>
-                              <Input {...field} disabled className="bg-muted" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="employeeDepartment"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Employee Department</FormLabel>
-                            <FormControl>
-                              <Input {...field} disabled className="bg-muted" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                  </div>
-
                   {/* Activity Date Section */}
                   <div className="space-y-4">
                     <FormField
