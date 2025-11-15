@@ -7,7 +7,12 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 
 import { format } from "date-fns";
-import { Calendar as CalendarIcon, Plus, Trash2 } from "lucide-react";
+import {
+  Calendar as CalendarIcon,
+  Plus,
+  Trash2,
+  AlertCircle,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -42,6 +47,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AppHeader } from "@/app/_components/AppHeader";
 import { PageWrapper } from "@/app/_components/wrapper";
 import apiClient from "@/lib/api-client";
@@ -486,6 +492,16 @@ export default function TrackerPage() {
                       </div>
                     ))}
                   </div>
+                  {/* Total Hours Validation Error */}
+                  {form.formState.errors.projectEntries?.root && (
+                    <Alert variant="destructive">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertTitle>Validation Error</AlertTitle>
+                      <AlertDescription>
+                        {form.formState.errors.projectEntries.root.message}
+                      </AlertDescription>
+                    </Alert>
+                  )}
 
                   <div className="flex justify-end pt-4">
                     <Button type="submit" size="lg" disabled={isSubmitting}>
