@@ -9,7 +9,9 @@ import { useAuth } from "./use-auth";
 import type { GoogleCredentialResponse } from "@/lib/auth-service";
 
 interface UseGoogleLoginReturn {
-  handleGoogleLogin: (credentialResponse: GoogleCredentialResponse) => Promise<void>;
+  handleGoogleLogin: (
+    credentialResponse: GoogleCredentialResponse
+  ) => Promise<void>;
   handleGoogleError: () => void;
   isLoading: boolean;
   error: string | null;
@@ -34,8 +36,8 @@ export function useGoogleLogin(): UseGoogleLoginReturn {
       try {
         await authService.handleGoogleSuccess(credentialResponse);
 
-        // Update auth context
-        login();
+        // Update auth context with fresh user data from backend
+        await login();
 
         // Get return URL or default to root dashboard
         const returnUrl = sessionStorage.getItem("returnUrl") || "/";

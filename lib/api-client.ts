@@ -77,10 +77,11 @@ apiClient.interceptors.response.use(
       _retry?: boolean;
     };
 
-    // Don't handle 401 for auth endpoints (login/refresh) - let them fail naturally
+    // Don't handle 401 for auth endpoints (login/refresh/me) - let them fail naturally
     const isAuthEndpoint =
       originalRequest.url?.includes(AUTH_ENDPOINT_SUBSTRINGS.LOGIN) ||
-      originalRequest.url?.includes(AUTH_ENDPOINT_SUBSTRINGS.REFRESH);
+      originalRequest.url?.includes(AUTH_ENDPOINT_SUBSTRINGS.REFRESH) ||
+      originalRequest.url?.includes(AUTH_ENDPOINT_SUBSTRINGS.ME);
     if (isAuthEndpoint) {
       return Promise.reject(error);
     }
@@ -123,21 +124,26 @@ apiClient.interceptors.response.use(
         const response = await axios.post(
           `${API.BASE_URL}${API_PATHS.AUTH_REFRESH}`,
           {
-            refresh: refreshToken,
+            refreshToken,
           }
         );
 
-        const { access, refresh } = response.data;
+        const { accessToken, refreshToken: newRefreshToken } = response.data;
+
+        // Validate token before storing
+        if (!accessToken) {
+          throw new Error("Invalid token response from server");
+        }
 
         // Store new tokens
-        tokenService.setTokens(access, refresh || refreshToken);
+        tokenService.setTokens(accessToken, newRefreshToken || refreshToken);
 
         // Update authorization header
         if (originalRequest.headers) {
-          originalRequest.headers.Authorization = `Bearer ${access}`;
+          originalRequest.headers.Authorization = `Bearer ${accessToken}`;
         }
 
-        processQueue(null, access);
+        processQueue(null, accessToken);
         isRefreshing = false;
 
         // Retry original request

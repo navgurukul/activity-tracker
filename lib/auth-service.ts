@@ -199,13 +199,7 @@ export const authService = {
 
       const { accessToken, refreshToken } = response.data;
 
-      // Validate tokens before storing
-      if (!accessToken || !refreshToken) {
-        console.error("Missing tokens in response:", response.data);
-        throw new Error("Invalid token response from server");
-      }
-
-      // Store tokens
+      // Store tokens (validation done by token service)
       tokenService.setTokens(accessToken, refreshToken);
 
       return response.data;
@@ -256,6 +250,53 @@ export const authService = {
    */
   getUserData(): UserData | null {
     return tokenService.getUserData();
+  },
+
+  /**
+   * Fetch current user from backend /v1/auth/me
+   * Requires valid access token in localStorage
+   */
+  async getCurrentUser(): Promise<UserData | null> {
+    try {
+      const response = await apiClient.get<{
+        id: number;
+        email: string;
+        name?: string;
+        avatarUrl?: string;
+        orgId: number;
+        roles: string[];
+        permissions: string[];
+        managerId: number | null;
+        departmentId?: number;
+        department?: {
+          id: number;
+          name: string;
+          code: string;
+          description?: string | null;
+        };
+      }>(API_PATHS.AUTH_ME);
+
+      const userData: UserData = {
+        id: response.data.id,
+        email: response.data.email,
+        name: response.data.name,
+        avatarUrl: response.data.avatarUrl,
+        orgId: response.data.orgId,
+        roles: response.data.roles,
+        permissions: response.data.permissions,
+        managerId: response.data.managerId,
+        departmentId: response.data.departmentId,
+        department: response.data.department,
+      };
+
+      // Store user data for consistency with current architecture
+      tokenService.setUserData(userData);
+
+      return userData;
+    } catch (error) {
+      console.error("Failed to fetch current user:", error);
+      throw error;
+    }
   },
 
   /**

@@ -42,6 +42,7 @@ import apiClient from "@/lib/api-client";
 import { toast } from "sonner";
 import { API_PATHS, DATE_FORMATS, VALIDATION } from "@/lib/constants";
 import { mockDataService } from "@/lib/mock-data";
+import { useAuth } from "@/hooks/use-auth";
 
 const formSchema = z
   .object({
@@ -69,6 +70,7 @@ export function CompOffRequestForm() {
   const [employeeEmails, setEmployeeEmails] = useState<string[]>([]);
   const [isLoadingEmails, setIsLoadingEmails] = useState(false);
   const durationTypes = mockDataService.getDurationTypes();
+  const { user, isAuthenticated, isLoading } = useAuth();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -89,10 +91,12 @@ export function CompOffRequestForm() {
       setIsLoadingEmails(true);
       try {
         // Replace with actual API endpoint when available
-        const response = await apiClient.get(API_PATHS.EMPLOYEES);
+        const response = await apiClient.get(
+          `${API_PATHS.EMPLOYEES}?managerId=${user!.id}`
+        );
 
-        if (response.data && Array.isArray(response.data)) {
-          const emails = response.data.map((emp: any) => emp.email);
+        if (response.data && Array.isArray(response.data.data)) {
+          const emails = response.data.data.map((emp: any) => emp.email);
           setEmployeeEmails(emails);
         }
       } catch (error: any) {
