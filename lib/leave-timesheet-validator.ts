@@ -16,10 +16,8 @@ interface LeaveRequest {
   durationType: "full_day" | "half_day";
   halfDaySegment?: "first_half" | "second_half";
   hours: number;
-  state: {
-    code: string;
-    name: string;
-  };
+  // State can be either a string or an object depending on the endpoint
+  state: string | { code: string; name: string };
 }
 
 export interface ConflictCheckResult {
@@ -29,7 +27,8 @@ export interface ConflictCheckResult {
     | "half_day_leave_hours_exceeded"
     | "timesheet_exists"
     | "non_working_day"
-    | "holiday";
+    | "holiday"
+    | "overlapping_leave";
   message?: string;
   existingHours?: number;
   maxAllowedHours?: number;
@@ -168,6 +167,110 @@ export function clearTimesheetCache(): void {
 }
 
 /**
+ * Check if a new leave request overlaps with existing approved or pending leaves
+ * @param startDate - Start date of the new leave request
+ * @param endDate - End date of the new leave request
+ * @param durationType - Type of leave (full_day or half_day)
+ * @returns Conflict check result
+ */
+export async function checkOverlappingLeaves(
+  startDate: Date,
+  endDate: Date,
+  durationType: "full_day" | "half_day"
+): Promise<ConflictCheckResult> {
+  try {
+    const startDateStr = format(startDate, DATE_FORMATS.API);
+    const endDateStr = format(endDate, DATE_FORMATS.API);
+
+    // Fetch ALL existing leave requests (backend may not support date filtering)
+    // We'll filter client-side for overlaps
+    const response = await apiClient.get(API_PATHS.LEAVES_REQUESTS);
+
+    // Handle wrapped or direct array response
+    const leaves: LeaveRequest[] = Array.isArray(response.data)
+      ? response.data
+      : Array.isArray((response.data as { data?: LeaveRequest[] })?.data)
+      ? (response.data as { data: LeaveRequest[] }).data
+      : [];
+
+    // Filter for approved or pending leaves that overlap with requested range
+    const overlappingLeaves = leaves.filter((leave: LeaveRequest) => {
+      const leaveStart = new Date(leave.startDate);
+      const leaveEnd = new Date(leave.endDate);
+      const requestStart = new Date(startDateStr);
+      const requestEnd = new Date(endDateStr);
+
+      // Only consider approved or pending leaves
+      // Handle both string format and object format for state
+      const stateValue =
+        typeof leave.state === "string" ? leave.state : leave.state.code;
+
+      const isRelevantState =
+        stateValue === "approved" || stateValue === "pending";
+
+      if (!isRelevantState) return false;
+
+      // Check for any overlap between date ranges
+      // Overlap exists if: (StartA <= EndB) AND (EndA >= StartB)
+      const hasOverlap = requestStart <= leaveEnd && requestEnd >= leaveStart;
+
+      return hasOverlap;
+    });
+
+    if (overlappingLeaves.length > 0) {
+      const existingLeave = overlappingLeaves[0];
+      const stateValue =
+        typeof existingLeave.state === "string"
+          ? existingLeave.state
+          : existingLeave.state.code;
+      const leaveStatus = stateValue === "approved" ? "approved" : "pending";
+
+      // Format the overlapping date range
+      const overlapStart = format(
+        new Date(existingLeave.startDate),
+        DATE_FORMATS.DISPLAY
+      );
+      const overlapEnd = format(
+        new Date(existingLeave.endDate),
+        DATE_FORMATS.DISPLAY
+      );
+
+      const dateRangeText =
+        overlapStart === overlapEnd
+          ? overlapStart
+          : `${overlapStart} to ${overlapEnd}`;
+
+      return {
+        hasConflict: true,
+        conflictType: "overlapping_leave",
+        message: `Cannot apply leave. You already have a ${leaveStatus} ${existingLeave.durationType.replace(
+          "_",
+          "-"
+        )} leave request for ${dateRangeText}. Please cancel or modify the existing leave before applying for overlapping dates.`,
+      };
+    }
+
+    return { hasConflict: false };
+  } catch (error: unknown) {
+    console.error("Error checking overlapping leaves:", error);
+    // Log more details about the error
+    if (error && typeof error === "object") {
+      const err = error as { response?: { status?: number; data?: unknown } };
+      if (err.response) {
+        console.error(
+          "API Response Error:",
+          err.response.status,
+          err.response.data
+        );
+      }
+    }
+    // For errors, allow the request but log the error
+    // The backend will perform final validation
+    return { hasConflict: false };
+  }
+}
+
+/**
  * Check if a leave application conflicts with existing timesheet entries
  * Uses monthly timesheet endpoint with caching to minimize API calls
  * @param startDate - Start date of the leave
@@ -184,7 +287,17 @@ export async function checkLeaveConflictWithTimesheet(
     const startDateStr = format(startDate, DATE_FORMATS.API);
     const endDateStr = format(endDate, DATE_FORMATS.API);
 
-    // Check for non-working days and holidays in the date range
+    // FIRST: Check for overlapping existing leave requests
+    const overlapResult = await checkOverlappingLeaves(
+      startDate,
+      endDate,
+      durationType
+    );
+    if (overlapResult.hasConflict) {
+      return overlapResult;
+    }
+
+    // SECOND: Check for non-working days and holidays in the date range
     const currentDate = new Date(startDate);
     const end = new Date(endDate);
 
@@ -325,8 +438,12 @@ export async function checkTimesheetConflictWithLeave(
       const actDate = new Date(dateStr);
 
       // Only consider approved or pending leaves
+      // Handle both string format and object format for state
+      const stateValue =
+        typeof leave.state === "string" ? leave.state : leave.state.code;
+
       const isRelevantState =
-        leave.state.code === "approved" || leave.state.code === "pending";
+        stateValue === "approved" || stateValue === "pending";
 
       // Check if activity date falls within leave range
       const isInRange = actDate >= leaveStart && actDate <= leaveEnd;
@@ -336,14 +453,14 @@ export async function checkTimesheetConflictWithLeave(
 
     if (relevantLeaves.length > 0) {
       const leave = relevantLeaves[0];
+      const stateValue =
+        typeof leave.state === "string" ? leave.state : leave.state.code;
 
       if (leave.durationType === "full_day") {
         return {
           hasConflict: true,
           conflictType: "full_day_leave",
-          message: `Cannot submit timesheet. You have a ${
-            leave.state.code
-          } full-day leave for ${format(
+          message: `Cannot submit timesheet. You have a ${stateValue} full-day leave for ${format(
             activityDate,
             DATE_FORMATS.DISPLAY
           )}. Please cancel the leave before submitting timesheet entries.`,
@@ -354,9 +471,7 @@ export async function checkTimesheetConflictWithLeave(
           return {
             hasConflict: true,
             conflictType: "half_day_leave_hours_exceeded",
-            message: `Cannot submit timesheet. You have a ${
-              leave.state.code
-            } half-day leave for ${format(
+            message: `Cannot submit timesheet. You have a ${stateValue} half-day leave for ${format(
               activityDate,
               DATE_FORMATS.DISPLAY
             )}. Maximum allowed hours for this date is ${

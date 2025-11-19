@@ -38,6 +38,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { format } from "date-fns";
 import { Calendar as CalendarIcon, AlertCircle } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
+import { DateRange } from "react-day-picker";
 import { cn } from "@/lib/utils";
 import apiClient from "@/lib/api-client";
 import { toast } from "sonner";
@@ -111,9 +112,20 @@ export function LeaveApplicationForm({ userEmail }: LeaveApplicationFormProps) {
 
   const [leaveTypes, setLeaveTypes] = useState<LeaveTypeResponse[]>([]);
   const [selectedDurationType, setSelectedDurationType] = useState<string>("");
+  const [dateRange, setDateRange] = useState<DateRange | undefined>();
 
   // Matcher function to disable non-working days in calendar
   const disableNonWorkingDays = (date: Date) => {
+    return isNonWorkingDay(date);
+  };
+
+  // Combined disabled matcher for range calendar
+  const disabledDates = (date: Date) => {
+    // Disable future dates
+    if (date > new Date()) return true;
+    // Disable dates before 1900
+    if (date < new Date("1900-01-01")) return true;
+    // Disable non-working days
     return isNonWorkingDay(date);
   };
 
@@ -192,6 +204,18 @@ export function LeaveApplicationForm({ userEmail }: LeaveApplicationFormProps) {
   const watchStartDate = form.watch("startDate");
   const watchEndDate = form.watch("endDate");
   const watchDurationType = form.watch("durationType");
+
+  // Sync date range with form fields
+  useEffect(() => {
+    if (dateRange?.from && dateRange?.to) {
+      form.setValue("startDate", dateRange.from);
+      form.setValue("endDate", dateRange.to);
+    } else if (dateRange?.from && !dateRange?.to) {
+      // Single day selection
+      form.setValue("startDate", dateRange.from);
+      form.setValue("endDate", dateRange.from);
+    }
+  }, [dateRange, form]);
 
   useEffect(() => {
     // Debounce validation to avoid excessive API calls
@@ -290,6 +314,7 @@ export function LeaveApplicationForm({ userEmail }: LeaveApplicationFormProps) {
 
         form.reset();
         setValidationError(null);
+        setDateRange(undefined);
       }
     } catch (error) {
       console.error("Error submitting leave application:", error);
@@ -325,28 +350,8 @@ export function LeaveApplicationForm({ userEmail }: LeaveApplicationFormProps) {
       <CardContent>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-            {/* Employee Information Section - Read Only */}
-            <div className="space-y-4 pb-4 border-b">
-              <h3 className="text-lg font-semibold">Employee Information</h3>
-              <FormField
-                control={form.control}
-                name="employeeEmail"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Employee Email</FormLabel>
-                    <FormControl>
-                      <Input {...field} disabled className="bg-muted" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
             {/* Leave Details Section */}
             <div className="space-y-4">
-              <h3 className="text-lg font-semibold">Leave Details</h3>
-
               <FormField
                 control={form.control}
                 name="leaveType"
@@ -399,102 +404,71 @@ export function LeaveApplicationForm({ userEmail }: LeaveApplicationFormProps) {
                 )}
               />
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="startDate"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-col">
-                      <FormLabel>Start Date</FormLabel>
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <FormControl>
-                            <Button
-                              variant="noShadow"
-                              className={cn(
-                                "w-full justify-start text-left font-normal",
-                                !field.value && "text-muted-foreground"
-                              )}
-                            >
-                              <CalendarIcon className="mr-2 h-4 w-4" />
-                              {field.value ? (
-                                format(field.value, DATE_FORMATS.DISPLAY)
+              <FormField
+                control={form.control}
+                name="startDate"
+                render={({ field }) => (
+                  <FormItem className="flex flex-col">
+                    <FormLabel>Leave Date Range</FormLabel>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <FormControl>
+                          <Button
+                            variant="noShadow"
+                            className={cn(
+                              "w-full justify-start text-left font-normal",
+                              !dateRange?.from && "text-muted-foreground"
+                            )}
+                          >
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {dateRange?.from ? (
+                              dateRange.to ? (
+                                <>
+                                  {format(dateRange.from, DATE_FORMATS.DISPLAY)}{" "}
+                                  - {format(dateRange.to, DATE_FORMATS.DISPLAY)}
+                                </>
                               ) : (
-                                <span>Pick a date</span>
-                              )}
-                            </Button>
-                          </FormControl>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
-                          <Calendar
-                            mode="single"
-                            selected={field.value}
-                            onSelect={(date) => {
-                              field.onChange(date);
-                              // If half-day is selected, automatically update end date
-                              if (selectedDurationType === "half_day" && date) {
-                                form.setValue("endDate", date);
-                              }
-                            }}
-                            disabled={disableNonWorkingDays}
-                            initialFocus
-                          />
-                        </PopoverContent>
-                      </Popover>
-                      <FormDescription>
-                        Select the start date of your leave
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="endDate"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-col">
-                      <FormLabel>End Date</FormLabel>
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <FormControl>
-                            <Button
-                              variant="noShadow"
-                              disabled={selectedDurationType === "half_day"}
-                              className={cn(
-                                "w-full justify-start text-left font-normal",
-                                !field.value && "text-muted-foreground"
-                              )}
-                            >
-                              <CalendarIcon className="mr-2 h-4 w-4" />
-                              {field.value ? (
-                                format(field.value, DATE_FORMATS.DISPLAY)
-                              ) : (
-                                <span>Pick a date</span>
-                              )}
-                            </Button>
-                          </FormControl>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
-                          <Calendar
-                            mode="single"
-                            selected={field.value}
-                            onSelect={field.onChange}
-                            disabled={disableNonWorkingDays}
-                            initialFocus
-                          />
-                        </PopoverContent>
-                      </Popover>
-                      <FormDescription>
-                        {selectedDurationType === "half_day"
-                          ? "End date is automatically set to start date for half-day leave"
-                          : "Select the end date of your leave"}
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
+                                format(dateRange.from, DATE_FORMATS.DISPLAY)
+                              )
+                            ) : (
+                              <span>Pick a date range</span>
+                            )}
+                          </Button>
+                        </FormControl>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="range"
+                          defaultMonth={dateRange?.from}
+                          selected={dateRange}
+                          onSelect={(range) => {
+                            setDateRange(range);
+                            // If half-day is selected, ensure single day selection
+                            if (
+                              selectedDurationType === "half_day" &&
+                              range?.from
+                            ) {
+                              setDateRange({
+                                from: range.from,
+                                to: range.from,
+                              });
+                            }
+                          }}
+                          numberOfMonths={2}
+                          disabled={disabledDates}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
+                    <FormDescription>
+                      {selectedDurationType === "half_day"
+                        ? "Select a single day for half-day leave"
+                        : "Click to select start date, then click end date for range"}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
               <FormField
                 control={form.control}
