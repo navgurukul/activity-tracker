@@ -43,6 +43,7 @@ import apiClient from "@/lib/api-client";
 import { toast } from "sonner";
 import { API_PATHS, DATE_FORMATS, VALIDATION } from "@/lib/constants";
 import { mockDataService } from "@/lib/mock-data";
+import { checkLeaveConflictWithTimesheet } from "@/lib/leave-timesheet-validator";
 
 // TypeScript interfaces for API response
 interface LeaveTypeResponse {
@@ -151,6 +152,21 @@ export function LeaveApplicationForm({ userEmail }: LeaveApplicationFormProps) {
 
       if (!selectedLeaveType) {
         toast.error("Invalid leave type selected");
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Check for conflicts with existing timesheet entries
+      const conflictResult = await checkLeaveConflictWithTimesheet(
+        values.startDate,
+        values.endDate,
+        values.durationType as "full_day" | "half_day"
+      );
+
+      if (conflictResult.hasConflict) {
+        toast.error("Conflict with timesheet entries", {
+          description: conflictResult.message,
+        });
         setIsSubmitting(false);
         return;
       }

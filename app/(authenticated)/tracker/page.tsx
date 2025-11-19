@@ -54,6 +54,7 @@ import apiClient from "@/lib/api-client";
 import { API_PATHS, DATE_FORMATS, VALIDATION } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
+import { checkTimesheetConflictWithLeave } from "@/lib/leave-timesheet-validator";
 
 export default function TrackerPage() {
   // Get authenticated user data
@@ -187,6 +188,26 @@ export default function TrackerPage() {
     setIsSubmitting(true);
 
     try {
+      // Calculate total hours
+      const totalHours = values.projectEntries.reduce(
+        (sum, entry) => sum + entry.hoursSpent,
+        0
+      );
+
+      // Check for conflicts with existing leaves
+      const conflictResult = await checkTimesheetConflictWithLeave(
+        values.activityDate,
+        totalHours
+      );
+
+      if (conflictResult.hasConflict) {
+        toast.error("Conflict with leave application", {
+          description: conflictResult.message,
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
       // Transform form data to match API schema
       const payload = {
         workDate: format(values.activityDate, DATE_FORMATS.API),

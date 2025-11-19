@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { ActivityEntryCard, EmptyActivityState } from "./_components";
 import type { TimesheetEntry, LeaveEntry } from "./_components";
 import apiClient from "@/lib/api-client";
-import { API_PATHS, DATE_FORMATS } from "@/lib/constants";
+import { API_PATHS, DATE_FORMATS, DAY_INDICATOR_BASE } from "@/lib/constants";
 import { useAuth } from "@/hooks/use-auth";
 
 // TypeScript interfaces for API response
@@ -204,13 +204,12 @@ export default function DashboardPage() {
     return false;
   }, [selectedDate]);
 
+  // Simplified and centralized modifier class names
   const modifiersClassNames = {
-    hasData:
-      "bg-main/20 font-semibold hover:bg-main/30 text-foreground relative after:absolute after:bottom-1 after:left-1/2 after:-translate-x-1/2 after:w-1 after:h-1 after:rounded-full after:bg-main",
-    hasOnlyLeave:
-      "bg-main/20 font-semibold hover:bg-main/30 text-foreground relative after:absolute after:bottom-1 after:left-1/2 after:-translate-x-1/2 after:w-1 after:h-1 after:rounded-full after:bg-subtle-foreground",
+    hasData: `font-semibold text-foreground bg-main hover:bg-main/30 ${DAY_INDICATOR_BASE} after:bg-background`,
+    hasOnlyLeave: `font-semibold text-foreground bg-main/20 hover:bg-main/30 ${DAY_INDICATOR_BASE} after:bg-subtle-background`,
     weekend: "text-muted-foreground",
-    holiday: "bg-red-50 dark:bg-red-950/20",
+    holiday: "bg-subtle-background dark:bg-red-950/20",
   };
 
   return (
@@ -296,9 +295,6 @@ export default function DashboardPage() {
                         modifiers={modifiers}
                         modifiersClassNames={modifiersClassNames}
                         className="rounded-base border-2 border-border"
-                        classNames={{
-                          day_selected: "bg-subtle text-foreground hover:bg-subtle-foreground hover:text-foreground focus:bg-subtle focus:text-foreground border-2 border-border"
-                        }}
                       />
                     </div>
                   )}

@@ -36,6 +36,7 @@ export const API_PATHS = {
   LEAVES_TYPES: "/v1/leaves/types",
   PROJECTS: "/v1/projects",
   DEPARTMENTS: "/v1/departments",
+  TIMESHEET_CHECK_DATE: "/v1/timesheets/check-date",
 } as const;
 
 export type ApiPathKey = keyof typeof API_PATHS;
@@ -83,6 +84,12 @@ export const VALIDATION = {
   MIN_TASK_DESCRIPTION_LENGTH: 10,
   /** Minimum characters for leave reason */
   MIN_LEAVE_REASON_LENGTH: 10,
+  /** Hours for a full working day */
+  FULL_DAY_HOURS: 8,
+  /** Hours for a half working day */
+  HALF_DAY_HOURS: 4,
+  /** Maximum timesheet hours allowed when half-day leave exists */
+  MAX_HOURS_WITH_HALF_DAY_LEAVE: 6,
 } as const;
 
 // =============================================================================
@@ -110,3 +117,7 @@ export const RESPONSIVE_WIDTHS = {
 // =============================================================================
 
 export const DEFAULT_USER_EMAIL = "john.doe@company.com";
+
+// Shared indicator styles for calendar day dots
+export const DAY_INDICATOR_BASE =
+  "relative after:absolute after:bottom-1 after:left-1/2 after:-translate-x-1/2 after:w-1 after:h-1 after:rounded-full";
