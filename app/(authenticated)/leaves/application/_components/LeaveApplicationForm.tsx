@@ -36,14 +36,19 @@ import {
 } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { format } from "date-fns";
-import { Calendar as CalendarIcon } from "lucide-react";
-import { useState, useEffect } from "react";
+import { Calendar as CalendarIcon, AlertCircle } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import apiClient from "@/lib/api-client";
 import { toast } from "sonner";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { API_PATHS, DATE_FORMATS, VALIDATION } from "@/lib/constants";
 import { mockDataService } from "@/lib/mock-data";
-import { checkLeaveConflictWithTimesheet } from "@/lib/leave-timesheet-validator";
+import {
+  checkLeaveConflictWithTimesheet,
+  invalidateMonthlyTimesheetCache,
+  isNonWorkingDay,
+} from "@/lib/leave-timesheet-validator";
 
 // TypeScript interfaces for API response
 interface LeaveTypeResponse {
@@ -101,9 +106,16 @@ export function LeaveApplicationForm({ userEmail }: LeaveApplicationFormProps) {
   const durationTypes = mockDataService.getDurationTypes();
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isValidating, setIsValidating] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   const [leaveTypes, setLeaveTypes] = useState<LeaveTypeResponse[]>([]);
   const [selectedDurationType, setSelectedDurationType] = useState<string>("");
+
+  // Matcher function to disable non-working days in calendar
+  const disableNonWorkingDays = (date: Date) => {
+    return isNonWorkingDay(date);
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -140,6 +152,55 @@ export function LeaveApplicationForm({ userEmail }: LeaveApplicationFormProps) {
       halfDaySegment: "",
     },
   });
+
+  // Real-time validation when dates or duration type change
+  const validateLeaveConflict = useCallback(
+    async (startDate?: Date, endDate?: Date, durationType?: string) => {
+      // Only validate if we have all required fields
+      if (!startDate || !endDate || !durationType) {
+        setValidationError(null);
+        return;
+      }
+
+      setIsValidating(true);
+      setValidationError(null);
+
+      try {
+        const conflictResult = await checkLeaveConflictWithTimesheet(
+          startDate,
+          endDate,
+          durationType as "full_day" | "half_day"
+        );
+
+        if (conflictResult.hasConflict) {
+          setValidationError(conflictResult.message || "Conflict detected");
+        } else {
+          setValidationError(null);
+        }
+      } catch (error) {
+        console.error("Validation error:", error);
+        // Don't block user on validation errors
+        setValidationError(null);
+      } finally {
+        setIsValidating(false);
+      }
+    },
+    []
+  );
+
+  // Watch form fields for real-time validation
+  const watchStartDate = form.watch("startDate");
+  const watchEndDate = form.watch("endDate");
+  const watchDurationType = form.watch("durationType");
+
+  useEffect(() => {
+    // Debounce validation to avoid excessive API calls
+    const timeoutId = setTimeout(() => {
+      validateLeaveConflict(watchStartDate, watchEndDate, watchDurationType);
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
+  }, [watchStartDate, watchEndDate, watchDurationType, validateLeaveConflict]);
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsSubmitting(true);
@@ -216,7 +277,19 @@ export function LeaveApplicationForm({ userEmail }: LeaveApplicationFormProps) {
           description: "Your leave request has been sent for approval.",
         });
 
+        // Invalidate cache for affected months
+        const startMonth = values.startDate.getMonth() + 1;
+        const startYear = values.startDate.getFullYear();
+        const endMonth = values.endDate.getMonth() + 1;
+        const endYear = values.endDate.getFullYear();
+
+        invalidateMonthlyTimesheetCache(startYear, startMonth);
+        if (startYear !== endYear || startMonth !== endMonth) {
+          invalidateMonthlyTimesheetCache(endYear, endMonth);
+        }
+
         form.reset();
+        setValidationError(null);
       }
     } catch (error) {
       console.error("Error submitting leave application:", error);
@@ -363,6 +436,7 @@ export function LeaveApplicationForm({ userEmail }: LeaveApplicationFormProps) {
                                 form.setValue("endDate", date);
                               }
                             }}
+                            disabled={disableNonWorkingDays}
                             initialFocus
                           />
                         </PopoverContent>
@@ -406,6 +480,7 @@ export function LeaveApplicationForm({ userEmail }: LeaveApplicationFormProps) {
                             mode="single"
                             selected={field.value}
                             onSelect={field.onChange}
+                            disabled={disableNonWorkingDays}
                             initialFocus
                           />
                         </PopoverContent>
@@ -488,7 +563,7 @@ export function LeaveApplicationForm({ userEmail }: LeaveApplicationFormProps) {
                         </SelectContent>
                       </Select>
                       <FormDescription>
-                        Select which half of the day you'll be taking leave
+                        Select which half of the day you&apos;ll be taking leave
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -497,9 +572,26 @@ export function LeaveApplicationForm({ userEmail }: LeaveApplicationFormProps) {
               )}
             </div>
 
+            {/* Validation Error Alert */}
+            {validationError && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Validation Error</AlertTitle>
+                <AlertDescription>{validationError}</AlertDescription>
+              </Alert>
+            )}
+
             <div className="flex justify-end pt-4">
-              <Button type="submit" size="lg" disabled={isSubmitting}>
-                {isSubmitting ? "Submitting..." : "Submit Leave Application"}
+              <Button
+                type="submit"
+                size="lg"
+                disabled={isSubmitting || isValidating || !!validationError}
+              >
+                {isSubmitting
+                  ? "Submitting..."
+                  : isValidating
+                  ? "Validating..."
+                  : "Submit Leave Application"}
               </Button>
             </div>
           </form>

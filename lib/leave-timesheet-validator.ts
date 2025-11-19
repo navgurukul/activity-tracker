@@ -1,6 +1,7 @@
 /**
  * Leave and Timesheet Conflict Validator
  * Handles validation logic for conflicts between leave applications and timesheet entries
+ * Uses monthly timesheet endpoint to derive per-date totals with caching
  */
 
 import { format } from "date-fns";
@@ -21,32 +22,154 @@ interface LeaveRequest {
   };
 }
 
-interface TimesheetEntry {
-  id: number;
-  projectId: number;
-  taskDescription: string;
-  hours: number;
-}
-
-interface TimesheetDateCheck {
-  workDate: string;
-  totalHours: number;
-  entries: TimesheetEntry[];
-}
-
 export interface ConflictCheckResult {
   hasConflict: boolean;
   conflictType?:
     | "full_day_leave"
     | "half_day_leave_hours_exceeded"
-    | "timesheet_exists";
+    | "timesheet_exists"
+    | "non_working_day"
+    | "holiday";
   message?: string;
   existingHours?: number;
   maxAllowedHours?: number;
 }
 
+// Monthly timesheet data cache to minimize redundant API calls
+interface MonthlyTimesheetData {
+  days: Array<{
+    date: string;
+    isWorkingDay?: boolean;
+    isWeekend?: boolean;
+    isHoliday?: boolean;
+    timesheet: { totalHours: number } | null;
+  }>;
+}
+
+const monthlyTimesheetCache = new Map<string, MonthlyTimesheetData>();
+
+/**
+ * Fetch monthly timesheet data with caching
+ * @param year - Year to fetch
+ * @param month - Month to fetch (1-12)
+ * @returns Monthly timesheet data
+ */
+async function getMonthlyTimesheetData(
+  year: number,
+  month: number
+): Promise<MonthlyTimesheetData> {
+  const cacheKey = `${year}-${month}`;
+
+  // Return cached data if available
+  if (monthlyTimesheetCache.has(cacheKey)) {
+    return monthlyTimesheetCache.get(cacheKey)!;
+  }
+
+  try {
+    const response = await apiClient.get(API_PATHS.MONTHLY_TIMESHEET, {
+      params: { year, month },
+    });
+
+    // Handle both direct and wrapped response formats
+    const data: MonthlyTimesheetData = response.data?.days
+      ? response.data
+      : response.data?.data || { days: [] };
+
+    // Cache the result
+    monthlyTimesheetCache.set(cacheKey, data);
+
+    return data;
+  } catch (error) {
+    console.error("Error fetching monthly timesheet:", error);
+    // Return empty data on error
+    return { days: [] };
+  }
+}
+
+/**
+ * Check if a date is a non-working day (Sunday or 2nd/4th Saturday)
+ * @param date - Date to check
+ * @returns true if it's a non-working day
+ */
+export function isNonWorkingDay(date: Date): boolean {
+  const day = date.getDay();
+
+  // Sunday
+  if (day === 0) return true;
+
+  // Check for 2nd or 4th Saturday
+  if (day === 6) {
+    const dateNum = date.getDate();
+    const weekOfMonth = Math.ceil(dateNum / 7);
+    // 2nd Saturday (week 2) or 4th Saturday (week 4)
+    if (weekOfMonth === 2 || weekOfMonth === 4) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Check if a date is a holiday using monthly timesheet data
+ * @param date - Date to check
+ * @returns true if it's a holiday
+ */
+export async function isHoliday(date: Date): Promise<boolean> {
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  const dateKey = format(date, DATE_FORMATS.API);
+
+  const monthlyData = await getMonthlyTimesheetData(year, month);
+  const dayData = monthlyData.days.find((d) => d.date === dateKey);
+
+  return dayData?.isHoliday === true;
+}
+
+/**
+ * Get total timesheet hours for a specific date
+ * @param date - Date to check
+ * @returns Total hours logged for that date
+ */
+async function getTimesheetTotalHoursForDate(date: Date): Promise<number> {
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1; // getMonth is 0-indexed
+  const dateKey = format(date, DATE_FORMATS.API);
+
+  const monthlyData = await getMonthlyTimesheetData(year, month);
+
+  const dayData = monthlyData.days.find((d) => d.date === dateKey);
+  const totalHours = dayData?.timesheet?.totalHours ?? 0;
+
+  return typeof totalHours === "number" && Number.isFinite(totalHours)
+    ? totalHours
+    : 0;
+}
+
+/**
+ * Invalidate cache for a specific month
+ * Call this after successful timesheet or leave submissions
+ * @param year - Year to invalidate
+ * @param month - Month to invalidate (1-12)
+ */
+export function invalidateMonthlyTimesheetCache(
+  year: number,
+  month: number
+): void {
+  const cacheKey = `${year}-${month}`;
+  monthlyTimesheetCache.delete(cacheKey);
+}
+
+/**
+ * Clear all cached monthly timesheet data
+ */
+export function clearTimesheetCache(): void {
+  monthlyTimesheetCache.clear();
+}
+
 /**
  * Check if a leave application conflicts with existing timesheet entries
+ * Uses monthly timesheet endpoint with caching to minimize API calls
  * @param startDate - Start date of the leave
  * @param endDate - End date of the leave
  * @param durationType - Type of leave (full_day or half_day)
@@ -61,50 +184,73 @@ export async function checkLeaveConflictWithTimesheet(
     const startDateStr = format(startDate, DATE_FORMATS.API);
     const endDateStr = format(endDate, DATE_FORMATS.API);
 
+    // Check for non-working days and holidays in the date range
+    const currentDate = new Date(startDate);
+    const end = new Date(endDate);
+
+    while (currentDate <= end) {
+      // Check if it's a non-working day (Sunday or 2nd/4th Saturday)
+      if (isNonWorkingDay(currentDate)) {
+        return {
+          hasConflict: true,
+          conflictType: "non_working_day",
+          message: `Cannot apply leave for ${format(
+            currentDate,
+            DATE_FORMATS.DISPLAY
+          )}. This is a non-working day (${
+            currentDate.getDay() === 0 ? "Sunday" : "2nd/4th Saturday"
+          }). Please select only working days for your leave application.`,
+        };
+      }
+
+      // Check if it's a holiday
+      const isHol = await isHoliday(currentDate);
+      if (isHol) {
+        return {
+          hasConflict: true,
+          conflictType: "holiday",
+          message: `Cannot apply leave for ${format(
+            currentDate,
+            DATE_FORMATS.DISPLAY
+          )}. This date is marked as a holiday. Please exclude holidays from your leave application.`,
+        };
+      }
+
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    // Reset for timesheet conflict checks
+    currentDate.setTime(startDate.getTime());
+
     // For single-day leaves, check that specific date
     if (startDateStr === endDateStr) {
-      const response = await apiClient.get<TimesheetDateCheck>(
-        API_PATHS.TIMESHEET_CHECK_DATE,
-        {
-          params: { workDate: startDateStr },
-        }
-      );
-
-      const timesheetData = response.data;
+      const totalHours = await getTimesheetTotalHoursForDate(startDate);
 
       // If timesheet exists
-      if (timesheetData && timesheetData.totalHours > 0) {
+      if (totalHours > 0) {
         if (durationType === "full_day") {
           return {
             hasConflict: true,
             conflictType: "timesheet_exists",
-            message: `Cannot apply full-day leave. You have already logged ${
-              timesheetData.totalHours
-            } hours of timesheet entries for ${format(
+            message: `Cannot apply full-day leave. You have already logged ${totalHours} hours of timesheet entries for ${format(
               startDate,
               DATE_FORMATS.DISPLAY
             )}. Please remove the timesheet entries before applying for leave.`,
-            existingHours: timesheetData.totalHours,
+            existingHours: totalHours,
           };
         } else if (durationType === "half_day") {
           // For half-day leave, timesheet should not exceed remaining hours
-          // Half day = 4 hours, so max timesheet should be 6 hours (allowing some flexibility)
-          // But if they already logged full day or more, it's a conflict
-          if (
-            timesheetData.totalHours > VALIDATION.MAX_HOURS_WITH_HALF_DAY_LEAVE
-          ) {
+          if (totalHours > VALIDATION.MAX_HOURS_WITH_HALF_DAY_LEAVE) {
             return {
               hasConflict: true,
               conflictType: "half_day_leave_hours_exceeded",
-              message: `Cannot apply half-day leave. You have already logged ${
-                timesheetData.totalHours
-              } hours for ${format(
+              message: `Cannot apply half-day leave. You have already logged ${totalHours} hours for ${format(
                 startDate,
                 DATE_FORMATS.DISPLAY
               )}, which exceeds the maximum of ${
                 VALIDATION.MAX_HOURS_WITH_HALF_DAY_LEAVE
               } hours allowed with a half-day leave. Please adjust your timesheet entries.`,
-              existingHours: timesheetData.totalHours,
+              existingHours: totalHours,
               maxAllowedHours: VALIDATION.MAX_HOURS_WITH_HALF_DAY_LEAVE,
             };
           }
@@ -112,31 +258,22 @@ export async function checkLeaveConflictWithTimesheet(
       }
     } else {
       // For multi-day leaves, check each day in the range
+      // Monthly data is cached, so this is efficient even for ranges
       const currentDate = new Date(startDate);
       const end = new Date(endDate);
 
       while (currentDate <= end) {
-        const dateStr = format(currentDate, DATE_FORMATS.API);
-        const response = await apiClient.get<TimesheetDateCheck>(
-          API_PATHS.TIMESHEET_CHECK_DATE,
-          {
-            params: { workDate: dateStr },
-          }
-        );
+        const totalHours = await getTimesheetTotalHoursForDate(currentDate);
 
-        const timesheetData = response.data;
-
-        if (timesheetData && timesheetData.totalHours > 0) {
+        if (totalHours > 0) {
           return {
             hasConflict: true,
             conflictType: "timesheet_exists",
             message: `Cannot apply leave. You have timesheet entries for ${format(
               currentDate,
               DATE_FORMATS.DISPLAY
-            )} (${
-              timesheetData.totalHours
-            } hours). Please remove all timesheet entries for the selected date range before applying for leave.`,
-            existingHours: timesheetData.totalHours,
+            )} (${totalHours} hours). Please remove all timesheet entries for the selected date range before applying for leave.`,
+            existingHours: totalHours,
           };
         }
 
@@ -147,19 +284,8 @@ export async function checkLeaveConflictWithTimesheet(
     return { hasConflict: false };
   } catch (error: unknown) {
     console.error("Error checking leave-timesheet conflict:", error);
-    // If the endpoint returns 404 or no data, assume no timesheet exists (no conflict)
-    if (
-      error &&
-      typeof error === "object" &&
-      "response" in error &&
-      error.response &&
-      typeof error.response === "object" &&
-      "status" in error.response &&
-      error.response.status === 404
-    ) {
-      return { hasConflict: false };
-    }
-    // For other errors, allow the request but log the error
+    // For errors, allow the request but log the error
+    // The backend will perform final validation
     return { hasConflict: false };
   }
 }

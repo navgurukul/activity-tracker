@@ -36,7 +36,6 @@ export const API_PATHS = {
   LEAVES_TYPES: "/v1/leaves/types",
   PROJECTS: "/v1/projects",
   DEPARTMENTS: "/v1/departments",
-  TIMESHEET_CHECK_DATE: "/v1/timesheets/check-date",
 } as const;
 
 export type ApiPathKey = keyof typeof API_PATHS;

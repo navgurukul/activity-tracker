@@ -54,7 +54,10 @@ import apiClient from "@/lib/api-client";
 import { API_PATHS, DATE_FORMATS, VALIDATION } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
-import { checkTimesheetConflictWithLeave } from "@/lib/leave-timesheet-validator";
+import {
+  checkTimesheetConflictWithLeave,
+  invalidateMonthlyTimesheetCache,
+} from "@/lib/leave-timesheet-validator";
 
 export default function TrackerPage() {
   // Get authenticated user data
@@ -245,6 +248,11 @@ export default function TrackerPage() {
         toast.success("Activity tracker submitted successfully!", {
           description: "Your activities have been recorded.",
         });
+
+        // Invalidate cache for the submitted month
+        const activityMonth = values.activityDate.getMonth() + 1;
+        const activityYear = values.activityDate.getFullYear();
+        invalidateMonthlyTimesheetCache(activityYear, activityMonth);
 
         // Reset form to default values
         form.reset();
