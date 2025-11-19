@@ -54,6 +54,10 @@ import apiClient from "@/lib/api-client";
 import { API_PATHS, DATE_FORMATS, VALIDATION } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
+import {
+  checkTimesheetConflictWithLeave,
+  invalidateMonthlyTimesheetCache,
+} from "@/lib/leave-timesheet-validator";
 
 export default function TrackerPage() {
   // Get authenticated user data
@@ -95,6 +99,23 @@ export default function TrackerPage() {
     fetchDepartments();
   }, [isLoading, user?.orgId]);
 
+  // Disable dates outside the allowed 3-day window (last 3 days including today)
+  const disableInvalidDates = (date: Date) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const threeDaysAgo = new Date(today);
+    threeDaysAgo.setDate(today.getDate() - 3);
+
+    // Disable future dates
+    if (date > today) return true;
+
+    // Disable dates older than 3 days
+    if (date < threeDaysAgo) return true;
+
+    return false;
+  };
+
   const fetchProjectsForDepartment = async (deptCode: string) => {
     if (isLoading) return;
     const orgId = user?.orgId;
@@ -120,7 +141,20 @@ export default function TrackerPage() {
   };
 
   const formSchema = z.object({
-    activityDate: z.date(),
+    activityDate: z.date().refine(
+      (date) => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const threeDaysAgo = new Date(today);
+        threeDaysAgo.setDate(today.getDate() - 3);
+
+        return date >= threeDaysAgo && date <= today;
+      },
+      {
+        message:
+          "Activity can only be added for the last 3 days (including today).",
+      }
+    ),
     projectEntries: z
       .array(
         z.object({
@@ -187,6 +221,26 @@ export default function TrackerPage() {
     setIsSubmitting(true);
 
     try {
+      // Calculate total hours
+      const totalHours = values.projectEntries.reduce(
+        (sum, entry) => sum + entry.hoursSpent,
+        0
+      );
+
+      // Check for conflicts with existing leaves
+      const conflictResult = await checkTimesheetConflictWithLeave(
+        values.activityDate,
+        totalHours
+      );
+
+      if (conflictResult.hasConflict) {
+        toast.error("Conflict with leave application", {
+          description: conflictResult.message,
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
       // Transform form data to match API schema
       const payload = {
         workDate: format(values.activityDate, DATE_FORMATS.API),
@@ -224,6 +278,11 @@ export default function TrackerPage() {
         toast.success("Activity tracker submitted successfully!", {
           description: "Your activities have been recorded.",
         });
+
+        // Invalidate cache for the submitted month
+        const activityMonth = values.activityDate.getMonth() + 1;
+        const activityYear = values.activityDate.getFullYear();
+        invalidateMonthlyTimesheetCache(activityYear, activityMonth);
 
         // Reset form to default values
         form.reset();
@@ -310,13 +369,14 @@ export default function TrackerPage() {
                                 mode="single"
                                 selected={field.value}
                                 onSelect={field.onChange}
+                                disabled={disableInvalidDates}
                                 initialFocus
                               />
                             </PopoverContent>
                           </Popover>
                           <FormDescription>
-                            Select the date for which you are tracking
-                            activities.
+                            Select a date within the last 3 days (including
+                            today) for tracking activities.
                           </FormDescription>
                           <FormMessage />
                         </FormItem>
