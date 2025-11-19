@@ -32,6 +32,7 @@ export const API_PATHS = {
   LEAVES_HISTORY: "/v1/leaves/history",
   LEAVES_BALANCES: "/v1/leaves/balances",
   EMPLOYEES: "/v1/users",
+  MANAGERS: "/v1/users/managers",
   COMPOFF_REQUEST: "/v1/leaves/comp-offs",
   LEAVES_TYPES: "/v1/leaves/types",
   PROJECTS: "/v1/projects",
@@ -109,6 +110,13 @@ export const RESPONSIVE_WIDTHS = {
   MAX_CONTAINER_WIDTH: "1600px",
   /** Minimum width for cards */
   MIN_CARD_WIDTH: "180px",
+} as const;
+
+/** Fixed set of employee roles in the system with user-friendly display names */
+export const EMPLOYEE_ROLES = {
+  Employee: "employee",
+  Administrator: "admin",
+  "Super Administrator": "super_admin",
 } as const;
 
 // =============================================================================
