@@ -15,6 +15,7 @@ import {
   Shield,
   Target,
   TreePalm,
+  Users,
 } from "lucide-react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -80,6 +81,11 @@ const navLinks = [
     title: "Project Management",
     url: "/projects",
     icon: FolderKanban,
+  },
+  {
+    title: "Employee Database",
+    url: "/employees",
+    icon: Users,
   },
 ];
 
