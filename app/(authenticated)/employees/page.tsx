@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
+import { RefreshCw } from "lucide-react";
 
 import {
   Card,
@@ -10,6 +11,7 @@ import {
   CardDescription,
   CardContent,
 } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import {
   Pagination,
   PaginationContent,
@@ -29,7 +31,7 @@ import {
   Employee,
 } from "./_components";
 import apiClient from "@/lib/api-client";
-import { API_PATHS, EMPLOYEE_ROLES } from "@/lib/constants";
+import { API_PATHS } from "@/lib/constants";
 import { useAuth } from "@/hooks/use-auth";
 
 interface EmployeesResponse {
@@ -47,42 +49,15 @@ export default function EmployeeDatabasePage() {
   const [limit] = useState(25);
   const [total, setTotal] = useState(0);
   const [managerFilter, setManagerFilter] = useState("all");
-  const [roleFilter, setRoleFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [searchInput, setSearchInput] = useState("");
-  const [managers, setManagers] = useState<Array<{ id: number; name: string }>>(
-    []
-  );
-
-  // Fetch managers from API
-  useEffect(() => {
-    if (authLoading) return;
-    fetchManagers();
-  }, [user?.orgId, authLoading]);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // Fetch employees from API
   useEffect(() => {
     if (authLoading) return;
     fetchEmployees();
-  }, [page, managerFilter, roleFilter, searchTerm, user?.orgId, authLoading]);
-
-  const fetchManagers = async (): Promise<void> => {
-    if (authLoading || !user?.orgId) return;
-
-    try {
-      const response = await apiClient.get<{
-        data: Array<{ id: number; name: string }>;
-      }>(API_PATHS.MANAGERS, { params: { orgId: user.orgId } });
-
-      if (response.data && Array.isArray(response.data.data)) {
-        setManagers(response.data.data);
-      }
-    } catch (error: unknown) {
-      console.error("Error fetching managers:", error);
-      // Don't show error toast for managers - it's not critical
-      setManagers([]);
-    }
-  };
+  }, [page, managerFilter, searchTerm, user?.orgId, authLoading]);
 
   const fetchEmployees = async (): Promise<void> => {
     if (authLoading) return;
@@ -104,10 +79,6 @@ export default function EmployeeDatabasePage() {
 
       if (managerFilter !== "all") {
         params.managerId = parseInt(managerFilter);
-      }
-
-      if (roleFilter !== "all") {
-        params.role = roleFilter;
       }
 
       if (searchTerm) {
@@ -173,13 +144,38 @@ export default function EmployeeDatabasePage() {
     setPage(1); // Reset to first page on filter change
   };
 
-  const handleRoleFilterChange = (value: string): void => {
-    setRoleFilter(value);
-    setPage(1); // Reset to first page on filter change
-  };
-
   const handlePageChange = (newPage: number): void => {
     setPage(newPage);
+  };
+
+  const handleSyncGoogleSheet = async (): Promise<void> => {
+    setIsSyncing(true);
+    try {
+      const response = await apiClient.post(API_PATHS.SYNC_GOOGLE_SHEET);
+
+      toast.success("Google Sheet data synced successfully!", {
+        description: "Employee data has been synchronized with the database.",
+      });
+
+      // Refresh the employee list after successful sync
+      await fetchEmployees();
+    } catch (error: unknown) {
+      console.error("Error syncing Google Sheet data:", error);
+      const errorMessage =
+        (
+          error as {
+            response?: { data?: { message?: string } };
+            message?: string;
+          }
+        ).response?.data?.message ||
+        (error as { message?: string }).message ||
+        "Failed to sync Google Sheet data. Please try again.";
+      toast.error("Sync failed", {
+        description: errorMessage,
+      });
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   // Calculate pagination
@@ -248,6 +244,19 @@ export default function EmployeeDatabasePage() {
                     organization
                   </CardDescription>
                 </div>
+                <Button
+                  variant="noShadow"
+                  onClick={handleSyncGoogleSheet}
+                  disabled={isSyncing || loading}
+                  className="shrink-0"
+                >
+                  <RefreshCw
+                    className={`mr-2 h-4 w-4 ${
+                      isSyncing ? "animate-spin" : ""
+                    }`}
+                  />
+                  {isSyncing ? "Syncing..." : "Sync Google Sheet Data"}
+                </Button>
               </div>
             </CardHeader>
             <CardContent className="pt-6">
@@ -261,10 +270,6 @@ export default function EmployeeDatabasePage() {
                   onSearchKeyPress={handleSearchKeyPress}
                   managerFilter={managerFilter}
                   onManagerFilterChange={handleManagerFilterChange}
-                  roleFilter={roleFilter}
-                  onRoleFilterChange={handleRoleFilterChange}
-                  managers={managers}
-                  roles={EMPLOYEE_ROLES}
                 />
 
                 {/* Employees Table */}
