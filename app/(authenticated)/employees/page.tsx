@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { RefreshCw } from "lucide-react";
 
+import { RoleGate } from "@/app/_components/RoleGate";
+import { ROLES } from "@/lib/rbac-constants";
 import {
   Card,
   CardHeader,
@@ -244,19 +246,21 @@ export default function EmployeeDatabasePage() {
                     organization
                   </CardDescription>
                 </div>
-                <Button
-                  variant="noShadow"
-                  onClick={handleSyncGoogleSheet}
-                  disabled={isSyncing || loading}
-                  className="shrink-0"
-                >
-                  <RefreshCw
-                    className={`mr-2 h-4 w-4 ${
-                      isSyncing ? "animate-spin" : ""
-                    }`}
-                  />
-                  {isSyncing ? "Syncing..." : "Sync Google Sheet Data"}
-                </Button>
+                <RoleGate requiredRoles={[ROLES.ADMIN, ROLES.SUPER_ADMIN]} hideOnUnauthorized>
+                  <Button
+                    variant="noShadow"
+                    onClick={handleSyncGoogleSheet}
+                    disabled={isSyncing || loading}
+                    className="shrink-0"
+                  >
+                    <RefreshCw
+                      className={`mr-2 h-4 w-4 ${
+                        isSyncing ? "animate-spin" : ""
+                      }`}
+                    />
+                    {isSyncing ? "Syncing..." : "Sync Google Sheet Data"}
+                  </Button>
+                </RoleGate>
               </div>
             </CardHeader>
             <CardContent className="pt-6">

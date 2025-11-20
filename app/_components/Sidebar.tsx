@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment } from "react";
+import { Fragment, useMemo } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -49,9 +49,24 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useAuth } from "@/hooks/use-auth";
+import { rbacService } from "@/lib/rbac-service";
+import { Role, Permission, ROLES } from "@/lib/rbac-constants";
+import { debugUserAuthorization } from "@/lib/rbac-test-utils";
+
+// Navigation item type
+interface NavItem {
+  title: string;
+  url: string;
+  icon: React.ComponentType<{ className?: string }>;
+  requiredRoles?: Role[];
+  requiredPermissions?: Permission[];
+  requireAllRoles?: boolean;
+  requireAllPermissions?: boolean;
+  items?: Omit<NavItem, "icon">[];
+}
 
 // Navigation data
-const navLinks = [
+const navLinks: NavItem[] = [
   {
     title: "Activity Tracker",
     url: "/tracker",
@@ -76,6 +91,7 @@ const navLinks = [
     title: "Comp-Off Request",
     url: "/compoff",
     icon: CalendarSync,
+    requiredRoles: [ROLES.ADMIN, ROLES.SUPER_ADMIN, ROLES.MANAGER],
   },
   {
     title: "Project Management",
@@ -86,20 +102,22 @@ const navLinks = [
     title: "Employee Database",
     url: "/employees",
     icon: Users,
+    // No role requirement - accessible to everyone
   },
 ];
 
-const adminLinks = [
-  
+const adminLinks: NavItem[] = [
   {
     title: "Admin Dashboard",
     url: "/admin/dashboard",
     icon: LayoutDashboard,
+    requiredRoles: [ROLES.ADMIN, ROLES.SUPER_ADMIN],
   },
   {
     title: "Access Control",
     url: "/admin/access-control",
     icon: Shield,
+    requiredRoles: [ROLES.SUPER_ADMIN],
   },
 ];
 
@@ -110,6 +128,29 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
   // Get user initials for avatar fallback
   const userInitials = getUserInitials(user?.name);
+
+  // Filter navigation items based on user authorization
+  const filteredNavLinks = useMemo(() => {
+    if (process.env.NODE_ENV === "development" && user) {
+      debugUserAuthorization(user);
+    }
+    return navLinks.filter((item) => isItemAuthorized(item, user));
+  }, [user]);
+
+  const filteredAdminLinks = useMemo(() => {
+    const filtered = adminLinks.filter((item) => isItemAuthorized(item, user));
+    if (process.env.NODE_ENV === "development") {
+      console.log("🔐 RBAC Debug - Admin links check:");
+      adminLinks.forEach((link) => {
+        const isAuth = isItemAuthorized(link, user);
+        console.log(
+          `  - ${link.title}: ${isAuth ? "✅ Authorized" : "❌ Not authorized"}`
+        );
+        console.log(`    Required roles:`, link.requiredRoles);
+      });
+    }
+    return filtered;
+  }, [user]);
 
   return (
     <Sidebar collapsible="icon" {...props}>
@@ -134,7 +175,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       <SidebarContent>
         <SidebarGroup>
           <SidebarMenu>
-            {navLinks.map((item) =>
+            {filteredNavLinks.map((item) =>
               item.items && item.items.length > 0 ? (
                 state === "collapsed" ? (
                   // In collapsed mode, use dropdown menu for items with sub-items
@@ -224,26 +265,28 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             )}
           </SidebarMenu>
         </SidebarGroup>
-        <SidebarGroup>
-          <SidebarGroupLabel>Admin</SidebarGroupLabel>
-          <SidebarMenu>
-            {adminLinks.map((item) => (
-              <SidebarMenuItem key={item.title} className="mt-2">
-                <SidebarMenuButton
-                  asChild
-                  isActive={pathname === item.url}
-                  className="data-[state=open]:bg-main data-[state=open]:outline-border data-[state=open]:text-main-foreground"
-                  tooltip={item.title}
-                >
-                  <a href={item.url}>
-                    {item.icon && <item.icon />}
-                    <span>{item.title}</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            ))}
-          </SidebarMenu>
-        </SidebarGroup>
+        {filteredAdminLinks.length > 0 && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Admin</SidebarGroupLabel>
+            <SidebarMenu>
+              {filteredAdminLinks.map((item) => (
+                <SidebarMenuItem key={item.title} className="mt-2">
+                  <SidebarMenuButton
+                    asChild
+                    isActive={pathname === item.url}
+                    className="data-[state=open]:bg-main data-[state=open]:outline-border data-[state=open]:text-main-foreground"
+                    tooltip={item.title}
+                  >
+                    <a href={item.url}>
+                      {item.icon && <item.icon />}
+                      <span>{item.title}</span>
+                    </a>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroup>
+        )}
       </SidebarContent>
       <SidebarFooter>
         <SidebarMenu>
@@ -322,13 +365,25 @@ function getUserInitials(name?: string): string {
   return name[0].toUpperCase();
 }
 
-function isParentActive(
-  item: (typeof navLinks)[0],
-  pathname: string
-): boolean {
+function isParentActive(item: NavItem, pathname: string): boolean {
   if (pathname === item.url) return true;
   if (item.items) {
     return item.items.some((subItem) => pathname === subItem.url);
   }
   return false;
+}
+
+/**
+ * Check if navigation item is authorized for user
+ */
+function isItemAuthorized(
+  item: NavItem,
+  user: ReturnType<typeof useAuth>["user"]
+): boolean {
+  return rbacService.isAuthorized(user, {
+    roles: item.requiredRoles,
+    permissions: item.requiredPermissions,
+    requireAllRoles: item.requireAllRoles,
+    requireAllPermissions: item.requireAllPermissions,
+  });
 }
