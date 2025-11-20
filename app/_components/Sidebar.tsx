@@ -91,6 +91,7 @@ const navLinks: NavItem[] = [
     title: "Comp-Off Request",
     url: "/compoff",
     icon: CalendarSync,
+    requiredRoles: [ROLES.ADMIN, ROLES.SUPER_ADMIN, ROLES.MANAGER],
   },
   {
     title: "Project Management",
@@ -130,7 +131,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
   // Filter navigation items based on user authorization
   const filteredNavLinks = useMemo(() => {
-    if (process.env.NODE_ENV === 'development' && user) {
+    if (process.env.NODE_ENV === "development" && user) {
       debugUserAuthorization(user);
     }
     return navLinks.filter((item) => isItemAuthorized(item, user));
@@ -138,11 +139,13 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
   const filteredAdminLinks = useMemo(() => {
     const filtered = adminLinks.filter((item) => isItemAuthorized(item, user));
-    if (process.env.NODE_ENV === 'development') {
-      console.log('🔐 RBAC Debug - Admin links check:');
+    if (process.env.NODE_ENV === "development") {
+      console.log("🔐 RBAC Debug - Admin links check:");
       adminLinks.forEach((link) => {
         const isAuth = isItemAuthorized(link, user);
-        console.log(`  - ${link.title}: ${isAuth ? '✅ Authorized' : '❌ Not authorized'}`);
+        console.log(
+          `  - ${link.title}: ${isAuth ? "✅ Authorized" : "❌ Not authorized"}`
+        );
         console.log(`    Required roles:`, link.requiredRoles);
       });
     }
@@ -362,10 +365,7 @@ function getUserInitials(name?: string): string {
   return name[0].toUpperCase();
 }
 
-function isParentActive(
-  item: NavItem,
-  pathname: string
-): boolean {
+function isParentActive(item: NavItem, pathname: string): boolean {
   if (pathname === item.url) return true;
   if (item.items) {
     return item.items.some((subItem) => pathname === subItem.url);
