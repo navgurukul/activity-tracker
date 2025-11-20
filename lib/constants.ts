@@ -33,6 +33,7 @@ export const API_PATHS = {
   LEAVES_BALANCES: "/v1/leaves/balances",
   EMPLOYEES: "/v1/users",
   MANAGERS: "/v1/users/managers",
+  SYNC_GOOGLE_SHEET: "/v1/users/sync/google-sheet",
   COMPOFF_REQUEST: "/v1/leaves/comp-offs",
   LEAVES_TYPES: "/v1/leaves/types",
   PROJECTS: "/v1/projects",
