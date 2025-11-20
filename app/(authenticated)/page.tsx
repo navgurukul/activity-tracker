@@ -1,9 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import Link from "next/link";
 import { format, parseISO, getYear, getMonth } from "date-fns";
-import { Plus } from "lucide-react";
 import { toast } from "sonner";
 
 import { AppHeader } from "@/app/_components/AppHeader";
