@@ -54,7 +54,7 @@ interface MonthlyTimesheetResponse {
 }
 
 export default function DashboardPage() {
-  const { isLoading: authLoading } = useAuth();
+  const { isLoading: authLoading, user } = useAuth();
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
   const [monthlyData, setMonthlyData] =
@@ -217,7 +217,7 @@ export default function DashboardPage() {
         <div className="flex w-full justify-center p-4">
           <div className="w-full max-w-7xl space-y-6">
             {/* Statistics Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <Card>
                 <CardContent>
                   <div className="space-y-2">
@@ -259,6 +259,21 @@ export default function DashboardPage() {
                         (monthlyData?.totals.leaveHours || 0)}
                     </p>
                     <p className="text-xs text-muted-foreground">Combined</p>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent>
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-muted-foreground">
+                      Backfill Remaining
+                    </p>
+                    <p className="text-3xl font-bold">
+                      {user?.backfill?.remaining ?? 0}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      out of {user?.backfill?.limit ?? 0} available
+                    </p>
                   </div>
                 </CardContent>
               </Card>

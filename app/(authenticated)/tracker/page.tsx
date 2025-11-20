@@ -61,7 +61,7 @@ import {
 
 export default function TrackerPage() {
   // Get authenticated user data
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, refreshUser } = useAuth();
 
   // Get mock data from centralized service
 
@@ -100,15 +100,26 @@ export default function TrackerPage() {
   }, [isLoading, user?.orgId]);
 
   // Disable dates outside the allowed 3-day window (last 3 days including today)
+  // If backfill remaining is zero, only allow today
   const disableInvalidDates = (date: Date) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const threeDaysAgo = new Date(today);
-    threeDaysAgo.setDate(today.getDate() - 3);
+    const selectedDate = new Date(date);
+    selectedDate.setHours(0, 0, 0, 0);
 
     // Disable future dates
     if (date > today) return true;
+
+    // If backfill remaining is zero or undefined, only allow today
+    const backfillRemaining = user?.backfill?.remaining ?? 0;
+    if (backfillRemaining === 0) {
+      return selectedDate.getTime() !== today.getTime();
+    }
+
+    // Otherwise, maintain existing 3-day window logic
+    const threeDaysAgo = new Date(today);
+    threeDaysAgo.setDate(today.getDate() - 3);
 
     // Disable dates older than 3 days
     if (date < threeDaysAgo) return true;
@@ -141,20 +152,45 @@ export default function TrackerPage() {
   };
 
   const formSchema = z.object({
-    activityDate: z.date().refine(
-      (date) => {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const threeDaysAgo = new Date(today);
-        threeDaysAgo.setDate(today.getDate() - 3);
+    activityDate: z
+      .date()
+      .refine(
+        (date) => {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
 
-        return date >= threeDaysAgo && date <= today;
-      },
-      {
-        message:
-          "Activity can only be added for the last 3 days (including today).",
-      }
-    ),
+          // Check if date is in the future
+          if (date > today) return false;
+
+          return true;
+        },
+        {
+          message: "Future dates are not allowed.",
+        }
+      )
+      .refine(
+        (date) => {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const selectedDate = new Date(date);
+          selectedDate.setHours(0, 0, 0, 0);
+
+          // If backfill remaining is zero, only allow today
+          const backfillRemaining = user?.backfill?.remaining ?? 0;
+          if (backfillRemaining === 0) {
+            return selectedDate.getTime() === today.getTime();
+          }
+
+          // Otherwise, maintain existing 3-day window logic
+          const threeDaysAgo = new Date(today);
+          threeDaysAgo.setDate(today.getDate() - 3);
+          return date >= threeDaysAgo && date <= today;
+        },
+        {
+          message:
+            "Activity can only be added for the last 3 days (including today). You may have exhausted your backfill limit.",
+        }
+      ),
     projectEntries: z
       .array(
         z.object({
@@ -284,6 +320,9 @@ export default function TrackerPage() {
         const activityYear = values.activityDate.getFullYear();
         invalidateMonthlyTimesheetCache(activityYear, activityMonth);
 
+        // Refresh user data to update backfill count
+        refreshUser();
+
         // Reset form to default values
         form.reset();
       }
@@ -375,8 +414,9 @@ export default function TrackerPage() {
                             </PopoverContent>
                           </Popover>
                           <FormDescription>
-                            Select a date within the last 3 days (including
-                            today) for tracking activities.
+                            {(user?.backfill?.remaining ?? 0) > 0
+                              ? "Select a date within the last 3 days (including today) for tracking activities."
+                              : "Only today's date can be selected for tracking activities. Your backfill limit has been reached."}
                           </FormDescription>
                           <FormMessage />
                         </FormItem>
