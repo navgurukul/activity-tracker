@@ -49,9 +49,9 @@ const monthlyTimesheetCache = new Map<string, MonthlyTimesheetData>();
 
 /**
  * Fetch monthly timesheet data with caching
- * @param year - Year to fetch
- * @param month - Month to fetch (1-12)
- * @returns Monthly timesheet data
+ * param year - Year to fetch
+ * param month - Month to fetch (1-12)
+ * returns Monthly timesheet data
  */
 async function getMonthlyTimesheetData(
   year: number,
@@ -87,8 +87,8 @@ async function getMonthlyTimesheetData(
 
 /**
  * Check if a date is a non-working day (Sunday or 2nd/4th Saturday)
- * @param date - Date to check
- * @returns true if it's a non-working day
+ * param date - Date to check
+ * returns true if it's a non-working day
  */
 export function isNonWorkingDay(date: Date): boolean {
   const day = date.getDay();
@@ -111,8 +111,8 @@ export function isNonWorkingDay(date: Date): boolean {
 
 /**
  * Check if a date is a holiday using monthly timesheet data
- * @param date - Date to check
- * @returns true if it's a holiday
+ * param date - Date to check
+ * returns true if it's a holiday
  */
 export async function isHoliday(date: Date): Promise<boolean> {
   const year = date.getFullYear();
