@@ -59,9 +59,11 @@ const formatDuration = (leave: LeaveRequest) => {
 function ActionsCell({
   leave,
   onUpdate,
+  isBulkOperationInProgress,
 }: {
   leave: LeaveRequest;
   onUpdate?: () => void;
+  isBulkOperationInProgress?: boolean;
 }) {
   const [isApproving, setIsApproving] = useState(false);
   const [isRejecting, setIsRejecting] = useState(false);
@@ -109,22 +111,25 @@ function ActionsCell({
   };
 
   const isLoading = isApproving || isRejecting;
+  const isDisabled = isLoading || isBulkOperationInProgress;
 
   return (
     <div className="flex gap-2">
       <Button
         variant="default"
         onClick={handleApprove}
-        disabled={isLoading}
+        disabled={isDisabled}
         size="xs"
+        title={isBulkOperationInProgress ? "Bulk operation in progress" : ""}
       >
         {isApproving ? <Spinner /> : <Check />}
       </Button>
       <Button
         variant="neutral"
         onClick={handleReject}
-        disabled={isLoading}
+        disabled={isDisabled}
         size="xs"
+        title={isBulkOperationInProgress ? "Bulk operation in progress" : ""}
       >
         {isRejecting ? <Spinner /> : <Ban />}
       </Button>
@@ -218,9 +223,17 @@ export const columns: ColumnDef<LeaveRequest>[] = [
     enableHiding: false,
     cell: ({ row, table }) => {
       const leave = row.original;
-      const onUpdate = (table.options.meta as { onUpdate?: () => void })
-        ?.onUpdate;
-      return <ActionsCell leave={leave} onUpdate={onUpdate} />;
+      const meta = table.options.meta as {
+        onUpdate?: () => void;
+        isBulkOperationInProgress?: boolean;
+      };
+      return (
+        <ActionsCell
+          leave={leave}
+          onUpdate={meta?.onUpdate}
+          isBulkOperationInProgress={meta?.isBulkOperationInProgress}
+        />
+      );
     },
   },
 ];

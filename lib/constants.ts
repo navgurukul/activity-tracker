@@ -33,6 +33,8 @@ export const API_PATHS = {
   LEAVES_BALANCES: "/v1/leaves/balances",
   LEAVES_APPROVE: "/v1/leaves/requests",
   LEAVES_REJECT: "/v1/leaves/requests",
+  LEAVES_BULK_APPROVE: "/v1/leaves/requests/approve",
+  LEAVES_BULK_REJECT: "/v1/leaves/requests/reject",
   EMPLOYEES: "/v1/users",
   MANAGERS: "/v1/users/managers",
   SYNC_GOOGLE_SHEET: "/v1/users/sync/google-sheet",
