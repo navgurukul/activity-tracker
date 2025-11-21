@@ -100,9 +100,13 @@ const formSchema = z
 
 interface LeaveApplicationFormProps {
   userEmail: string;
+  fetchLeaves: () => Promise<void>;
 }
 
-export function LeaveApplicationForm({ userEmail }: LeaveApplicationFormProps) {
+export function LeaveApplicationForm({
+  userEmail,
+  fetchLeaves,
+}: LeaveApplicationFormProps) {
   // Get mock data from centralized service (duration types)
   const durationTypes = mockDataService.getDurationTypes();
 
@@ -115,14 +119,14 @@ export function LeaveApplicationForm({ userEmail }: LeaveApplicationFormProps) {
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
 
   // Matcher function to disable non-working days in calendar
-  const disableNonWorkingDays = (date: Date) => {
-    return isNonWorkingDay(date);
-  };
+  // const disableNonWorkingDays = (date: Date) => {
+  //   return isNonWorkingDay(date);
+  // };
 
   // Combined disabled matcher for range calendar
   const disabledDates = (date: Date) => {
     // Disable future dates
-    if (date > new Date()) return true;
+    // if (date > new Date()) return true;
     // Disable dates before 1900
     if (date < new Date("1900-01-01")) return true;
     // Disable non-working days
@@ -294,12 +298,17 @@ export function LeaveApplicationForm({ userEmail }: LeaveApplicationFormProps) {
         payload.halfDaySegment = values.halfDaySegment;
       }
 
-      const response = await apiClient.post(API_PATHS.LEAVES_REQUESTS, payload);
+      const response = await apiClient.post(
+        API_PATHS.LEAVES_REQUESTS_POST,
+        payload
+      );
 
       if (response.status === 200 || response.status === 201) {
         toast.success("Leave application submitted successfully!", {
           description: "Your leave request has been sent for approval.",
         });
+
+        await fetchLeaves();
 
         // Invalidate cache for affected months
         const startMonth = values.startDate.getMonth() + 1;
@@ -436,7 +445,10 @@ export function LeaveApplicationForm({ userEmail }: LeaveApplicationFormProps) {
                           </Button>
                         </FormControl>
                       </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
+                      <PopoverContent
+                        className="w-auto p-0 border-0"
+                        align="start"
+                      >
                         <Calendar
                           mode="range"
                           defaultMonth={dateRange?.from}
