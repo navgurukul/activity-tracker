@@ -184,7 +184,7 @@ export async function checkOverlappingLeaves(
 
     // Fetch ALL existing leave requests (backend may not support date filtering)
     // We'll filter client-side for overlaps
-    const response = await apiClient.get(API_PATHS.LEAVES_REQUESTS);
+    const response = await apiClient.get(API_PATHS.LEAVES_REQUESTS_GET);
 
     // Handle wrapped or direct array response
     const leaves: LeaveRequest[] = Array.isArray(response.data)
@@ -417,7 +417,7 @@ export async function checkTimesheetConflictWithLeave(
     const dateStr = format(activityDate, DATE_FORMATS.API);
 
     // Fetch leave requests for the user
-    const response = await apiClient.get(API_PATHS.LEAVES_REQUESTS, {
+    const response = await apiClient.get(API_PATHS.LEAVES_REQUESTS_GET, {
       params: {
         startDate: dateStr,
         endDate: dateStr,

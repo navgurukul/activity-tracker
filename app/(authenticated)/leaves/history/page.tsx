@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 
 import { format, parseISO } from "date-fns";
 
@@ -43,7 +43,7 @@ interface LeaveRequest {
   halfDaySegment: "first_half" | "second_half" | null;
   hours: number;
   reason: string;
-  requestedAt: string;
+  // requestedAt: string;
   updatedAt: string;
   decidedByUserId: number | null;
 }
@@ -56,78 +56,57 @@ export default function LeaveHistoryPage() {
   const [isTeamLoading, setIsTeamLoading] = useState(true);
   const [mainTab, setMainTab] = useState<string>("my-leaves");
 
-  // Fetch leave requests from API (single call, all states mixed)
-  useEffect(() => {
-    let isMounted = true;
-
-    async function fetchLeaveRequests() {
-      setIsLoading(true);
+  // Generic fetch function for leave requests
+  const fetchLeaveData = useCallback(
+    async (
+      endpoint: string,
+      setData: (data: LeaveRequest[]) => void,
+      setLoading: (loading: boolean) => void
+    ) => {
+      setLoading(true);
       try {
-        // Fetch all leave requests in a single call
-        const response = await apiClient.get(API_PATHS.LEAVES_REQUESTS);
-
-        const allRequests = Array.isArray(response.data) ? response.data : [];
-
-        if (isMounted) {
-          setLeaveHistory(allRequests);
-        }
+        const response = await apiClient.get(endpoint);
+        const data = Array.isArray(response.data) ? response.data : [];
+        setData(data);
       } catch (error) {
-        console.error("Error fetching leave requests:", error);
+        console.error("Failed to load leave history", error);
         toast.error("Failed to load leave history", {
           description: "Unable to fetch leave requests. Please try again.",
         });
-        if (isMounted) {
-          setLeaveHistory([]);
-        }
+        setData([]);
       } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
+        setLoading(false);
       }
-    }
+    },
+    []
+  );
 
-    fetchLeaveRequests();
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+  // Fetch leave requests from API
+  useEffect(() => {
+    fetchLeaveData(
+      API_PATHS.LEAVES_REQUESTS_GET,
+      setLeaveHistory,
+      setIsLoading
+    );
+  }, [fetchLeaveData]);
 
   // Fetch team leave requests from API
   useEffect(() => {
-    let isMounted = true;
+    fetchLeaveData(
+      API_PATHS.LEAVES_TEAM_REQUESTS_GET,
+      setTeamLeaveHistory,
+      setIsTeamLoading
+    );
+  }, [fetchLeaveData]);
 
-    async function fetchTeamLeaveRequests() {
-      setIsTeamLoading(true);
-      try {
-        const response = await apiClient.get(API_PATHS.LEAVES_TEAM_REQUESTS);
-
-        const allTeamRequests = Array.isArray(response.data)
-          ? response.data
-          : [];
-
-        if (isMounted) {
-          setTeamLeaveHistory(allTeamRequests);
-        }
-      } catch (error) {
-        console.error("Error fetching team leave requests:", error);
-        toast.error("Failed to load team leave requests", {
-          description: "Unable to fetch team leave data. Please try again.",
-        });
-        if (isMounted) {
-          setTeamLeaveHistory([]);
-        }
-      } finally {
-        if (isMounted) {
-          setIsTeamLoading(false);
-        }
-      }
-    }
-
-    fetchTeamLeaveRequests();
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+  // Refetch team leave requests after approval/rejection
+  const refetchTeamLeaveRequests = useCallback(() => {
+    fetchLeaveData(
+      API_PATHS.LEAVES_TEAM_REQUESTS_GET,
+      setTeamLeaveHistory,
+      setIsTeamLoading
+    );
+  }, [fetchLeaveData]);
 
   // Generate month options from both leave history and team leave history data
   const monthOptions = useMemo(() => {
@@ -146,46 +125,58 @@ export default function LeaveHistoryPage() {
       }));
   }, [leaveHistory, teamLeaveHistory]);
 
-  // Filter leave records by selected month
-  const filteredLeaves = useMemo(() => {
-    if (selectedMonth === "all") return leaveHistory;
+  // Generic filter function for leave records by selected month
+  const filterLeavesByMonth = useCallback(
+    (leaves: LeaveRequest[]) => {
+      if (selectedMonth === "all") return leaves;
 
-    return leaveHistory.filter((record) => {
-      const recordMonth = format(parseISO(record.startDate), "yyyy-MM");
-      return recordMonth === selectedMonth;
-    });
-  }, [leaveHistory, selectedMonth]);
+      return leaves.filter((record) => {
+        const recordMonth = format(parseISO(record.startDate), "yyyy-MM");
+        return recordMonth === selectedMonth;
+      });
+    },
+    [selectedMonth]
+  );
+
+  // Filter leave records by selected month
+  const filteredLeaves = useMemo(
+    () => filterLeavesByMonth(leaveHistory),
+    [leaveHistory, filterLeavesByMonth]
+  );
 
   // Filter team leave records by selected month
-  const filteredTeamLeaves = useMemo(() => {
-    if (selectedMonth === "all") return teamLeaveHistory;
+  const filteredTeamLeaves = useMemo(
+    () => filterLeavesByMonth(teamLeaveHistory),
+    [teamLeaveHistory, filterLeavesByMonth]
+  );
 
-    return teamLeaveHistory.filter((record) => {
-      const recordMonth = format(parseISO(record.startDate), "yyyy-MM");
-      return recordMonth === selectedMonth;
-    });
-  }, [teamLeaveHistory, selectedMonth]);
+  // Generic function to separate leaves by state
+  const separateLeavesByState = useCallback((leaves: LeaveRequest[]) => {
+    return {
+      pending: leaves.filter((leave) => leave.state === "pending"),
+      approved: leaves.filter((leave) => leave.state === "approved"),
+      rejected: leaves.filter((leave) => leave.state === "rejected"),
+    };
+  }, []);
 
   // Separate leaves by state (client-side split)
-  const pendingLeaves = filteredLeaves.filter(
-    (leave) => leave.state === "pending"
-  );
-  const approvedLeaves = filteredLeaves.filter(
-    (leave) => leave.state === "approved"
-  );
-  const rejectedLeaves = filteredLeaves.filter(
-    (leave) => leave.state === "rejected"
+  const {
+    pending: pendingLeaves,
+    approved: approvedLeaves,
+    rejected: rejectedLeaves,
+  } = useMemo(
+    () => separateLeavesByState(filteredLeaves),
+    [filteredLeaves, separateLeavesByState]
   );
 
   // Separate team leaves by state
-  const teamPendingLeaves = filteredTeamLeaves.filter(
-    (leave) => leave.state === "pending"
-  );
-  const teamApprovedLeaves = filteredTeamLeaves.filter(
-    (leave) => leave.state === "approved"
-  );
-  const teamRejectedLeaves = filteredTeamLeaves.filter(
-    (leave) => leave.state === "rejected"
+  const {
+    pending: teamPendingLeaves,
+    approved: teamApprovedLeaves,
+    rejected: teamRejectedLeaves,
+  } = useMemo(
+    () => separateLeavesByState(filteredTeamLeaves),
+    [filteredTeamLeaves, separateLeavesByState]
   );
 
   return (
@@ -269,7 +260,11 @@ export default function LeaveHistoryPage() {
                     </TabsTrigger>
                   </TabsList>
                   <TabsContent value="pending" className="mt-4">
-                    <DataTable columns={columns} data={teamPendingLeaves} />
+                    <DataTable
+                      columns={columns}
+                      data={teamPendingLeaves}
+                      onUpdate={refetchTeamLeaveRequests}
+                    />
                   </TabsContent>
                   <TabsContent value="approved" className="mt-4">
                     <LeaveTable

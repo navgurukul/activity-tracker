@@ -2,7 +2,8 @@
 
 import { ColumnDef } from "@tanstack/react-table";
 import { format, parseISO } from "date-fns";
-import { MoreHorizontal } from "lucide-react";
+import { Ban, Check, CircleCheck, MoreHorizontal } from "lucide-react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -13,7 +14,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { DATE_FORMATS } from "@/lib/constants";
+import { DATE_FORMATS, API_PATHS } from "@/lib/constants";
+import apiClient from "@/lib/api-client";
+import { toast } from "sonner";
+import { Spinner } from "@/components/ui/spinner";
 
 export type LeaveRequest = {
   id: number;
@@ -35,7 +39,7 @@ export type LeaveRequest = {
   halfDaySegment: "first_half" | "second_half" | null;
   hours: number;
   reason: string;
-  requestedAt: string;
+  // requestedAt: string;
   updatedAt: string;
   decidedByUserId: number | null;
 };
@@ -50,6 +54,83 @@ const formatDuration = (leave: LeaveRequest) => {
   const days = leave.hours / 8;
   return days === 1 ? "1 Day" : `${days} Days`;
 };
+
+// Actions cell component with approval/rejection logic
+function ActionsCell({
+  leave,
+  onUpdate,
+}: {
+  leave: LeaveRequest;
+  onUpdate?: () => void;
+}) {
+  const [isApproving, setIsApproving] = useState(false);
+  const [isRejecting, setIsRejecting] = useState(false);
+
+  const handleApprove = async () => {
+    setIsApproving(true);
+    try {
+      await apiClient.post(`${API_PATHS.LEAVES_APPROVE}/${leave.id}/approve`);
+      toast.success("Leave request approved", {
+        description: `Leave request for ${leave.user.name} has been approved.`,
+      });
+      // Trigger parent component refresh if callback provided
+      if (onUpdate) {
+        onUpdate();
+      }
+    } catch (error) {
+      console.error("Error approving leave request:", error);
+      toast.error("Failed to approve leave request", {
+        description: "Unable to approve the leave request. Please try again.",
+      });
+    } finally {
+      setIsApproving(false);
+    }
+  };
+
+  const handleReject = async () => {
+    setIsRejecting(true);
+    try {
+      await apiClient.post(`${API_PATHS.LEAVES_REJECT}/${leave.id}/reject`);
+      toast.success("Leave request rejected", {
+        description: `Leave request for ${leave.user.name} has been rejected.`,
+      });
+      // Trigger parent component refresh if callback provided
+      if (onUpdate) {
+        onUpdate();
+      }
+    } catch (error) {
+      console.error("Error rejecting leave request:", error);
+      toast.error("Failed to reject leave request", {
+        description: "Unable to reject the leave request. Please try again.",
+      });
+    } finally {
+      setIsRejecting(false);
+    }
+  };
+
+  const isLoading = isApproving || isRejecting;
+
+  return (
+    <div className="flex gap-2">
+      <Button
+        variant="default"
+        onClick={handleApprove}
+        disabled={isLoading}
+        size="xs"
+      >
+        {isApproving ? <Spinner /> : <Check />}
+      </Button>
+      <Button
+        variant="neutral"
+        onClick={handleReject}
+        disabled={isLoading}
+        size="xs"
+      >
+        {isRejecting ? <Spinner /> : <Ban />}
+      </Button>
+    </div>
+  );
+}
 
 export const columns: ColumnDef<LeaveRequest>[] = [
   {
@@ -122,62 +203,24 @@ export const columns: ColumnDef<LeaveRequest>[] = [
       <div className="max-w-xs truncate">{row.getValue("reason")}</div>
     ),
   },
-  {
-    accessorKey: "requestedAt",
-    header: "Requested At",
-    cell: ({ row }) => {
-      return format(
-        parseISO(row.getValue("requestedAt")),
-        DATE_FORMATS.DISPLAY
-      );
-    },
-  },
+  // {
+  //   accessorKey: "requestedAt",
+  //   header: "Requested At",
+  //   cell: ({ row }) => {
+  //     return format(
+  //       parseISO(row.getValue("requestedAt")),
+  //       DATE_FORMATS.DISPLAY
+  //     );
+  //   },
+  // },
   {
     id: "actions",
     enableHiding: false,
-    cell: ({ row }) => {
+    cell: ({ row, table }) => {
       const leave = row.original;
-
-      return (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="noShadow" className="size-8 p-0">
-              <span className="sr-only">Open menu</span>
-              <MoreHorizontal />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuLabel>Actions</DropdownMenuLabel>
-            <DropdownMenuItem
-              onClick={() => {
-                // TODO: Implement approve logic
-                console.log("Approve leave request:", leave.id);
-              }}
-              className="text-green-600"
-            >
-              Approve
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => {
-                // TODO: Implement reject logic
-                console.log("Reject leave request:", leave.id);
-              }}
-              className="text-red-600"
-            >
-              Reject
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={() => {
-                // TODO: Implement view details
-                console.log("View details:", leave);
-              }}
-            >
-              View Details
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      );
+      const onUpdate = (table.options.meta as { onUpdate?: () => void })
+        ?.onUpdate;
+      return <ActionsCell leave={leave} onUpdate={onUpdate} />;
     },
   },
 ];

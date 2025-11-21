@@ -30,7 +30,7 @@ interface LeaveRequest {
   halfDaySegment: "first_half" | "second_half" | null;
   hours: number;
   reason: string;
-  requestedAt: string;
+  //   requestedAt: string;
   updatedAt: string;
   decidedByUserId: number | null;
 }
@@ -84,7 +84,7 @@ export function LeaveTable({ leaves, isLoading }: LeaveTableProps) {
           <TableHead>End Date</TableHead>
           <TableHead>Duration</TableHead>
           <TableHead>Reason</TableHead>
-          <TableHead>Requested At</TableHead>
+          {/* <TableHead>Requested At</TableHead> */}
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -101,9 +101,9 @@ export function LeaveTable({ leaves, isLoading }: LeaveTableProps) {
             </TableCell>
             <TableCell>{formatDuration(leave)}</TableCell>
             <TableCell className="max-w-xs truncate">{leave.reason}</TableCell>
-            <TableCell>
+            {/* <TableCell>
               {format(parseISO(leave.requestedAt), DATE_FORMATS.DISPLAY)}
-            </TableCell>
+            </TableCell> */}
           </TableRow>
         ))}
       </TableBody>

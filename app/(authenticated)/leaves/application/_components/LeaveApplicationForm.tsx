@@ -294,7 +294,10 @@ export function LeaveApplicationForm({ userEmail }: LeaveApplicationFormProps) {
         payload.halfDaySegment = values.halfDaySegment;
       }
 
-      const response = await apiClient.post(API_PATHS.LEAVES_REQUESTS, payload);
+      const response = await apiClient.post(
+        API_PATHS.LEAVES_REQUESTS_POST,
+        payload
+      );
 
       if (response.status === 200 || response.status === 201) {
         toast.success("Leave application submitted successfully!", {
