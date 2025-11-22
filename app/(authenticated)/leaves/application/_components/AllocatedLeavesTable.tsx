@@ -8,6 +8,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { LoadingState } from "./LoadingState";
 
 export interface AllocatedLeave {
   leaveType: string;
@@ -18,9 +19,14 @@ export interface AllocatedLeave {
 
 interface AllocatedLeavesTableProps {
   leaves: AllocatedLeave[];
+  isLoading?: boolean;
 }
 
-export function AllocatedLeavesTable({ leaves }: AllocatedLeavesTableProps) {
+export function AllocatedLeavesTable({ leaves, isLoading = false }: AllocatedLeavesTableProps) {
+  if (isLoading) {
+    return <LoadingState />;
+  }
+
   return (
     <div className="w-full">
       <Table>

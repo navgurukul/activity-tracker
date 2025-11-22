@@ -117,7 +117,7 @@ export default function LeaveApplicationPage() {
                   </span>
                 </AccordionTrigger>
                 <AccordionContent>
-                  <AllocatedLeavesTable leaves={allocatedLeaves} />
+                  <AllocatedLeavesTable leaves={allocatedLeaves} isLoading={loading} />
                 </AccordionContent>
               </AccordionItem>
             </Accordion>
