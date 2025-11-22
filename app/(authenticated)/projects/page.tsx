@@ -68,8 +68,7 @@ export default function ProjectManagementPage() {
       const response = await apiClient.get(API_PATHS.PROJECTS, { params });
 
       if (response.data) {
-        setProjects(Array.isArray(response.data) ? response.data : []);
-        console.log("Projects fetched successfully:", response.data);
+        setProjects(Array.isArray(response.data.data) ? response.data.data : []);
       }
     } catch (error: any) {
       console.error("Error fetching projects:", error);
@@ -104,6 +103,11 @@ export default function ProjectManagementPage() {
   const handleStatusChange = (value: string): void => {
     setStatusFilter(value);
   };
+
+
+  useEffect(()=>{
+    console.log(projects)
+  },[projects])
 
   return (
     <>
@@ -147,7 +151,7 @@ export default function ProjectManagementPage() {
                 />
 
                 {/* Projects Table */}
-                <div className="rounded-base border-2 border-border">
+                <div  onClick={() => console.log("div clicked", projects)}>
                   {loading ? (
                     <LoadingState />
                   ) : projects.length === 0 ? (
