@@ -97,6 +97,7 @@ const navLinks: NavItem[] = [
     title: "Project Management",
     url: "/projects",
     icon: FolderKanban,
+    requiredRoles: [ROLES.ADMIN, ROLES.SUPER_ADMIN, ROLES.MANAGER],
   },
   {
     title: "Employee Database",

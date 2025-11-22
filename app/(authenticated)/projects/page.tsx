@@ -22,6 +22,8 @@ import { ProjectsTable, Project } from "./_components/ProjectsTable";
 import apiClient from "@/lib/api-client";
 import { API_PATHS } from "@/lib/constants";
 import { useAuth } from "@/hooks/use-auth";
+import { RoleProtectedRoute } from "@/app/_components/RoleProtectedRoute";
+import { ROLES } from "@/lib/rbac-constants";
 
 export default function ProjectManagementPage() {
   const { user, isLoading: authLoading } = useAuth();
@@ -68,7 +70,9 @@ export default function ProjectManagementPage() {
       const response = await apiClient.get(API_PATHS.PROJECTS, { params });
 
       if (response.data) {
-        setProjects(Array.isArray(response.data.data) ? response.data.data : []);
+        setProjects(
+          Array.isArray(response.data.data) ? response.data.data : []
+        );
       }
     } catch (error: any) {
       console.error("Error fetching projects:", error);
@@ -89,7 +93,9 @@ export default function ProjectManagementPage() {
     setSearchTerm(searchInput);
   };
 
-  const handleSearchKeyPress = (e: React.KeyboardEvent<HTMLInputElement>): void => {
+  const handleSearchKeyPress = (
+    e: React.KeyboardEvent<HTMLInputElement>
+  ): void => {
     if (e.key === "Enter") {
       handleSearch();
     }
@@ -104,13 +110,10 @@ export default function ProjectManagementPage() {
     setStatusFilter(value);
   };
 
-
-  useEffect(()=>{
-    console.log(projects)
-  },[projects])
-
   return (
-    <>
+    <RoleProtectedRoute
+      requiredRoles={[ROLES.SUPER_ADMIN, ROLES.MANAGER, ROLES.ADMIN]}
+    >
       <AppHeader
         crumbs={[
           { label: "Dashboard", href: "/" },
@@ -151,7 +154,7 @@ export default function ProjectManagementPage() {
                 />
 
                 {/* Projects Table */}
-                <div  onClick={() => console.log("div clicked", projects)}>
+                <div onClick={() => console.log("div clicked", projects)}>
                   {loading ? (
                     <LoadingState />
                   ) : projects.length === 0 ? (
@@ -173,6 +176,6 @@ export default function ProjectManagementPage() {
           </Card>
         </div>
       </PageWrapper>
-    </>
+    </RoleProtectedRoute>
   );
 }
