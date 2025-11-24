@@ -19,6 +19,7 @@ import { EmptyState } from "./_components/EmptyState";
 import { LoadingState } from "./_components/LoadingState";
 import { ProjectFilters } from "./_components/ProjectFilters";
 import { ProjectsTable, Project } from "./_components/ProjectsTable";
+import { NewProjectSheet } from "./_components/NewProjectSheet";
 import apiClient from "@/lib/api-client";
 import { API_PATHS } from "@/lib/constants";
 import { useAuth } from "@/hooks/use-auth";
@@ -32,6 +33,7 @@ export default function ProjectManagementPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [searchInput, setSearchInput] = useState("");
+  const [isSheetOpen, setIsSheetOpen] = useState(false);
 
   // Fetch projects from API
   useEffect(() => {
@@ -110,6 +112,10 @@ export default function ProjectManagementPage() {
     setStatusFilter(value);
   };
 
+  const handleProjectCreated = (): void => {
+    fetchProjects();
+  };
+
   return (
     <RoleProtectedRoute
       requiredRoles={[ROLES.SUPER_ADMIN, ROLES.MANAGER, ROLES.ADMIN]}
@@ -134,7 +140,7 @@ export default function ProjectManagementPage() {
                     Manage and organize all projects in your organization
                   </CardDescription>
                 </div>
-                <Button>
+                <Button onClick={() => setIsSheetOpen(true)}>
                   <Plus className="mr-2 h-4 w-4" />
                   New Project
                 </Button>
@@ -175,6 +181,12 @@ export default function ProjectManagementPage() {
             </CardContent>
           </Card>
         </div>
+
+        <NewProjectSheet
+          open={isSheetOpen}
+          onOpenChange={setIsSheetOpen}
+          onSuccess={handleProjectCreated}
+        />
       </PageWrapper>
     </RoleProtectedRoute>
   );
