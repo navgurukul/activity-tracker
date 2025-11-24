@@ -59,20 +59,33 @@ export function ProjectsTable({ projects }: ProjectsTableProps) {
       <TableBody>
         {projects.map((project) => (
           <TableRow key={project.id}>
-            <TableCell className="font-medium">{project.department?.name || "-"}</TableCell>
+            <TableCell className="font-medium">
+              {project.department?.name || "-"}
+            </TableCell>
             <TableCell>{project.name}</TableCell>
             <TableCell>{project.projectManager?.email || "-"}</TableCell>
             <TableCell>
-              {project.budgetAmount && project.budgetCurrency 
-                ? `${project.budgetCurrency} ${parseFloat(project.budgetAmount).toLocaleString()}` 
+              {project.budgetAmount && project.budgetCurrency
+                ? `${project.budgetCurrency} ${parseFloat(
+                    project.budgetAmount
+                  ).toLocaleString()}`
                 : "-"}
             </TableCell>
             <TableCell>
               <Badge
-                variant={project.status.toLowerCase() === "active" ? "default" : "neutral"}
-                className={project.status.toLowerCase() === "archived" ? "bg-yellow-100 text-yellow-800 border-yellow-300" : ""}
+                variant={
+                  project.status.toLowerCase() === "active"
+                    ? "default"
+                    : "neutral"
+                }
+                className={
+                  project.status.toLowerCase() === "archived"
+                    ? "bg-yellow-100 text-yellow-800 border-yellow-300"
+                    : ""
+                }
               >
-                {project.status.charAt(0).toUpperCase() + project.status.slice(1)}
+                {project.status.charAt(0).toUpperCase() +
+                  project.status.slice(1)}
               </Badge>
             </TableCell>
           </TableRow>

@@ -7,6 +7,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { rbacService } from "@/lib/rbac-service";
 import { Permission } from "@/lib/rbac-constants";
 import { UnauthorizedPage } from "./UnauthorizedPage";
+import { Spinner } from "@/components/ui/spinner";
 
 interface PermissionProtectedRouteProps {
   children: React.ReactNode;
@@ -70,7 +71,7 @@ export function PermissionProtectedRoute({
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-center">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-current border-r-transparent motion-reduce:animate-[spin_1.5s_linear_infinite]" />
+          <Spinner className="size-8 inline-block " />
           <p className="mt-4 text-sm text-foreground">Loading...</p>
         </div>
       </div>

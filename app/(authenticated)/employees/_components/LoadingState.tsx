@@ -3,53 +3,16 @@
  * Displays skeleton loaders while employee data is being fetched
  */
 
-import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { TableLoadingState } from "@/components/ui/table-loading-state";
+
+const EMPLOYEE_TABLE_COLUMNS = [
+  { header: "Name", skeletonWidth: "w-32" },
+  { header: "Email", skeletonWidth: "w-40" },
+  { header: "Department", skeletonWidth: "w-24" },
+  { header: "Employment Status", skeletonWidth: "w-20" },
+  { header: "Work Location", skeletonWidth: "w-24" },
+];
 
 export function LoadingState() {
-  return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Name</TableHead>
-          <TableHead>Email</TableHead>
-          <TableHead>Department</TableHead>
-          <TableHead>Role</TableHead>
-          <TableHead>Employment Status</TableHead>
-          <TableHead>Work Location</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {Array.from({ length: 5 }).map((_, index) => (
-          <TableRow key={index}>
-            <TableCell>
-              <Skeleton className="h-4 w-32" />
-            </TableCell>
-            <TableCell>
-              <Skeleton className="h-4 w-40" />
-            </TableCell>
-            <TableCell>
-              <Skeleton className="h-4 w-24" />
-            </TableCell>
-            <TableCell>
-              <Skeleton className="h-5 w-20" />
-            </TableCell>
-            <TableCell>
-              <Skeleton className="h-5 w-20" />
-            </TableCell>
-            <TableCell>
-              <Skeleton className="h-4 w-24" />
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
-  );
+  return <TableLoadingState columns={EMPLOYEE_TABLE_COLUMNS} />;
 }

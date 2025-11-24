@@ -7,6 +7,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { rbacService } from "@/lib/rbac-service";
 import { Role } from "@/lib/rbac-constants";
 import { UnauthorizedPage } from "./UnauthorizedPage";
+import { Spinner } from "@/components/ui/spinner";
 
 interface RoleProtectedRouteProps {
   children: React.ReactNode;
@@ -53,8 +54,8 @@ export function RoleProtectedRoute({
 
   // Debug logging in development
   useEffect(() => {
-    if (process.env.NODE_ENV === 'development' && !isLoading) {
-      console.log('🔐 RoleProtectedRoute Check:', {
+    if (process.env.NODE_ENV === "development" && !isLoading) {
+      console.log("🔐 RoleProtectedRoute Check:", {
         isAuthenticated,
         isAuthorized,
         userRoles: user?.roles,
@@ -62,7 +63,14 @@ export function RoleProtectedRoute({
         requireAllRoles,
       });
     }
-  }, [isLoading, isAuthenticated, isAuthorized, user?.roles, roles, requireAllRoles]);
+  }, [
+    isLoading,
+    isAuthenticated,
+    isAuthorized,
+    user?.roles,
+    roles,
+    requireAllRoles,
+  ]);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -81,7 +89,7 @@ export function RoleProtectedRoute({
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-center">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-current border-r-transparent motion-reduce:animate-[spin_1.5s_linear_infinite]" />
+          <Spinner className="size-8 inline-block" />
           <p className="mt-4 text-sm text-foreground">Loading...</p>
         </div>
       </div>

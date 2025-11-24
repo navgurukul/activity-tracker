@@ -7,8 +7,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Skeleton } from "@/components/ui/skeleton";
 import { DATE_FORMATS } from "@/lib/constants";
+import { LoadingState } from "./LoadingState";
 
 interface LeaveRequest {
   id: number;
@@ -51,20 +51,9 @@ const formatDuration = (leave: LeaveRequest) => {
   return days === 1 ? "1 Day" : `${days} Days`;
 };
 
-// Loading skeleton component
-const LoadingSkeleton = () => (
-  <div className="space-y-3">
-    {[1, 2, 3].map((i) => (
-      <div key={i} className="flex gap-4">
-        <Skeleton className="h-12 w-full" />
-      </div>
-    ))}
-  </div>
-);
-
 export function LeaveTable({ leaves, isLoading }: LeaveTableProps) {
   if (isLoading) {
-    return <LoadingSkeleton />;
+    return <LoadingState />;
   }
 
   if (leaves.length === 0) {

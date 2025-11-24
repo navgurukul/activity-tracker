@@ -1,0 +1,632 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { toast } from "sonner";
+import { format } from "date-fns";
+import { Calendar as CalendarIcon, Check, ChevronsUpDown } from "lucide-react";
+
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetFooter,
+} from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { cn } from "@/lib/utils";
+import apiClient from "@/lib/api-client";
+import { API_PATHS, DATE_FORMATS } from "@/lib/constants";
+import { useAuth } from "@/hooks/use-auth";
+
+const PROJECT_STATUS_OPTIONS = [
+  { value: "active", label: "Active" },
+  { value: "inactive", label: "Inactive" },
+  { value: "completed", label: "Completed" },
+  { value: "on_hold", label: "On Hold" },
+] as const;
+
+const formSchema = z
+  .object({
+    name: z.string().min(3, "Project name must be at least 3 characters"),
+    code: z.string().min(2, "Project code must be at least 2 characters"),
+    status: z.string().min(1, "Please select a project status"),
+    departmentId: z.number().int().positive("Please select a department"),
+    projectManagerId: z
+      .number()
+      .int()
+      .positive("Please select a project manager"),
+    startDate: z.date({ message: "Start date is required" }),
+    endDate: z.date().optional(),
+    budgetAmount: z
+      .number()
+      .int()
+      .nonnegative("Budget must be non-negative")
+      .optional(),
+    slackChannelId: z.string().optional(),
+  })
+  .refine(
+    (data) => {
+      if (data.endDate && data.startDate) {
+        return data.endDate >= data.startDate;
+      }
+      return true;
+    },
+    {
+      message: "End date must be after or equal to start date",
+      path: ["endDate"],
+    }
+  );
+
+interface Department {
+  id: number;
+  name: string;
+  code: string;
+}
+
+interface Manager {
+  id: number;
+  name: string;
+  email: string;
+}
+
+interface NewProjectSheetProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSuccess?: () => void;
+}
+
+export function NewProjectSheet({
+  open,
+  onOpenChange,
+  onSuccess,
+}: NewProjectSheetProps) {
+  const { user } = useAuth();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [managers, setManagers] = useState<Manager[]>([]);
+  const [isLoadingDepartments, setIsLoadingDepartments] = useState(false);
+  const [isLoadingManagers, setIsLoadingManagers] = useState(false);
+  const [managerSearchValue, setManagerSearchValue] = useState("");
+  const [managerComboboxOpen, setManagerComboboxOpen] = useState(false);
+  const [selectedManagerName, setSelectedManagerName] = useState<string>("");
+
+  const form = useForm<z.infer<typeof formSchema>>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      name: "",
+      code: "",
+      status: "active",
+      departmentId: undefined,
+      projectManagerId: undefined,
+      startDate: undefined,
+      endDate: undefined,
+      budgetAmount: 0,
+      slackChannelId: "",
+    },
+  });
+
+  // Fetch departments
+  useEffect(() => {
+    if (!open || !user?.orgId) return;
+
+    async function fetchDepartments() {
+      setIsLoadingDepartments(true);
+      try {
+        const response = await apiClient.get(API_PATHS.DEPARTMENTS, {
+          params: { orgId: user?.orgId },
+        });
+
+        const departmentList = Array.isArray(response.data)
+          ? response.data
+          : response.data?.data || [];
+        setDepartments(departmentList);
+      } catch (error: any) {
+        console.error("Error fetching departments:", error);
+        toast.error("Failed to load departments", {
+          description: "Unable to fetch department list. Please try again.",
+        });
+      } finally {
+        setIsLoadingDepartments(false);
+      }
+    }
+
+    fetchDepartments();
+  }, [open, user?.orgId]);
+
+  // Fetch managers with search filtering
+  useEffect(() => {
+    if (!open || !user?.orgId) return;
+
+    // Only fetch if user has entered a search term
+    if (!managerSearchValue.trim()) {
+      setManagers([]);
+      return;
+    }
+
+    const fetchManagers = async () => {
+      setIsLoadingManagers(true);
+      try {
+        const params: Record<string, string | number> = {
+          orgId: user.orgId || "",
+          q: managerSearchValue.trim(),
+        };
+
+        const response = await apiClient.get(API_PATHS.MANAGERS, {
+          params,
+        });
+
+        const managerList = Array.isArray(response.data)
+          ? response.data
+          : response.data?.data || [];
+        setManagers(managerList);
+      } catch (error: any) {
+        console.error("Error fetching managers:", error);
+        setManagers([]);
+      } finally {
+        setIsLoadingManagers(false);
+      }
+    };
+
+    const timeoutId = setTimeout(() => {
+      fetchManagers();
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [open, managerSearchValue, user?.orgId]);
+
+  async function onSubmit(values: z.infer<typeof formSchema>) {
+    if (!user?.orgId) {
+      toast.error("Organization ID not found", {
+        description: "Please sign in again or contact admin.",
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const payload = {
+        orgId: user.orgId,
+        name: values.name,
+        code: values.code,
+        status: values.status,
+        departmentId: values.departmentId,
+        projectManagerId: values.projectManagerId,
+        startDate: format(values.startDate, DATE_FORMATS.API),
+        endDate: values.endDate
+          ? format(values.endDate, DATE_FORMATS.API)
+          : undefined,
+        budgetCurrency: "INR",
+        budgetAmount: values.budgetAmount || 0,
+        slackChannelId: values.slackChannelId || undefined,
+      };
+
+      const response = await apiClient.post(API_PATHS.PROJECTS, payload);
+
+      if (response.status === 200 || response.status === 201) {
+        toast.success("Project created successfully!", {
+          description: "The new project has been added to your organization.",
+        });
+
+        form.reset();
+        onOpenChange(false);
+
+        if (onSuccess) {
+          onSuccess();
+        }
+      }
+    } catch (error: any) {
+      console.error("Error creating project:", error);
+
+      const errorMessage =
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to create project. Please try again.";
+
+      toast.error("Creation failed", {
+        description: errorMessage,
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="overflow-y-auto sm:max-w-md">
+        <SheetHeader>
+          <SheetTitle>Create New Project</SheetTitle>
+          <SheetDescription>
+            Add a new project to your organization. Fill in the required details
+            below.
+          </SheetDescription>
+        </SheetHeader>
+
+        <div className="px-4">
+          <Form {...form}>
+            <form
+              id="new-project-form"
+              onSubmit={form.handleSubmit(onSubmit)}
+              className="space-y-6"
+            >
+              {/* Project Information Section */}
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold">Project Information</h3>
+
+                <FormField
+                  control={form.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Project Name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Enter project name" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="code"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Project Code</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Enter project code" {...field} />
+                      </FormControl>
+                      <FormDescription>
+                        A unique identifier for the project
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="status"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Status</FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        defaultValue={field.value}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select project status" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {PROJECT_STATUS_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="departmentId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Department</FormLabel>
+                      <Select
+                        onValueChange={(value) =>
+                          field.onChange(parseInt(value))
+                        }
+                        value={field.value?.toString()}
+                        disabled={isLoadingDepartments}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue
+                              placeholder={
+                                isLoadingDepartments
+                                  ? "Loading departments..."
+                                  : "Select department"
+                              }
+                            />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {departments.map((dept) => (
+                            <SelectItem
+                              key={dept.id}
+                              value={dept.id.toString()}
+                            >
+                              {dept.name} ({dept.code})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="projectManagerId"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-col">
+                      <FormLabel>Project Manager</FormLabel>
+                      <Popover
+                        open={managerComboboxOpen}
+                        onOpenChange={setManagerComboboxOpen}
+                      >
+                        <PopoverTrigger asChild>
+                          <FormControl>
+                            <Button
+                              variant="noShadow"
+                              role="combobox"
+                              aria-expanded={managerComboboxOpen}
+                              className={cn(
+                                "w-full justify-between font-normal",
+                                !field.value && "text-muted-foreground"
+                              )}
+                              onClick={() =>
+                                console.log(
+                                  field.value,
+                                  managers.find(
+                                    (manager) => manager.id === field.value
+                                  )?.name
+                                )
+                              }
+                            >
+                              {field.value
+                                ? selectedManagerName
+                                : "Select project manager"}
+                              <ChevronsUpDown />
+                            </Button>
+                          </FormControl>
+                        </PopoverTrigger>
+                        <PopoverContent
+                          className="w-(--radix-popover-trigger-width) overflow-y-auto p-0 border-0"
+                          align="start"
+                        >
+                          <Command shouldFilter={false}>
+                            <CommandInput
+                              placeholder="Type to search..."
+                              value={managerSearchValue}
+                              onValueChange={setManagerSearchValue}
+                            />
+                            <CommandList>
+                              <CommandEmpty>
+                                {isLoadingManagers
+                                  ? "Loading..."
+                                  : managerSearchValue.trim()
+                                  ? "No managers found."
+                                  : "Type to search managers..."}
+                              </CommandEmpty>
+                              <CommandGroup>
+                                {managers.map((manager) => (
+                                  <CommandItem
+                                    key={manager.id}
+                                    value={manager.id.toString()}
+                                    onSelect={() => {
+                                      field.onChange(manager.id);
+                                      setManagerComboboxOpen(false);
+                                      setManagerSearchValue("");
+                                      setSelectedManagerName(manager.name);
+                                    }}
+                                  >
+                                    <Check
+                                      className={cn(
+                                        "mr-2 h-4 w-4",
+                                        field.value === manager.id
+                                          ? "opacity-100"
+                                          : "opacity-0"
+                                      )}
+                                    />
+                                    {manager.name} ({manager.email})
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              {/* Timeline Section */}
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold">Timeline</h3>
+
+                <FormField
+                  control={form.control}
+                  name="startDate"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-col">
+                      <FormLabel>Start Date</FormLabel>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <FormControl>
+                            <Button
+                              variant="noShadow"
+                              className={cn(
+                                "w-full justify-start text-left font-normal",
+                                !field.value && "text-muted-foreground"
+                              )}
+                            >
+                              <CalendarIcon className="mr-2 h-4 w-4" />
+                              {field.value ? (
+                                format(field.value, DATE_FORMATS.DISPLAY)
+                              ) : (
+                                <span>Pick a start date</span>
+                              )}
+                            </Button>
+                          </FormControl>
+                        </PopoverTrigger>
+                        <PopoverContent
+                          className="w-auto p-0 border-0!"
+                          align="start"
+                        >
+                          <Calendar
+                            mode="single"
+                            selected={field.value}
+                            onSelect={field.onChange}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="endDate"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-col">
+                      <FormLabel>End Date (Optional)</FormLabel>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <FormControl>
+                            <Button
+                              variant="noShadow"
+                              className={cn(
+                                "w-full justify-start text-left font-normal",
+                                !field.value && "text-muted-foreground"
+                              )}
+                            >
+                              <CalendarIcon className="mr-2 h-4 w-4" />
+                              {field.value ? (
+                                format(field.value, DATE_FORMATS.DISPLAY)
+                              ) : (
+                                <span>Pick an end date</span>
+                              )}
+                            </Button>
+                          </FormControl>
+                        </PopoverTrigger>
+                        <PopoverContent
+                          className="w-auto p-0 border-0!"
+                          align="start"
+                        >
+                          <Calendar
+                            mode="single"
+                            selected={field.value}
+                            onSelect={field.onChange}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              {/* Budget & Integration Section */}
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold">Budget & Integration</h3>
+
+                <FormField
+                  control={form.control}
+                  name="budgetAmount"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Budget Amount (INR)</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          placeholder="Enter budget amount in paise"
+                          {...field}
+                          onChange={(e) =>
+                            field.onChange(parseInt(e.target.value) || 0)
+                          }
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="slackChannelId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Slack Channel ID (Optional)</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="Enter Slack channel ID"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        Link this project to a Slack channel
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            </form>
+          </Form>
+        </div>
+
+        <SheetFooter>
+          <Button
+            type="button"
+            variant="neutral"
+            onClick={() => onOpenChange(false)}
+            disabled={isSubmitting}
+          >
+            Cancel
+          </Button>
+          <Button type="submit" form="new-project-form" disabled={isSubmitting}>
+            {isSubmitting ? "Creating..." : "Create Project"}
+          </Button>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
+  );
+}
