@@ -108,18 +108,18 @@ const navLinks: NavItem[] = [
 ];
 
 const adminLinks: NavItem[] = [
-  {
-    title: "Admin Dashboard",
-    url: "/admin/dashboard",
-    icon: LayoutDashboard,
-    requiredRoles: [ROLES.ADMIN, ROLES.SUPER_ADMIN],
-  },
-  {
-    title: "Access Control",
-    url: "/admin/access-control",
-    icon: Shield,
-    requiredRoles: [ROLES.SUPER_ADMIN],
-  },
+  // {
+  //   title: "Admin Dashboard",
+  //   url: "/admin/dashboard",
+  //   icon: LayoutDashboard,
+  //   requiredRoles: [ROLES.ADMIN, ROLES.SUPER_ADMIN],
+  // },
+  // {
+  //   title: "Access Control",
+  //   url: "/admin/access-control",
+  //   icon: Shield,
+  //   requiredRoles: [ROLES.SUPER_ADMIN],
+  // },
 ];
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
