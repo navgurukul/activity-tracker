@@ -222,7 +222,7 @@ export default function DashboardPage() {
                 <CardContent>
                   <div className="space-y-2">
                     <p className="text-sm font-medium text-muted-foreground">
-                      Total Hours Tracked
+                      Total Hours Logged
                     </p>
                     <p className="text-3xl font-bold">
                       {monthlyData?.totals.timesheetHours || 0}
@@ -237,7 +237,7 @@ export default function DashboardPage() {
                 <CardContent>
                   <div className="space-y-2">
                     <p className="text-sm font-medium text-muted-foreground">
-                      Leave Hours
+                      Leave Days
                     </p>
                     <p className="text-3xl font-bold">
                       {monthlyData?.totals.leaveHours || 0}
@@ -258,7 +258,7 @@ export default function DashboardPage() {
                       {(monthlyData?.totals.timesheetHours || 0) +
                         (monthlyData?.totals.leaveHours || 0)}
                     </p>
-                    <p className="text-xs text-muted-foreground">Combined</p>
+                    {/* <p className="text-xs text-muted-foreground">Combined</p> */}
                   </div>
                 </CardContent>
               </Card>
@@ -266,7 +266,7 @@ export default function DashboardPage() {
                 <CardContent>
                   <div className="space-y-2">
                     <p className="text-sm font-medium text-muted-foreground">
-                      Backfill Remaining
+                      Lifelines Remaining
                     </p>
                     <p className="text-3xl font-bold">
                       {user?.backfill?.remaining ?? 0}
@@ -277,6 +277,26 @@ export default function DashboardPage() {
                   </div>
                 </CardContent>
               </Card>
+              <Card>
+                <CardContent>
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-muted-foreground">
+                      Total Payable Days
+                    </p>
+
+                    <p className="text-3xl font-bold">
+                      {monthlyData
+                        ? monthlyData.days.filter((d) => d.isWorkingDay).length
+                        : 0}
+                    </p>
+
+                    <p className="text-xs text-muted-foreground">
+                      {format(currentMonth, "MMMM yyyy")}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
             </div>
 
             {/* Main Content: Details (Left) and Calendar (Right) */}
@@ -373,6 +393,7 @@ export default function DashboardPage() {
                     </div>
                   )}
                 </CardContent>
+
               </Card>
             </div>
           </div>
