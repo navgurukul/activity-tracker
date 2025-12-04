@@ -355,16 +355,16 @@ export default function TrackerPage() {
       <AppHeader
         crumbs={[
           { label: "Dashboard", href: "/" },
-          { label: "Activity Tracker" },
+          { label: "Activity Logger" },
         ]}
       />
       <PageWrapper>
         <div className="flex w-full justify-center p-4">
           <Card className="mx-auto w-full min-w-[120px] max-w-[80vw] sm:max-w-xs md:max-w-lg lg:max-w-2xl xl:max-w-3xl">
             <CardHeader>
-              <CardTitle className="text-2xl mb-2">Activity Tracker</CardTitle>
+              <CardTitle className="text-2xl mb-2">Activity Logger</CardTitle>
               <CardDescription className="text-muted-foreground">
-                Track your daily activities and manage your time effectively.
+                Log your daily activities and manage your time effectively.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -415,7 +415,7 @@ export default function TrackerPage() {
                           </Popover>
                           <FormDescription>
                             {(user?.backfill?.remaining ?? 0) > 0
-                              ? "Select a date within the last 3 days (including today) for tracking activities."
+                              ? "Select a date for today or within the last three days (depending on available lifelines for logging activities.)"
                               : "Only today's date can be selected for tracking activities. Your backfill limit has been reached."}
                           </FormDescription>
                           <FormMessage />
@@ -607,7 +607,7 @@ export default function TrackerPage() {
                     <Button type="submit" size="lg" disabled={isSubmitting}>
                       {isSubmitting
                         ? "Submitting..."
-                        : "Submit Activity Tracker"}
+                        : "Submit Activity Logger"}
                     </Button>
                   </div>
                 </form>

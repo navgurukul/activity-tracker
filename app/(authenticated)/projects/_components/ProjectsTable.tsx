@@ -12,6 +12,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Edit } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 export interface Project {
   id: number;
@@ -42,9 +44,10 @@ export interface Project {
 
 interface ProjectsTableProps {
   projects: Project[];
+    onEditProject?: (projectId: string) => void; 
 }
 
-export function ProjectsTable({ projects }: ProjectsTableProps) {
+export function ProjectsTable({ projects,onEditProject }: ProjectsTableProps) {
   return (
     <Table>
       <TableHeader>
@@ -54,11 +57,13 @@ export function ProjectsTable({ projects }: ProjectsTableProps) {
           <TableHead>PM Email</TableHead>
           <TableHead>Budget</TableHead>
           <TableHead>Status</TableHead>
+          <TableHead >Edit</TableHead> 
         </TableRow>
       </TableHeader>
       <TableBody>
         {projects.map((project) => (
           <TableRow key={project.id}>
+            
             <TableCell className="font-medium">
               {project.department?.name || "-"}
             </TableCell>
@@ -87,6 +92,17 @@ export function ProjectsTable({ projects }: ProjectsTableProps) {
                 {project.status.charAt(0).toUpperCase() +
                   project.status.slice(1)}
               </Badge>
+            </TableCell>
+
+            <TableCell className="py-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={`Edit ${project.name}`}
+                onClick={() => onEditProject?.(String(project.id))}
+              >
+                <Edit className="h-4 w-4" />
+              </Button>
             </TableCell>
           </TableRow>
         ))}
