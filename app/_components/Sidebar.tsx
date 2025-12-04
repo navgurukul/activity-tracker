@@ -68,7 +68,7 @@ interface NavItem {
 // Navigation data
 const navLinks: NavItem[] = [
   {
-    title: "Activity Tracker",
+    title: "Activity Logger",
     url: "/tracker",
     icon: Target,
   },
@@ -167,7 +167,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 className="grid flex-1 text-left text-sm leading-tight"
               >
                 <h1 className="truncate font-heading">NavTrack</h1>
-                <span className="truncate text-xs">Daily Activity Tracker</span>
+                <span className="truncate text-xs">Daily Activity Logger</span>
               </Link>
             </div>
           </SidebarMenuItem>
