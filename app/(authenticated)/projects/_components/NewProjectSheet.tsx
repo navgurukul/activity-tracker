@@ -304,23 +304,6 @@ export function NewProjectSheet({
 
                 <FormField
                   control={form.control}
-                  name="code"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Project Code</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Enter project code" {...field} />
-                      </FormControl>
-                      <FormDescription>
-                        A unique identifier for the project
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
                   name="status"
                   render={({ field }) => (
                     <FormItem>

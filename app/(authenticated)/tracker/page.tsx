@@ -109,7 +109,9 @@ export default function TrackerPage() {
     selectedDate.setHours(0, 0, 0, 0);
 
     // Disable future dates
-    if (date > today) return true;
+   const d = new Date(date);
+d.setHours(0,0,0,0);
+if (d.getTime() > today.getTime()) return true;
 
     // If backfill remaining is zero or undefined, only allow today
     const backfillRemaining = user?.backfill?.remaining ?? 0;
@@ -160,8 +162,11 @@ export default function TrackerPage() {
           today.setHours(0, 0, 0, 0);
 
           // Check if date is in the future
-          if (date > today) return false;
+         const d = new Date(date);
+          d.setHours(0, 0, 0, 0);
+          if (d.getTime() > today.getTime()) return false;
 
+          
           return true;
         },
         {
@@ -184,7 +189,10 @@ export default function TrackerPage() {
           // Otherwise, maintain existing 3-day window logic
           const threeDaysAgo = new Date(today);
           threeDaysAgo.setDate(today.getDate() - 3);
-          return date >= threeDaysAgo && date <= today;
+          const d = new Date(date);
+          d.setHours(0, 0, 0, 0);
+          return d.getTime() >= threeDaysAgo.getTime() && d.getTime() <= today.getTime();
+
         },
         {
           message:
@@ -407,7 +415,11 @@ export default function TrackerPage() {
                               <Calendar
                                 mode="single"
                                 selected={field.value}
-                                onSelect={field.onChange}
+                                onSelect={(date) => {
+                                  if (!date) return;        
+                                  field.onChange(date);    
+                                }}
+
                                 disabled={disableInvalidDates}
                                 initialFocus
                               />

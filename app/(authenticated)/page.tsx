@@ -14,6 +14,8 @@ import type { TimesheetEntry, LeaveEntry } from "./_components";
 import apiClient from "@/lib/api-client";
 import { API_PATHS, DATE_FORMATS, DAY_INDICATOR_BASE } from "@/lib/constants";
 import { useAuth } from "@/hooks/use-auth";
+import { startOfMonth, endOfMonth, startOfWeek, endOfWeek, addDays } from "date-fns";
+
 
 // TypeScript interfaces for API response
 interface DayData {
@@ -71,17 +73,70 @@ export default function DashboardPage() {
       setError(null);
 
       try {
-        const year = getYear(currentMonth);
-        const month = getMonth(currentMonth) + 1; // getMonth is 0-indexed
+           const monthStart = startOfMonth(currentMonth);
+      const monthEnd = endOfMonth(currentMonth);
 
-        const response = await apiClient.get(API_PATHS.MONTHLY_TIMESHEET, {
-          params: {
-            year,
-            month,
-          },
+      const visibleStart = startOfWeek(monthStart, { weekStartsOn: 0 });
+      const visibleEnd = endOfWeek(monthEnd, { weekStartsOn: 0 });
+
+      const monthsNeeded = new Set<string>();
+      monthsNeeded.add(format(currentMonth, "yyyy-MM"));
+
+      if (visibleStart.getMonth() !== currentMonth.getMonth()) {
+        monthsNeeded.add(format(visibleStart, "yyyy-MM"));
+      }
+      if (visibleEnd.getMonth() !== currentMonth.getMonth()) {
+        monthsNeeded.add(format(visibleEnd, "yyyy-MM"));
+      }
+
+    
+      const allDays: DayData[] = [];
+      let mainMonthTotals = { timesheetHours: 0, leaveHours: 0 };
+
+      for (const key of monthsNeeded) {
+        const [year, month] = key.split("-").map(Number);
+
+        const res = await apiClient.get(API_PATHS.MONTHLY_TIMESHEET, {
+          params: { year, month },
         });
 
-        setMonthlyData(response.data);
+        allDays.push(...res.data.days);
+
+        if (
+          year === getYear(currentMonth) &&
+          month === getMonth(currentMonth) + 1
+        ) {
+          mainMonthTotals = res.data.totals;
+        }
+      }
+
+
+      const finalDays = Array.from(
+        new Map(allDays.map((d) => [d.date, d])).values()
+      );
+      const visibleDays = finalDays.filter((d) => {
+        const dt = parseISO(d.date);
+        return dt >= visibleStart && dt <= visibleEnd;
+      });
+      const combined: MonthlyTimesheetResponse = {
+        user:
+          monthlyData?.user || {
+            id: 0,
+            name: "",
+            departmentId: 0,
+          },
+        period: {
+          year: getYear(currentMonth),
+          month: getMonth(currentMonth) + 1,
+          start: format(visibleStart, DATE_FORMATS.API),
+          end: format(visibleEnd, DATE_FORMATS.API),
+        },
+        totals: mainMonthTotals,
+        days: visibleDays,
+      };
+
+        setMonthlyData(combined);
+
       } catch (err: unknown) {
         console.error("Error fetching monthly data:", err);
         const error = err as {
@@ -209,7 +264,11 @@ export default function DashboardPage() {
     weekend: "text-muted-foreground",
     holiday: "bg-subtle-background dark:bg-red-950/20",
   };
-
+ const leaveDaysDisplay = (() => {
+   if (!monthlyData) return 0;
+   const days = monthlyData.totals.leaveHours / 8;
+   return Number.isInteger(days) ? days : Number(days.toFixed(1));
+ })();
   return (
     <>
       <AppHeader crumbs={[{ label: "Dashboard" }]} />
@@ -240,8 +299,9 @@ export default function DashboardPage() {
                       Leave Days
                     </p>
                     <p className="text-3xl font-bold">
-                      {monthlyData?.totals.leaveHours || 0}
+                       {leaveDaysDisplay}
                     </p>
+                      
                     <p className="text-xs text-muted-foreground">
                       {format(currentMonth, "MMMM yyyy")}
                     </p>
@@ -390,6 +450,7 @@ export default function DashboardPage() {
                           entry={entry}
                         />
                       ))}
+                     
                     </div>
                   )}
                 </CardContent>
