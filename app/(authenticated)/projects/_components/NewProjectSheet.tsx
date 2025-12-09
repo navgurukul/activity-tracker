@@ -108,12 +108,15 @@ interface NewProjectSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess?: () => void;
+  projectId?: string | null;
+  project?: any | null;
 }
 
 export function NewProjectSheet({
   open,
   onOpenChange,
   onSuccess,
+  project
 }: NewProjectSheetProps) {
   const { user } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -124,6 +127,7 @@ export function NewProjectSheet({
   const [managerSearchValue, setManagerSearchValue] = useState("");
   const [managerComboboxOpen, setManagerComboboxOpen] = useState(false);
   const [selectedManagerName, setSelectedManagerName] = useState<string>("");
+  const isEditing = Boolean(project);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -167,6 +171,24 @@ export function NewProjectSheet({
 
     fetchDepartments();
   }, [open, user?.orgId]);
+  useEffect(() => {
+    if (isEditing && project) {
+      form.reset({
+        name: project.name,
+        code: project.code,
+        status: project.status,
+        departmentId: project.department?.id,
+        projectManagerId: project.projectManager?.id,
+        startDate: project.startDate ? new Date(project.startDate) : undefined,
+        endDate: project.endDate ? new Date(project.endDate) : undefined,
+        budgetAmount: project.budgetAmount || 0,
+        slackChannelId: project.slackChannelId || "",
+      });
+
+      setSelectedManagerName(project.projectManager?.name || "");
+    }
+  }, [isEditing, project]);
+
 
   // Fetch managers with search filtering
   useEffect(() => {
@@ -232,11 +254,13 @@ export function NewProjectSheet({
           ? format(values.endDate, DATE_FORMATS.API)
           : undefined,
         budgetCurrency: "INR",
-        budgetAmount: values.budgetAmount || 0,
+        budgetAmountMinor: values.budgetAmount || 0,
         slackChannelId: values.slackChannelId || undefined,
       };
 
-      const response = await apiClient.post(API_PATHS.PROJECTS, payload);
+      const response = isEditing
+        ? await apiClient.patch(`${API_PATHS.PROJECTS}/${project.id}`, payload)
+        : await apiClient.post(API_PATHS.PROJECTS, payload);
 
       if (response.status === 200 || response.status === 201) {
         toast.success("Project created successfully!", {
@@ -270,7 +294,7 @@ export function NewProjectSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="overflow-y-auto sm:max-w-md">
         <SheetHeader>
-          <SheetTitle>Create New Project</SheetTitle>
+          <SheetTitle>{isEditing ? "Edit Project" : "Create New Project"}</SheetTitle>
           <SheetDescription>
             Add a new project to your organization. Fill in the required details
             below.
@@ -421,8 +445,8 @@ export function NewProjectSheet({
                                 {isLoadingManagers
                                   ? "Loading..."
                                   : managerSearchValue.trim()
-                                  ? "No managers found."
-                                  : "Type to search managers..."}
+                                    ? "No managers found."
+                                    : "Type to search managers..."}
                               </CommandEmpty>
                               <CommandGroup>
                                 {managers.map((manager) => (
@@ -517,8 +541,11 @@ export function NewProjectSheet({
             Cancel
           </Button>
           <Button type="submit" form="new-project-form" disabled={isSubmitting}>
-            {isSubmitting ? "Creating..." : "Create Project"}
+            {isSubmitting
+              ? isEditing ? "Updating..." : "Creating..."
+              : isEditing ? "Update Project" : "Create Project"}
           </Button>
+
         </SheetFooter>
       </SheetContent>
     </Sheet>

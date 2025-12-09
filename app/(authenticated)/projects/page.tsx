@@ -34,6 +34,8 @@ export default function ProjectManagementPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [isSheetOpen, setIsSheetOpen] = useState(false);
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
+
 
   // Fetch projects from API
   useEffect(() => {
@@ -166,7 +168,14 @@ export default function ProjectManagementPage() {
                   ) : projects.length === 0 ? (
                     <EmptyState />
                   ) : (
-                    <ProjectsTable projects={projects} />
+                    <ProjectsTable projects={projects}
+                      onEditProject={(projectId) => {
+                        const selected = projects.find(p => String(p.id) === projectId);
+                        if (!selected) return;
+
+                        setEditingProject(selected);
+                        setIsSheetOpen(true);
+                      }} />
                   )}
                 </div>
 
@@ -184,8 +193,12 @@ export default function ProjectManagementPage() {
 
         <NewProjectSheet
           open={isSheetOpen}
-          onOpenChange={setIsSheetOpen}
+          onOpenChange={(open) => {
+            setIsSheetOpen(open);
+            if (!open) setEditingProject(null);
+          }}
           onSuccess={handleProjectCreated}
+          project={editingProject}
         />
       </PageWrapper>
     </RoleProtectedRoute>
