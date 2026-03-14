@@ -341,6 +341,7 @@ export default function TrackerPage() {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [hoursInput, setHoursInput] = useState<Record<number, string>>({});
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsSubmitting(true);
@@ -461,6 +462,21 @@ export default function TrackerPage() {
       taskDescription: "",
     });
   }
+
+  function sanitizeHoursDisplay(raw: string, perProjectMax: number, isAdHoc: boolean) {
+    const clean = (raw ?? "").replace(/[^\d.]/g, "");
+    const [i = "0", f] = clean.split(".");
+    const intPart = i.replace(/^0+(?=\d)/, "") || "0";
+    const frac = f ? f.slice(0, 1) : undefined;
+    const norm = frac !== undefined ? `${intPart}.${frac}` : intPart;
+    let num = norm === "" ? 0 : parseFloat(norm);
+    if (!Number.isFinite(num)) num = 0;
+    num = Math.round(num * 10) / 10;
+    if (isAdHoc && num > 2) num = 2;
+    if (num > VALIDATION.MAX_HOURS_PER_ENTRY) num = VALIDATION.MAX_HOURS_PER_ENTRY;
+    return { num, display: num === 0 ? "" : String(num) };
+  }
+
   return (
     <>
       <AppHeader crumbs={[{ label: "Activity Logger" }]} />
@@ -703,68 +719,53 @@ export default function TrackerPage() {
                             const perProjectMax = isAdHoc
                               ? 2
                               : VALIDATION.MAX_HOURS_PER_ENTRY;
-                            return (
-                              <FormItem>
-                                <FormLabel>Hours Spent</FormLabel>
-                                <FormControl>
-                                  <Input
-                                    type="number"
-                                    step={VALIDATION.HOURS_INPUT_STEP}
-                                    min="0"
-                                    max={perProjectMax}
-                                    placeholder="0.0"
-                                    {...field}
-                                    value={
-                                      field.value === undefined ||
-                                      field.value === null
-                                        ? ""
-                                        : typeof field.value === "number"
-                                        ? String(field.value)
-                                        : field.value
-                                    }
-                                    onChange={(e) => {
-                                      const raw = e.target.value;
-                                      const cleaned = raw.replace(
-                                        /[^\d.]/g,
-                                        ""
-                                      );
-                                      const parts = cleaned.split(".");
-                                      const intPart = parts[0].slice(0, 2);
-                                      const fracPart = parts[1]
-                                        ? parts[1].slice(0, 1)
-                                        : undefined;
-                                      const normalized =
-                                        fracPart !== undefined
-                                          ? `${intPart}.${fracPart}`
-                                          : intPart;
-                                      const num =
-                                        normalized === ""
-                                          ? 0
-                                          : parseFloat(normalized);
-                                      let valueNum = Number.isFinite(num)
-                                        ? num
-                                        : 0;
-                                      valueNum = Math.round(valueNum * 10) / 10;
-                                      // enforce per-project cap (2 hours for Ad-hoc)
-                                      if (isAdHoc && valueNum > 2) {
-                                        valueNum = 2;
-                                      }
-                                      if (
-                                        valueNum >
-                                        VALIDATION.MAX_HOURS_PER_ENTRY
-                                      ) {
-                                        valueNum =
-                                          VALIDATION.MAX_HOURS_PER_ENTRY;
-                                      }
-                                      field.onChange(valueNum);
-                                    }}
-                                  />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
+
+                            const display = hoursInput[index] ?? (
+                              field.value === undefined || field.value === null
+                                ? ""
+                                : String(field.value)
                             );
-                          }}
-                        />
+                            const maxIntLen = String(perProjectMax).length;
+                             return (
+                               <FormItem>
+                                 <FormLabel>Hours Spent</FormLabel>
+                                 <FormControl>
+                                   <Input
+                                    type="text"
+                                    placeholder="0.0"
+                                    value={display}
+                                    onChange={(e) => {
+                                      let v = e.target.value.replace(/[^0-9.]/g, "");
+                                      const dot = v.indexOf(".");
+                                      if (dot !== -1) {
+                                        v = v.slice(0, dot + 1) + v.slice(dot + 1).replace(/\./g, "");
+                                      }
+                                      v = v.replace(/^0+(?=\d)/, "");
+                                      const parts = v.split(".");
+                                      if (parts[0].length > maxIntLen) {
+                                        parts[0] = parts[0].slice(0, maxIntLen);
+                                        v = parts.join(".");
+                                      }
+                                      const intVal = parseInt(parts[0] || "0", 10);
+                                      if (!Number.isNaN(intVal) && intVal >= perProjectMax) {
+                                        v = String(perProjectMax);
+                                      } else if (parts[1]) {
+                                        v = `${parts[0]}.${parts[1].slice(0, 1)}`;
+                                      }
+                                      setHoursInput((prev) => ({ ...prev, [index]: v }));
+                                    }}
+                                    onBlur={() => {
+                                      const { num, display } = sanitizeHoursDisplay(hoursInput[index], perProjectMax, isAdHoc);
+                                      field.onChange(num);
+                                      setHoursInput((prev) => ({ ...prev, [index]: display }));
+                                    }}
+                                   />
+                                 </FormControl>
+                                 <FormMessage />
+                               </FormItem>
+                             );
+                           }}
+                         />
 
                         <FormField
                           control={form.control}
