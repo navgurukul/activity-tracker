@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 import { authService } from "@/lib/auth-service";
 import { useAuth } from "./use-auth";
@@ -28,6 +29,26 @@ export function useGoogleLogin(): UseGoogleLoginReturn {
   const router = useRouter();
   const { login } = useAuth();
 
+  const getErrorMessage = useCallback((err: unknown): string => {
+    const apiMessage =
+      (
+        err as {
+          response?: { data?: { message?: string } };
+        }
+      ).response?.data?.message || "";
+
+    if (apiMessage.trim()) {
+      return apiMessage;
+    }
+
+    const genericMessage = (err as { message?: string }).message || "";
+    if (genericMessage.trim()) {
+      return genericMessage;
+    }
+
+    return "Authentication failed. Please try again.";
+  }, []);
+
   const handleGoogleLogin = useCallback(
     async (credentialResponse: GoogleCredentialResponse): Promise<void> => {
       setIsLoading(true);
@@ -46,21 +67,21 @@ export function useGoogleLogin(): UseGoogleLoginReturn {
         // Redirect to the intended page
         router.push(returnUrl);
       } catch (err) {
-        const errorMessage =
-          err instanceof Error
-            ? err.message
-            : "Authentication failed. Please try again.";
+        const errorMessage = getErrorMessage(err);
         setError(errorMessage);
+        toast.error(errorMessage);
         console.error("Google login error:", err);
       } finally {
         setIsLoading(false);
       }
     },
-    [router, login]
+    [router, login, getErrorMessage]
   );
 
   const handleGoogleError = useCallback((): void => {
-    setError("Google sign-in was cancelled or failed. Please try again.");
+    const errorMessage = "Google sign-in was cancelled or failed. Please try again.";
+    setError(errorMessage);
+    toast.error(errorMessage);
     setIsLoading(false);
   }, []);
 

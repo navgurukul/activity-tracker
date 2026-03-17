@@ -82,6 +82,10 @@ export default function LeavesPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [filterDateRange, setFilterDateRange] = useState<DateRange | undefined>();
 
+  const [teamPage, setTeamPage] = useState(1);
+  const [teamPageSize, setTeamPageSize] = useState(10);
+  const [teamSearch, setTeamSearch] = useState("");
+
   const fetchBalances = useCallback(async () => {
     setIsBalancesLoading(true);
     try {
@@ -175,6 +179,46 @@ export default function LeavesPage() {
     () => teamLeaveHistory.filter((l) => l.state === "rejected"),
     [teamLeaveHistory]
   );
+  const filteredTeamPending = useMemo(() => {
+    if (!teamSearch.trim()) return teamPending;
+    const q = teamSearch.toLowerCase();
+    return teamPending.filter(
+      (l) =>
+        (l.user?.name ?? "").toLowerCase().includes(q) ||
+        (l.user?.email ?? "").toLowerCase().includes(q)
+    );
+  }, [teamPending, teamSearch]);
+
+  const filteredTeamApproved = useMemo(() => {
+    if (!teamSearch.trim()) return teamApproved;
+    const q = teamSearch.toLowerCase();
+    return teamApproved.filter(
+      (l) =>
+        (l.user?.name ?? "").toLowerCase().includes(q) ||
+        (l.user?.email ?? "").toLowerCase().includes(q)
+    );
+  }, [teamApproved, teamSearch]);
+
+  const filteredTeamRejected = useMemo(() => {
+    if (!teamSearch.trim()) return teamRejected;
+    const q = teamSearch.toLowerCase();
+    return teamRejected.filter(
+      (l) =>
+        (l.user?.name ?? "").toLowerCase().includes(q) ||
+        (l.user?.email ?? "").toLowerCase().includes(q)
+    );
+  }, [teamRejected, teamSearch]);
+
+  const teamTotal = filteredTeamApproved.length;
+  const teamTotalPages = Math.max(1, Math.ceil(teamTotal / teamPageSize));
+  const paginatedTeamApproved = useMemo(() => {
+    const start = (teamPage - 1) * teamPageSize;
+    return filteredTeamApproved.slice(start, start + teamPageSize);
+  }, [filteredTeamApproved, teamPage, teamPageSize]);
+
+  useEffect(() => {
+    setTeamPage(1);
+  }, [filteredTeamApproved, teamPageSize]);
 
   // Sorted balances (casual/wellness first)
   const sortedBalances = useMemo(() => {
@@ -615,56 +659,95 @@ export default function LeavesPage() {
             <TabsContent value="team" className="mt-0">
               <Tabs defaultValue="pending" className="w-full">
                 {/* Inner tab bar for team sub-tabs */}
-                <div className="flex items-center gap-1 mb-5 border-b border-border">
-                  {[
-                    { val: "pending", label: "Pending", count: teamPending.length, activeColor: "data-[state=active]:text-amber-700 data-[state=active]:border-amber-500" },
-                    { val: "approved", label: "Approved", count: teamApproved.length, activeColor: "data-[state=active]:text-emerald-700 data-[state=active]:border-emerald-500" },
-                    { val: "rejected", label: "Rejected", count: teamRejected.length, activeColor: "data-[state=active]:text-red-700 data-[state=active]:border-red-500" },
-                  ].map(({ val, label, count, activeColor }) => (
-                    <TabsList key={val} className="h-auto p-0 bg-transparent border-0 rounded-none">
-                      <TabsTrigger
-                        value={val}
-                        className={cn(
-                          "rounded-none px-4 pb-3 pt-1 text-sm font-medium bg-transparent shadow-none",
-                          "border-b-2 border-transparent -mb-px",
-                          "text-muted-foreground hover:text-foreground transition-colors",
-                          "data-[state=active]:bg-transparent data-[state=active]:shadow-none",
-                          activeColor
-                        )}
-                      >
-                        {label}
-                        <span
-                          className={cn(
-                            "ml-2 inline-flex items-center justify-center min-w-[1.25rem] h-5 rounded-full px-1.5 text-[10px] font-semibold tabular-nums",
-                            val === "pending" ? "bg-amber-50 text-amber-700" :
-                            val === "approved" ? "bg-emerald-50 text-emerald-700" :
-                            "bg-red-50 text-red-700"
-                          )}
-                        >
-                          {count}
-                        </span>
-                      </TabsTrigger>
-                    </TabsList>
-                  ))}
+                <div className="flex items-center justify-between mb-5 border-b border-border">
+                  <div className="flex items-center gap-1">
+                    {[
+                      { val: "pending", label: "Pending", count: filteredTeamPending.length, activeColor: "data-[state=active]:text-amber-700 data-[state=active]:border-amber-500" },
+                      { val: "approved", label: "Approved", count: filteredTeamApproved.length, activeColor: "data-[state=active]:text-emerald-700 data-[state=active]:border-emerald-500" },
+                      { val: "rejected", label: "Rejected", count: filteredTeamRejected.length, activeColor: "data-[state=active]:text-red-700 data-[state=active]:border-red-500" },
+                    ].map(({ val, label, count, activeColor }) => (
+                       <TabsList key={val} className="h-auto p-0 bg-transparent border-0 rounded-none">
+                         <TabsTrigger
+                           value={val}
+                           className={cn(
+                             "rounded-none px-4 pb-3 pt-1 text-sm font-medium bg-transparent shadow-none",
+                             "border-b-2 border-transparent -mb-px",
+                             "text-muted-foreground hover:text-foreground transition-colors",
+                             "data-[state=active]:bg-transparent data-[state=active]:shadow-none",
+                             activeColor
+                           )}
+                         >
+                           {label}
+                           <span
+                             className={cn(
+                               "ml-2 inline-flex items-center justify-center min-w-[1.25rem] h-5 rounded-full px-1.5 text-[10px] font-semibold tabular-nums",
+                               val === "pending" ? "bg-amber-50 text-amber-700" :
+                               val === "approved" ? "bg-emerald-50 text-emerald-700" :
+                               "bg-red-50 text-red-700"
+                             )}
+                           >
+                             {count}
+                           </span>
+                         </TabsTrigger>
+                       </TabsList>
+                     ))}
+                   </div>
+
+                  {/* Right-side search for team name / email */}
+                  <div className="ml-4">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                      <Input
+                        placeholder="Search team name or email..."
+                        value={teamSearch}
+                        onChange={(e) => setTeamSearch(e.target.value)}
+                        className="pl-9 h-8 bg-background text-sm min-w-[220px]"
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 <TabsContent value="pending" className="mt-0">
                   <DataTable
                     columns={columns}
-                    data={teamPending}
+                    data={filteredTeamPending}
                     onUpdate={fetchTeamLeaves}
                   />
                 </TabsContent>
                 <TabsContent value="approved" className="mt-0">
                   <LeaveTable
-                    leaves={teamApproved}
+                    leaves={paginatedTeamApproved}
                     isLoading={isTeamLoading}
                     showEmployee={true}
                   />
+                  <div className="flex items-center justify-between px-4 py-3 border-t border-border bg-secondary-background gap-3 mt-2">
+                    <div className="text-xs text-muted-foreground">
+                      {`0 of ${teamTotal} row(s) selected.`}
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setTeamPage((p) => Math.max(1, p - 1))}
+                        disabled={teamPage === 1}
+                      >
+                        Previous
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setTeamPage((p) => Math.min(teamTotalPages, p + 1))}
+                        disabled={teamPage === teamTotalPages}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  </div>
                 </TabsContent>
                 <TabsContent value="rejected" className="mt-0">
                   <LeaveTable
-                    leaves={teamRejected}
+                    leaves={filteredTeamRejected}
                     isLoading={isTeamLoading}
                     showEmployee={true}
                   />

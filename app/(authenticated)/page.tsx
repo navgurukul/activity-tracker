@@ -13,6 +13,11 @@ import {
   Clock,
   AlertCircle,
   TreePalm,
+  Check,
+  X,
+  Pencil,
+  Trash2,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -39,12 +44,15 @@ import {
 } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import apiClient from "@/lib/api-client";
-import { API_PATHS, DATE_FORMATS } from "@/lib/constants";
+import { API_PATHS, DATE_FORMATS, VALIDATION } from "@/lib/constants";
 import { useAuth } from "@/hooks/use-auth";
 import { startOfMonth, endOfMonth, addMonths, subMonths } from "date-fns";
 
 // TypeScript interfaces for API response
 interface TimesheetEntry {
+  id?: number | string;
+  entryId?: number | string;
+  projectId?: number;
   departmentName: string;
   projectName?: string;
   taskDescription: string;
@@ -113,6 +121,13 @@ interface TimesheetRow {
   holidayName?: string;
   leaveStatus?: "approved" | "pending" | "rejected";
   timesheetState?: string;
+  entryId?: number | string;
+  projectId?: number;
+  dateApi?: string;
+}
+interface ProjectOption {
+  id: number;
+  name: string;
 }
 
 /**
@@ -247,21 +262,118 @@ export default function DashboardPage() {
   const [selectedDay, setSelectedDay] = useState<DayData | null>(null);
   const [isDaySheetOpen, setIsDaySheetOpen] = useState(false);
 
-  // Check if user is admin or super admin
-  const isAdminOrSuperAdmin = useMemo(() => {
+  // Team dashboard / search (admin/super admin/manager)
+  const [isTeamMode, setIsTeamMode] = useState(false);
+  const [teamSearch, setTeamSearch] = useState("");
+  const [teamSearchLoading, setTeamSearchLoading] = useState(false);
+  const [teamSearchError, setTeamSearchError] = useState<string | null>(null);
+  const [teamUser, setTeamUser] = useState<any | null>(null);
+  const [refreshTick, setRefreshTick] = useState(0);
+  const [editingRowKey, setEditingRowKey] = useState<string | null>(null);
+  const [editingForm, setEditingForm] = useState({
+    project: "",
+    projectId: "",
+    date: "",
+    hours: "",
+    activities: "",
+  });
+  const [savingRowKey, setSavingRowKey] = useState<string | null>(null);
+  const [deletingRowKey, setDeletingRowKey] = useState<string | null>(null);
+  const [confirmDeleteRowKey, setConfirmDeleteRowKey] = useState<string | null>(null);
+  const [teamProjects, setTeamProjects] = useState<ProjectOption[]>([]);
+  const [projectsLoading, setProjectsLoading] = useState(false);
+  const [isEditingLifeline, setIsEditingLifeline] = useState(false);
+  const [lifelineDraft, setLifelineDraft] = useState("");
+  const [isSavingLifeline, setIsSavingLifeline] = useState(false);
+
+  const getResolvedUserId = (candidate: any): number | null => {
+    const rawId =
+      candidate?.id ?? candidate?.userId ?? candidate?.user?.id ?? null;
+    const numericId = Number(rawId);
+    return Number.isFinite(numericId) ? numericId : null;
+  };
+  const isSelfAsTeamMember = (candidate: any) => {
+    const currentUserId = getResolvedUserId(user);
+    const candidateUserId = getResolvedUserId(candidate);
+    return (
+      currentUserId !== null &&
+      candidateUserId !== null &&
+      currentUserId === candidateUserId
+    );
+  };
+
+  // Check if user can access team dashboard
+  const canAccessTeamDashboard = useMemo(() => {
     const roles = (user as any)?.roles;
     if (Array.isArray(roles)) {
-      return roles.includes("admin") || roles.includes("super_admin");
+      return roles.some((role) => {
+        const normalizedRole = String(role).toLowerCase();
+        return (
+          normalizedRole === "admin" ||
+          normalizedRole === "super_admin" ||
+          normalizedRole === "manager"
+        );
+      });
     }
     if (typeof roles === "string") {
-      return roles === "admin" || roles === "super_admin";
+      const normalizedRole = roles.toLowerCase();
+      return (
+        normalizedRole === "admin" ||
+        normalizedRole === "super_admin" ||
+        normalizedRole === "manager"
+      );
     }
     return false;
   }, [user]);
 
+  const canEditTeamLifeline = useMemo(() => {
+    const roles = (user as any)?.roles;
+    if (Array.isArray(roles)) {
+      return roles.some((role) => {
+        const normalizedRole = String(role).toLowerCase();
+        return normalizedRole === "admin" || normalizedRole === "super_admin";
+      });
+    }
+    if (typeof roles === "string") {
+      const normalizedRole = roles.toLowerCase();
+      return normalizedRole === "admin" || normalizedRole === "super_admin";
+    }
+    return false;
+  }, [user]);
+
+  const canManageTeamEntries = canEditTeamLifeline;
+
+  useEffect(() => {
+    setIsEditingLifeline(false);
+    setLifelineDraft("");
+  }, [isTeamMode, teamUser?.id]);
+
   // Fetch timesheet data
   useEffect(() => {
     if (authLoading) return;
+
+    // If we're in team mode but no team user selected, clear data and skip fetch.
+    if (isTeamMode && !teamUser) {
+      setMonthlyData(null);
+      setError(null);
+      setIsLoading(false);
+      return;
+    }
+
+    // Admin should not view their own data inside Team Dashboard mode.
+    if (isTeamMode && teamUser && isSelfAsTeamMember(teamUser)) {
+      setMonthlyData(null);
+      setError("You cannot view your own data in Team Dashboard");
+      setIsLoading(false);
+      return;
+    }
+
+
+    if (isTeamMode && teamUser && !canManageTeamEntries) {
+      setError(null);
+      setIsLoading(false);
+      return;
+    }
 
     const fetchMonthlyData = async () => {
       const id = ++fetchIdRef.current;
@@ -272,10 +384,14 @@ export default function DashboardPage() {
         const year = currentMonth.getFullYear();
         const month = currentMonth.getMonth() + 1;
 
+        // If teamUser is selected, include their id so backend returns that user's data
+        const params: Record<string, any> = { year, month };
+        if (teamUser?.id) params.userId = teamUser.id;
+
         const response = await apiClient.get<MonthlyTimesheetResponse>(
           API_PATHS.MONTHLY_TIMESHEET,
           {
-            params: { year, month },
+            params,
           }
         );
 
@@ -283,11 +399,18 @@ export default function DashboardPage() {
         setMonthlyData(response.data);
       } catch (err: unknown) {
         if (id !== fetchIdRef.current) return;
-        console.error("Error fetching monthly data:", err);
         const error = err as {
-          response?: { data?: { message?: string } };
+          response?: { status?: number; data?: { message?: string } };
           message?: string;
         };
+
+        if (error.response?.status === 403 && isTeamMode) {
+          setError(null);
+          return;
+        }
+
+        console.error("Error fetching monthly data:", err);
+
         const errorMessage =
           error.response?.data?.message ||
           error.message ||
@@ -303,8 +426,59 @@ export default function DashboardPage() {
     };
 
     fetchMonthlyData();
-  }, [currentMonth, authLoading]);
+  }, [currentMonth, authLoading, isTeamMode, teamUser, refreshTick, user?.id]);
+  useEffect(() => {
+    if (authLoading || !user?.orgId || !canAccessTeamDashboard) return;
 
+    const fetchProjects = async () => {
+      setProjectsLoading(true);
+      try {
+        let page = 1;
+        let hasMore = true;
+        const allProjects: ProjectOption[] = [];
+
+        while (hasMore) {
+          const res = await apiClient.get(API_PATHS.PROJECTS, {
+            params: { orgId: user.orgId, page, limit: 100 },
+          });
+
+          const responseData = Array.isArray(res.data)
+            ? res.data
+            : res.data?.data || [];
+          const items = Array.isArray(responseData)
+            ? responseData
+            : responseData.data || [];
+
+          const normalized = items
+            .map((p: any) => ({
+              id: Number(p.id),
+              name: String(p.name ?? p.projectName ?? ""),
+            }))
+            .filter((p: ProjectOption) => Number.isFinite(p.id) && p.name);
+
+          allProjects.push(...normalized);
+
+          const total = Number(res.data?.total ?? normalized.length);
+          hasMore = allProjects.length < total;
+          page += 1;
+
+          if (!res.data?.total) {
+            hasMore = false;
+          }
+        }
+        const unique = Array.from(
+          new Map(allProjects.map((p) => [p.id, p])).values()
+        );
+        setTeamProjects(unique);
+      } catch (err: unknown) {
+        console.error("Failed to load projects for edit:", err);
+      } finally {
+        setProjectsLoading(false);
+      }
+    };
+
+    fetchProjects();
+  }, [authLoading, user?.orgId, canAccessTeamDashboard]);
   // Flatten data into table rows
   const timesheetRows = useMemo((): TimesheetRow[] => {
     if (!monthlyData) return [];
@@ -334,12 +508,15 @@ export default function DashboardPage() {
             project: entry.projectName || "-",
             activities: entry.taskDescription || "-",
             date: format(parsedDate, "dd/MM/yyyy"),
+            dateApi: format(parsedDate, DATE_FORMATS.API),
             day: dayOfWeek,
             hours: entry.hours,
             isLeave: false,
             isWeekend: isWeekendOff,
             isHoliday: day.isHoliday,
             timesheetState: day.timesheet?.state,
+            entryId: (entry as any).id ?? (entry as any).entryId ?? undefined,
+            projectId: (entry as any).projectId,
           });
         });
       }
@@ -425,6 +602,170 @@ export default function DashboardPage() {
     return monthlyData.totals.totalPayableDays || 0;
   }, [monthlyData]);
 
+  const resolvedBackfill = useMemo(() => {
+    if (isTeamMode) {
+      return (
+        (teamUser as any)?.backfill ??
+        (monthlyData as any)?.backfill ??
+        (monthlyData as any)?.user?.backfill ??
+        null
+      );
+    }
+    return (user as any)?.backfill ?? null;
+  }, [isTeamMode, teamUser, monthlyData, user]);
+
+  const getTeamTargetUserId = () => {
+    const teamSelectedId = Number(teamUser?.id);
+    if (Number.isFinite(teamSelectedId)) return teamSelectedId;
+    const fetchedUserId = Number((monthlyData as any)?.user?.id);
+    if (Number.isFinite(fetchedUserId)) return fetchedUserId;
+    return null;
+  };
+
+  const postBackfillLimitWithFallbackPayloads = async (
+    payloads: Array<Record<string, unknown>>
+  ) => {
+    let lastError: unknown;
+    for (const payload of payloads) {
+      try {
+        await apiClient.post(API_PATHS.BACKFILL_LIMIT, payload);
+        return;
+      } catch (err: unknown) {
+        lastError = err;
+        if (!isUnknownProperty400(err)) {
+          throw err;
+        }
+      }
+    }
+    throw lastError;
+  };
+
+  const handleStartLifelineEdit = () => {
+    if (!isTeamMode || !teamUser || !canEditTeamLifeline) return;
+    const currentValue = Number(
+      (teamUser as any)?.backfill?.limit ??
+        (teamUser as any)?.backfill?.remaining ??
+        (monthlyData as any)?.backfill?.limit ??
+        (monthlyData as any)?.backfill?.remaining ??
+        0
+    );
+    setLifelineDraft(String(Number.isFinite(currentValue) ? currentValue : 0));
+    setIsEditingLifeline(true);
+  };
+
+  const handleCancelLifelineEdit = () => {
+    setIsEditingLifeline(false);
+    setLifelineDraft("");
+  };
+
+  const handleSaveLifeline = async () => {
+    const targetUserId = getTeamTargetUserId();
+    if (!targetUserId) {
+      toast.error("Unable to identify team member");
+      return;
+    }
+
+    const updatedLimit = Number(lifelineDraft);
+    if (!Number.isFinite(updatedLimit) || updatedLimit < 0) {
+      toast.error("Invalid lifeline value", {
+        description: "Lifelines must be a number greater than or equal to 0.",
+      });
+      return;
+    }
+
+    const normalizedLimit = Math.floor(updatedLimit);
+    const monthFromData = Number(monthlyData?.period?.month);
+    const yearFromData = Number(monthlyData?.period?.year);
+    const requestMonth = Number.isInteger(monthFromData)
+      ? monthFromData
+      : currentMonth.getMonth() + 1;
+    const requestYear = Number.isInteger(yearFromData)
+      ? yearFromData
+      : currentMonth.getFullYear();
+
+    if (!Number.isInteger(requestYear) || !Number.isInteger(requestMonth)) {
+      toast.error("Unable to update lifeline", {
+        description: "Month/year context is missing.",
+      });
+      return;
+    }
+
+    const contextPayload = {
+      year: requestYear,
+      month: requestMonth,
+    };
+
+    const payloadsToTry: Array<Record<string, unknown>> = [
+      { ...contextPayload, userId: targetUserId, limit: normalizedLimit },
+      { ...contextPayload, targetUserId, limit: normalizedLimit },
+      { ...contextPayload, employeeId: targetUserId, limit: normalizedLimit },
+      {
+        ...contextPayload,
+        userId: targetUserId,
+        backfillLimit: normalizedLimit,
+      },
+      {
+        ...contextPayload,
+        targetUserId,
+        backfillLimit: normalizedLimit,
+      },
+      {
+        ...contextPayload,
+        userId: targetUserId,
+        lifelineLimit: normalizedLimit,
+      },
+      {
+        ...contextPayload,
+        targetUserId,
+        lifelineLimit: normalizedLimit,
+      },
+      { ...contextPayload, userId: targetUserId, remaining: normalizedLimit },
+      { ...contextPayload, targetUserId, remaining: normalizedLimit },
+    ];
+
+    setIsSavingLifeline(true);
+    try {
+      await postBackfillLimitWithFallbackPayloads(payloadsToTry);
+      setTeamUser((prev: any) => {
+        if (!prev) return prev;
+        const previousLimit = Number(prev.backfill?.limit ?? 0);
+        const previousRemaining = Number(prev.backfill?.remaining ?? 0);
+        const consumedCount =
+          Number.isFinite(previousLimit) && Number.isFinite(previousRemaining)
+            ? Math.max(previousLimit - previousRemaining, 0)
+            : 0;
+        const nextRemaining = Math.max(normalizedLimit - consumedCount, 0);
+
+        return {
+          ...prev,
+          backfill: {
+            ...(prev.backfill || {}),
+            limit: normalizedLimit,
+            remaining: nextRemaining,
+          },
+        };
+      });
+      setIsEditingLifeline(false);
+      setRefreshTick((prev) => prev + 1);
+      toast.success("Lifeline updated successfully");
+    } catch (err: unknown) {
+      console.error("Failed to update lifeline:", err);
+      const error = err as {
+        response?: { data?: { message?: string } };
+        message?: string;
+      };
+      const message =
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to update lifeline";
+      toast.error("Lifeline update failed", {
+        description: message,
+      });
+    } finally {
+      setIsSavingLifeline(false);
+    }
+  };
+
   const handleSalarySummaryExport = async () => {
     if (!startDate || !endDate) {
       toast.error("Please select both start and end dates");
@@ -486,12 +827,217 @@ export default function DashboardPage() {
     setCurrentMonth((prev) => addMonths(prev, 1));
   };
 
+  const getRowKey = (row: TimesheetRow, index: number) =>
+    `${row.entryId ?? "no-entry"}-${row.date}-${index}`;
+  const getTeamEditContext = () => {
+    const actorId = (user as any)?.id;
+    const targetUserId =
+      (teamUser as any)?.id ?? (monthlyData as any)?.user?.id ?? null;
+
+    if (!actorId || !targetUserId) {
+      toast.error("Unable to identify actor or team member");
+      return null;
+    }
+    return { actorId, targetUserId };
+  };
+  const buildTimesheetEntryPath = (
+    template: string,
+    actorId: number | string,
+    targetUserId: number | string,
+    entryId: number | string
+  ) =>
+    template
+      .replace("{actorId}", String(actorId))
+      .replace("{targetUserId}", String(targetUserId))
+      .replace("{entryId}", String(entryId));
+
+  const handleStartEdit = (row: TimesheetRow, index: number) => {
+    const rowKey = getRowKey(row, index);
+    const mappedProjectId =
+      row.projectId ??
+      teamProjects.find(
+        (p) => p.name.toLowerCase() === row.project.toLowerCase()
+      )?.id;
+
+    setEditingRowKey(rowKey);
+    setEditingForm({
+      project: row.project,
+      projectId: mappedProjectId ? String(mappedProjectId) : "",
+      date: row.dateApi ?? "",
+      hours: String(row.hours),
+      activities: row.activities,
+    });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingRowKey(null);
+    setConfirmDeleteRowKey(null);
+    setEditingForm({
+      project: "",
+      projectId: "",
+      date: "",
+      hours: "",
+      activities: "",
+    });
+  };
+  const isUnknownProperty400 = (err: unknown) => {
+    const error = err as {
+      response?: { status?: number; data?: { message?: string | string[] } };
+    };
+    if (error.response?.status !== 400) return false;
+    const msg = error.response?.data?.message;
+    const text = Array.isArray(msg) ? msg.join(" | ") : msg || "";
+    return text.includes("should not exist");
+  };
+
+  const handleSaveEdit = async (row: TimesheetRow, index: number) => {
+    const rowKey = getRowKey(row, index);
+
+    if (!row.entryId) {
+      toast.error("Entry ID missing for update");
+      return;
+    }
+
+    const context = getTeamEditContext();
+    if (!context) return;
+
+    const selectedDate = editingForm.date;
+    const hours = Number(editingForm.hours);
+    const taskDescription = editingForm.activities.trim();
+    const selectedProjectId = Number(editingForm.projectId || row.projectId);
+    if (
+      !Number.isFinite(hours) ||
+      hours < VALIDATION.MIN_HOURS_PER_ENTRY ||
+      hours > VALIDATION.MAX_HOURS_PER_ENTRY
+    ) {
+      toast.error("Invalid hours", {
+        description: `Hours must be between ${VALIDATION.MIN_HOURS_PER_ENTRY} and ${VALIDATION.MAX_HOURS_PER_ENTRY}`,
+      });
+      return;
+    }
+    if (taskDescription.length < VALIDATION.MIN_TASK_DESCRIPTION_LENGTH) {
+      toast.error("Invalid activity", {
+        description: `Activity should be at least ${VALIDATION.MIN_TASK_DESCRIPTION_LENGTH} characters`,
+      });
+      return;
+    }
+
+    if (!Number.isFinite(selectedProjectId) || selectedProjectId <= 0) {
+      toast.error("Please select a valid project");
+      return;
+    }
+
+    if (!selectedDate) {
+      toast.error("Please select a valid date");
+      return;
+    }
+
+    const path = buildTimesheetEntryPath(
+      API_PATHS.TIMESHEET_ENTRY_PATCH,
+      context.actorId,
+      context.targetUserId,
+      row.entryId
+    );
+
+    const payload = {
+      projectId: selectedProjectId,
+      date: selectedDate,
+      hours,
+      activities: taskDescription,
+    };
+
+    setSavingRowKey(rowKey);
+    try {
+      await apiClient.patch(path, payload);
+      toast.success("Entry updated successfully");
+      setEditingRowKey(null);
+      setRefreshTick((prev) => prev + 1);
+    } catch (err: unknown) {
+      console.error("Error updating timesheet entry:", err);
+      const error = err as {
+        response?: { data?: { message?: string } };
+        message?: string;
+      };
+      const errorMessage =
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to update timesheet entry";
+      toast.error("Update failed", {
+        description: errorMessage,
+      });
+    } finally {
+      setSavingRowKey(null);
+    }
+  };
+
+  const handleDeleteEntry = async (row: TimesheetRow, index: number) => {
+    const rowKey = getRowKey(row, index);
+
+    if (!row.entryId) {
+      toast.error("Entry ID missing for delete");
+      return;
+    }
+
+    const context = getTeamEditContext();
+    if (!context) return;
+
+    const path = buildTimesheetEntryPath(
+      API_PATHS.TIMESHEET_ENTRY_DELETE,
+      context.actorId,
+      context.targetUserId,
+      row.entryId
+    );
+
+    setDeletingRowKey(rowKey);
+    try {
+      await apiClient.delete(path);
+      toast.success("Entry deleted successfully");
+      if (editingRowKey === rowKey) {
+        handleCancelEdit();
+      }
+      setRefreshTick((prev) => prev + 1);
+    } catch (err: unknown) {
+      console.error("Error deleting timesheet entry:", err);
+      const error = err as {
+        response?: { data?: { message?: string } };
+        message?: string;
+      };
+      const errorMessage =
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to delete timesheet entry";
+      toast.error("Delete failed", {
+        description: errorMessage,
+      });
+    } finally {
+      setDeletingRowKey(null);
+    }
+  };
+
   return (
     <>
-      <AppHeader crumbs={[{ label: "Dashboard" }]} />
+      <AppHeader
+        crumbs={[{ label: isTeamMode ? "Team Dashboard" : "My Dashboard" }]}
+        right={
+          canAccessTeamDashboard && !isTeamMode ? (
+            <button
+              onClick={() => {
+                setIsTeamMode(true);
+                setTeamSearch("");
+                setTeamSearchError(null);
+                setTeamUser(null);
+              }}
+              className="text-xs text-muted-foreground bg-background border border-border px-3 py-1  hover:shadow-sm"
+              
+            >
+              Team Dashboard
+            </button>
+          ) : undefined
+        }
+      />
       <PageWrapper>
         <div className="p-4 md:p-6 space-y-5">
-          {/* Cycle chip */}
+          {/* Billing cycle chip */}
           <div>
             <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground bg-secondary-background border border-border px-3 py-1.5 rounded-full">
               <Clock className="h-3 w-3 flex-shrink-0" />
@@ -524,13 +1070,13 @@ export default function DashboardPage() {
               },
               {
                 label: "Lifelines",
-                display: String(user?.backfill?.remaining ?? 0),
+                display: String(resolvedBackfill?.remaining ?? 0),
                 unit: "",
-                sub: `of ${user?.backfill?.limit ?? 0} available`,
+                sub: `of ${resolvedBackfill?.limit ?? 0} available`,
                 icon: AlertCircle,
-                accent: (user?.backfill?.remaining ?? 0) > 0 ? "border-l-emerald-400" : "border-l-amber-400",
-                iconBg: (user?.backfill?.remaining ?? 0) > 0 ? "bg-emerald-50" : "bg-amber-50",
-                iconColor: (user?.backfill?.remaining ?? 0) > 0 ? "text-emerald-600" : "text-amber-600",
+                accent: (resolvedBackfill?.remaining ?? 0) > 0 ? "border-l-emerald-400" : "border-l-amber-400",
+                iconBg: (resolvedBackfill?.remaining ?? 0) > 0 ? "bg-emerald-50" : "bg-amber-50",
+                iconColor: (resolvedBackfill?.remaining ?? 0) > 0 ? "text-emerald-600" : "text-amber-600",
               },
               {
                 label: "Payable Days",
@@ -544,6 +1090,9 @@ export default function DashboardPage() {
               },
             ].map((card) => {
               const Icon = card.icon;
+              const isLifelineCard = card.label === "Lifelines";
+              const canShowLifelineEditor =
+                isLifelineCard && isTeamMode && Boolean(teamUser) && canEditTeamLifeline;
               return (
                 <div
                   key={card.label}
@@ -556,21 +1105,90 @@ export default function DashboardPage() {
                     <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider leading-tight">
                       {card.label}
                     </span>
-                    <span className={cn("p-1.5 rounded-md flex-shrink-0", card.iconBg)}>
-                      <Icon className={cn("h-3.5 w-3.5", card.iconColor)} />
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className={cn("p-1.5 rounded-md flex-shrink-0", card.iconBg)}>
+                        <Icon className={cn("h-3.5 w-3.5", card.iconColor)} />
+                      </span>
+                    </div>
                   </div>
                   {isLoading ? (
                     <div className="h-8 w-16 bg-secondary-background rounded animate-pulse" />
                   ) : (
-                    <p className="text-2xl font-bold text-foreground tabular-nums leading-none">
-                      {card.display}
-                      {card.unit && (
-                        <span className="text-sm font-normal text-muted-foreground ml-1">{card.unit}</span>
-                      )}
-                    </p>
+                    <>
+                      <p className="text-2xl font-bold text-foreground tabular-nums leading-none">
+                        {card.display}
+                        {card.unit && (
+                          <span className="text-sm font-normal text-muted-foreground ml-1">{card.unit}</span>
+                        )}
+                      </p>
+                    </>
                   )}
-                  <p className="text-xs text-muted-foreground mt-2">{card.sub}</p>
+                  {isLifelineCard && canShowLifelineEditor ? (
+                    isEditingLifeline ? (
+                      <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                        <span>of</span>
+                        <Input
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          value={lifelineDraft}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/[^0-9]/g, "");
+                            setLifelineDraft(val);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              handleSaveLifeline();
+                            }
+                            if (e.key === "Escape") {
+                              e.preventDefault();
+                              handleCancelLifelineEdit();
+                            }
+                          }}
+                          disabled={isSavingLifeline}
+                          className="h-7 w-20"
+                        />
+                        <span>available</span>
+                        <button
+                          type="button"
+                          onClick={handleSaveLifeline}
+                          disabled={isSavingLifeline}
+                          className="h-6 w-6 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background disabled:opacity-40 disabled:cursor-not-allowed"
+                          title="Save available lifelines"
+                        >
+                          {isSavingLifeline ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin text-foreground" />
+                          ) : (
+                            <Check className="h-3.5 w-3.5 text-emerald-600" />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleCancelLifelineEdit}
+                          disabled={isSavingLifeline}
+                          className="h-6 w-6 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background disabled:opacity-40 disabled:cursor-not-allowed"
+                          title="Cancel available lifelines edit"
+                        >
+                          <X className="h-3.5 w-3.5 text-red-600" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                        <p>{card.sub}</p>
+                        <button
+                          type="button"
+                          onClick={handleStartLifelineEdit}
+                          className="h-5 w-5 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background"
+                          title="Edit available lifelines"
+                        >
+                          <Pencil className="h-3 w-3 text-foreground" />
+                        </button>
+                      </div>
+                    )
+                  ) : (
+                    <p className="text-xs text-muted-foreground mt-2">{card.sub}</p>
+                  )}
                 </div>
               );
             })}
@@ -584,10 +1202,115 @@ export default function DashboardPage() {
                 <div>
                   <h2 className="text-sm font-semibold text-foreground">Timesheet</h2>
                   <p className="text-xs text-muted-foreground mt-0.5 break-all">
-                    {user?.email || "user@example.com"}
+                    {isTeamMode
+                      ? teamUser
+                        ? teamUser.email || teamUser.user?.email || teamUser.name || teamUser.user?.name || monthlyData?.user?.name
+                        : "Select team member"
+                      : user?.email || "user@example.com"}
                   </p>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                  {/* Team search (visible after clicking Team Dashboard) */}
+                  {canAccessTeamDashboard && isTeamMode && (
+                    <div className="mr-2">
+                      <div className="flex items-center gap-2">
+                        <Input
+                          value={teamSearch}
+                          onChange={(e) => {
+                            setTeamSearch(e.target.value);
+                            if (teamSearchError) setTeamSearchError(null);
+                          }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            (async () => {
+                              if (!teamSearch) return;
+                              setTeamSearchLoading(true);
+                              setTeamSearchError(null);
+                              try {
+                                const res = await apiClient.get(
+                                  API_PATHS.EMPLOYEE_SEARCH,
+                                  {
+                                    params: { email: teamSearch },
+                                    headers: {
+                                      "Cache-Control": "no-cache",
+                                      Pragma: "no-cache",
+                                    },
+                                  }
+                                );
+                                const data = res.data;
+                                const searchedUser = data?.user ?? data;
+
+                                if (isSelfAsTeamMember(searchedUser)) {
+                                  setTeamUser(null);
+                                  setMonthlyData(null);
+                                  setTeamSearchError(
+                                    "You cannot select yourself."
+                                  );
+                                  toast.error(
+                                    "You cannot select yourself."
+                                  );
+                                  return;
+                                }
+
+                                if (data && data.days && data.user) {
+                                  const normalizedTeamUser = {
+                                    ...data.user,
+                                    backfill:
+                                      (data.user as any)?.backfill ??
+                                      (data as any)?.backfill ??
+                                      null,
+                                  };
+                                  setMonthlyData(data as MonthlyTimesheetResponse);
+                                  setTeamUser(normalizedTeamUser);
+                                  setTeamSearchError(null);
+                                  toast.success("Team member data loaded");
+                                } else if (data?.user) {
+                                  const normalizedTeamUser = {
+                                    ...data.user,
+                                    backfill:
+                                      (data.user as any)?.backfill ??
+                                      (data as any)?.backfill ??
+                                      null,
+                                  };
+                                  setTeamUser(normalizedTeamUser);
+                                  setTeamSearchError(null);
+                                  toast.success("Team member selected");
+                                } else {
+                                  setTeamUser(data);
+                                  setTeamSearchError(null);
+                                  toast.success("Team member selected");
+                                }
+                              } catch (err: unknown) {
+                                console.error("Team search error:", err);
+                                setTeamSearchError("No user found");
+                                toast.error("Team search failed");
+                              } finally {
+                                setTeamSearchLoading(false);
+                              }
+                            })();
+                          }
+                        }}
+                          placeholder="Search by email and press Enter"
+                          className="w-[260px]"
+                        />
+                        <Button
+                          variant="ghost"
+                          onClick={() => {
+                            setIsTeamMode(false);
+                            setTeamUser(null);
+                            setTeamSearch("");
+                            setTeamSearchError(null);
+                          }}
+                          size="sm"
+                        >
+                          Close
+                        </Button>
+                      </div>
+                      {teamSearchError && (
+                        <p className="mt-1 text-xs text-red-600">{teamSearchError}</p>
+                      )}
+                    </div>
+                  )}
                   {/* View toggle */}
                   <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-background p-0.5">
                     <button
@@ -1078,6 +1801,11 @@ export default function DashboardPage() {
                               Hours
                             </TableHead>
                             <TableHead>Activities</TableHead>
+                            {isTeamMode && canManageTeamEntries && (
+                              <TableHead className="whitespace-nowrap w-32 text-center">
+                                Actions
+                              </TableHead>
+                            )}
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -1118,6 +1846,18 @@ export default function DashboardPage() {
                               bgColor = "var(--background)";
                             }
 
+                            const rowKey = getRowKey(row, index);
+                            const canManageEntry =
+                              isTeamMode &&
+                              canManageTeamEntries &&
+                              !row.isLeave &&
+                              Boolean(row.entryId);
+                            const isEditing =
+                              canManageTeamEntries && editingRowKey === rowKey;
+                            const isSaving = savingRowKey === rowKey;
+                            const isDeleting = deletingRowKey === rowKey;
+                            const isConfirmingDelete = confirmDeleteRowKey === rowKey;
+
                             return (
                               <TableRow
                                 key={`${row.date}-${index}`}
@@ -1134,35 +1874,208 @@ export default function DashboardPage() {
                                 </TableCell>
 
                                 <TableCell className="px-3 py-2.5 text-sm text-foreground whitespace-nowrap">
-                                  {!isSameDateAsPrev ? row.date : ""}
+                                  {isEditing ? (
+                                    <Input
+                                      type="date"
+                                      value={editingForm.date}
+                                      onChange={(e) =>
+                                        setEditingForm((prev) => ({
+                                          ...prev,
+                                          date: e.target.value,
+                                        }))
+                                      }
+                                      className="h-8 w-36"
+                                    />
+                                  ) : !isSameDateAsPrev ? (
+                                    row.date
+                                  ) : (
+                                    ""
+                                  )}
                                 </TableCell>
                                 <TableCell className="px-3 py-2.5 text-sm text-foreground whitespace-nowrap">
                                   {!isSameDateAsPrev ? row.day : ""}
                                 </TableCell>
                                 <TableCell className="px-3 py-2.5 text-sm text-foreground whitespace-nowrap">
-                                  {row.project}
+                                  {isEditing ? (
+                                    <select
+                                      value={editingForm.projectId}
+                                      onChange={(e) =>
+                                        setEditingForm((prev) => ({
+                                          ...prev,
+                                          projectId: e.target.value,
+                                          project:
+                                            teamProjects.find(
+                                              (p) =>
+                                                String(p.id) === e.target.value
+                                            )?.name ?? prev.project,
+                                        }))
+                                      }
+                                      className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
+                                      disabled={projectsLoading}
+                                    >
+                                      <option value="">
+                                        {projectsLoading
+                                          ? "Loading projects..."
+                                          : "Select project"}
+                                      </option>
+                                      {teamProjects.map((project) => (
+                                        <option
+                                          key={project.id}
+                                          value={String(project.id)}
+                                        >
+                                          {project.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  ) : (
+                                    row.project
+                                  )}
                                 </TableCell>
                                 <TableCell className="px-3 py-2.5 text-sm text-foreground text-center font-medium whitespace-nowrap">
-                                  {row.hours}
+                                  {isEditing ? (
+                                    <Input
+                                      type="text"
+                                      inputMode="decimal"
+                                      value={editingForm.hours}
+                                      onChange={(e) => {
+                                        const val = e.target.value.replace(/[^0-9.]/g, "");
+                                        setEditingForm((prev) => ({
+                                          ...prev,
+                                          hours: val,
+                                        }));
+                                      }}
+                                      className="h-8 w-16 text-center"
+                                    />
+                                  ) : (
+                                    row.hours
+                                  )}
                                 </TableCell>
                                 <TableCell className="px-3 py-2.5 text-sm text-foreground">
-                                  {row.activities}
-                                  {row.leaveStatus === "pending" && (
-                                    <span className=" font-bold">
-                                      (Pending)
-                                    </span>
-                                  )}
-                                  {row.leaveStatus === "rejected" && (
-                                    <span className="font-bold">
-                                      (Rejected)
-                                    </span>
-                                  )}
-                                  {row.leaveStatus === "approved" && (
-                                    <span className="font-bold">
-                                      (Approved)
-                                    </span>
+                                  {isEditing ? (
+                                    <Input
+                                      type="text"
+                                      value={editingForm.activities}
+                                      onChange={(e) =>
+                                        setEditingForm((prev) => ({
+                                          ...prev,
+                                          activities: e.target.value,
+                                        }))
+                                      }
+                                      className="h-8"
+                                    />
+                                  ) : (
+                                    <>
+                                      {row.activities}
+                                      {row.leaveStatus === "pending" && (
+                                        <span className=" font-bold">
+                                          (Pending)
+                                        </span>
+                                      )}
+                                      {row.leaveStatus === "rejected" && (
+                                        <span className="font-bold">
+                                          (Rejected)
+                                        </span>
+                                      )}
+                                      {row.leaveStatus === "approved" && (
+                                        <span className="font-bold">
+                                          (Approved)
+                                        </span>
+                                      )}
+                                    </>
                                   )}
                                 </TableCell>
+                                {isTeamMode && canManageTeamEntries && (
+                                  <TableCell className="px-3 py-2.5 text-center">
+                                    {canManageEntry ? (
+                                      <div className="inline-flex items-center gap-1.5">
+                                        {isEditing ? (
+                                          <>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                handleSaveEdit(row, index)
+                                              }
+                                              disabled={isSaving || isDeleting}
+                                              className="h-7 w-7 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background disabled:opacity-40 disabled:cursor-not-allowed"
+                                              title="Save changes"
+                                            >
+                                              {isSaving ? (
+                                                <Loader2 className="h-3.5 w-3.5 animate-spin text-foreground" />
+                                              ) : (
+                                                <Check className="h-3.5 w-3.5 text-emerald-600" />
+                                              )}
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={handleCancelEdit}
+                                              disabled={isSaving || isDeleting}
+                                              className="h-7 w-7 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background disabled:opacity-40 disabled:cursor-not-allowed"
+                                              title="Cancel editing"
+                                            >
+                                              <X className="h-3.5 w-3.5 text-red-600" />
+                                            </button>
+                                          </>
+                                        ) : isConfirmingDelete ? (
+                                          <div className="inline-flex items-center gap-1.5">
+                                            <span className="text-xs text-muted-foreground whitespace-nowrap">Are you sure you want to delete this entry?</span>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setConfirmDeleteRowKey(null);
+                                                handleDeleteEntry(row, index);
+                                              }}
+                                              disabled={isDeleting}
+                                              className="h-7 w-7 rounded-md border border-red-300 bg-red-50 flex items-center justify-center hover:bg-red-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                                              title="Confirm delete"
+                                            >
+                                              {isDeleting ? (
+                                                <Loader2 className="h-3.5 w-3.5 animate-spin text-red-600" />
+                                              ) : (
+                                                <Trash2 className="h-3.5 w-3.5 text-red-600" />
+                                              )}
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => setConfirmDeleteRowKey(null)}
+                                              disabled={isDeleting}
+                                              className="h-7 w-7 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background disabled:opacity-40 disabled:cursor-not-allowed"
+                                              title="Cancel delete"
+                                            >
+                                              <X className="h-3.5 w-3.5 text-foreground" />
+                                            </button>
+                                          </div>
+                                        ) : (
+                                          <>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                handleStartEdit(row, index)
+                                              }
+                                              disabled={isSaving || isDeleting}
+                                              className="h-7 w-7 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background disabled:opacity-40 disabled:cursor-not-allowed"
+                                              title="Edit entry"
+                                            >
+                                              <Pencil className="h-3.5 w-3.5 text-foreground" />
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                setConfirmDeleteRowKey(rowKey)
+                                              }
+                                              disabled={isSaving || isDeleting}
+                                              className="h-7 w-7 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background disabled:opacity-40 disabled:cursor-not-allowed"
+                                              title="Delete entry"
+                                            >
+                                              <Trash2 className="h-3.5 w-3.5 text-red-600" />
+                                            </button>
+                                          </>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <span className="text-xs text-muted-foreground">-</span>
+                                    )}
+                                  </TableCell>
+                                )}
                               </TableRow>
                             );
                           })}
@@ -1205,7 +2118,9 @@ export default function DashboardPage() {
                           <div
                             key={`${row.date}-${index}`}
                             className="border border-border rounded-[4px] p-4 space-y-2"
-                            style={{ backgroundColor: bgColor }}
+                            style={{
+                              backgroundColor: bgColor,
+                            }}
                           >
                             <div className="flex justify-between items-start">
                               <div className="space-y-0.5 flex-1">
@@ -1406,7 +2321,6 @@ export default function DashboardPage() {
                               const statusColors: Record<string, string> = {
                                 approved: "var(--color-green-text)",
                                 pending: "var(--color-yellow-text)",
-                                rejected: "var(--color-red-text)",
                               };
                               const color =
                                 statusColors[status] || statusColors.approved;

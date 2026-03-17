@@ -9,7 +9,7 @@
 
 export const API = {
   BASE_URL:
-    process.env.NEXT_PUBLIC_API_BASE_URL || "https://stub.navgurukul.org/api",
+   process.env.NEXT_PUBLIC_API_BASE_URL || "https://stub.navgurukul.org/api",
   TIMEOUT_MS: 10000,
 } as const;
 
@@ -28,6 +28,10 @@ export const API_PATHS = {
   AUTH_ME: "/v1/auth/me",
   ACTIVITIES_SUBMIT: "/v1/timesheets",
   MONTHLY_TIMESHEET: "/v1/timesheets/monthly",
+  BACKFILL_LIMIT: "/v1/timesheets/backfill/limit",
+  EMPLOYEE_SEARCH: "/v1/users/search/employee",
+  TIMESHEET_ENTRY_PATCH: "/v1/timesheets/actor/{actorId}/user/{targetUserId}/entries/{entryId}",
+  TIMESHEET_ENTRY_DELETE: "/v1/timesheets/actor/{actorId}/user/{targetUserId}/entries/{entryId}",
   LEAVES_REQUESTS_GET: "/v1/leaves/my-requests",
   LEAVES_TEAM_REQUESTS_GET: "/v1/leaves/requests",
   LEAVES_REQUESTS_POST: "/v1/leaves/requests",
