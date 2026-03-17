@@ -75,6 +75,7 @@ export function AppHeader({ crumbs, className, right }: AppHeaderProps) {
             })}
           </BreadcrumbList>
         </Breadcrumb>
+        {right && <div className="ml-3">{right}</div>}
       </div>
       <div className="ml-auto px-3 flex items-center gap-1">
         <div className="md:hidden">

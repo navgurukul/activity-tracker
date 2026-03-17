@@ -415,8 +415,9 @@ export default function TrackerPage() {
 
         // Reset form to default values
         form.reset();
-        // Redirect to dashboard
-        router.push("/");
+        // Redirect to dashboard with date parameter (ISO) so dashboard can open & scroll to the exact day
+        const dateParam = format(values.activityDate, "yyyy-MM-dd");
+        router.push(`/?date=${dateParam}`);
       }
     } catch (error: any) {
       console.error("Error submitting activity tracker:", error);
