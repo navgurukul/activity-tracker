@@ -562,7 +562,6 @@ export default function LeavesPage() {
                 <div className="px-5 py-4 border-b border-border bg-secondary-background flex flex-wrap items-start gap-y-2 justify-between">
                   <div>
                     <h2 className="text-sm font-semibold text-foreground">Leave Balance</h2>
-                    <p className="text-xs text-muted-foreground mt-0.5">Allocated and remaining days for {fyLabel}</p>
                   </div>
                   <div className="flex items-center gap-3 text-xs text-muted-foreground">
                     <span className="flex items-center gap-1.5">

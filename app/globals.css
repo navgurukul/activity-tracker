@@ -143,3 +143,14 @@ input[data-slot="input"][type="number"] {
   -webkit-appearance: none;
   appearance: textfield;
 }
+
+@keyframes today-pulse {
+  0%, 100% { outline-color: rgba(100, 116, 160, 0.85); }
+  50%       { outline-color: rgba(100, 116, 160, 0.2); }
+}
+
+.today-cell {
+  outline: 2px solid rgba(100, 116, 160, 0.85);
+  outline-offset: -2px;
+  animation: today-pulse 2.4s ease-in-out infinite;
+}

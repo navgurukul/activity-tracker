@@ -581,6 +581,14 @@ export default function DashboardPage() {
     return rows;
   }, [monthlyData]);
 
+  const dailyTotals = useMemo(() => {
+    const map = new Map<string, number>();
+    timesheetRows.forEach((row) => {
+      map.set(row.date, (map.get(row.date) ?? 0) + row.hours);
+    });
+    return map;
+  }, [timesheetRows]);
+
   const leaveDaysDisplay = useMemo(() => {
     if (!monthlyData) return 0;
     const days = monthlyData.totals.leaveHours / 8;
@@ -1572,25 +1580,38 @@ export default function DashboardPage() {
                                 {weekData.map((dayData) => {
                                   // Determine cell background
                                   let cellBg = "var(--background)";
-                                  if (dayData.isOff)
+                                  if (dayData.isHoliday)
+                                    cellBg = "#ddeee6";
+                                  else if (dayData.isSunday || dayData.is2ndOr4thSaturday)
                                     cellBg = "var(--secondary-background)";
                                   else if (dayData.isUnfilled)
-                                    cellBg = "var(--secondary-background)";
+                                    cellBg = "#ede4c8";
                                   else if (dayData.status === "rejected")
-                                    cellBg = "var(--color-red-bg)";
+                                    cellBg = "#eddcdc";
                                   else if (dayData.status === "pending")
-                                    cellBg = "var(--color-yellow-bg)";
+                                    cellBg = "#ece6cc";
+
+                                  // Left-border accent via inset shadow (doesn't break divide-x)
+                                  let accentShadow = "";
+                                  if (dayData.isHoliday)
+                                    accentShadow = "inset 3px 0 0 #5a8a6a";
+                                  else if (dayData.isUnfilled)
+                                    accentShadow = "inset 3px 0 0 #b89848";
+                                  else if (dayData.status === "rejected")
+                                    accentShadow = "inset 3px 0 0 #a05858";
+                                  else if (dayData.status === "pending")
+                                    accentShadow = "inset 3px 0 0 #8a7838";
+
+                                  const boxShadow = accentShadow || undefined;
 
                                   return (
                                     <div
                                       key={dayData.day.date}
-                                      className="min-h-[100px] p-2 relative cursor-pointer hover:brightness-[0.98] transition-all rounded-[4px]"
+                                      className={`min-h-[110px] p-2.5 relative cursor-pointer hover:brightness-[0.97] transition-all rounded-[4px]${dayData.isToday ? " today-cell" : ""}`}
                                       style={{
                                         backgroundColor: cellBg,
                                         borderColor: "var(--border)",
-                                        boxShadow: dayData.isToday
-                                          ? "inset 0 0 0 1.5px var(--foreground)"
-                                          : undefined,
+                                        boxShadow,
                                       }}
                                       onClick={() => {
                                         setSelectedDay(dayData.day);
@@ -1601,7 +1622,7 @@ export default function DashboardPage() {
                                       <div className="flex items-start justify-between mb-1.5">
                                         <div className="flex flex-col">
                                           <span
-                                            className="text-base font-semibold leading-none"
+                                            className="text-lg font-semibold leading-none"
                                             style={{
                                               color: "var(--foreground)",
                                             }}
@@ -1609,7 +1630,7 @@ export default function DashboardPage() {
                                             {dayData.displayDate}
                                           </span>
                                           <span
-                                            className="text-[10px] uppercase mt-0.5"
+                                            className="text-xs uppercase mt-0.5"
                                             style={{ color: "var(--muted)" }}
                                           >
                                             {dayData.dayShort}
@@ -1617,11 +1638,24 @@ export default function DashboardPage() {
                                         </div>
                                         {dayData.totalHours > 0 && (
                                           <span
-                                            className="text-[10px] font-medium px-1.5 py-0.5 rounded-[2px]"
+                                            className="text-xs font-semibold px-1.5 py-0.5 rounded-[3px]"
                                             style={{
                                               backgroundColor:
-                                                "var(--secondary-background)",
-                                              color: "var(--foreground)",
+                                                dayData.status === "rejected"
+                                                  ? "#ecdcdc"
+                                                  : dayData.status === "pending"
+                                                  ? "#ece6cc"
+                                                  : dayData.status === "filled"
+                                                  ? "#daeae2"
+                                                  : "var(--secondary-background)",
+                                              color:
+                                                dayData.status === "rejected"
+                                                  ? "#803838"
+                                                  : dayData.status === "pending"
+                                                  ? "#786020"
+                                                  : dayData.status === "filled"
+                                                  ? "#386050"
+                                                  : "var(--foreground)",
                                             }}
                                           >
                                             {dayData.totalHours}h
@@ -1634,9 +1668,11 @@ export default function DashboardPage() {
                                         {/* Off day indicator */}
                                         {dayData.isOff && (
                                           <div
-                                            className="text-[10px] font-medium"
+                                            className="text-xs font-medium"
                                             style={{
-                                              color: "var(--color-green-text)",
+                                              color: dayData.isHoliday
+                                                ? "#3a6a4a"
+                                                : "var(--muted)",
                                             }}
                                           >
                                             {dayData.isHoliday
@@ -1651,11 +1687,8 @@ export default function DashboardPage() {
                                         {dayData.isHoliday &&
                                           dayData.holidayName && (
                                             <div
-                                              className="text-[10px] truncate"
-                                              style={{
-                                                color:
-                                                  "var(--color-green-text)",
-                                              }}
+                                              className="text-xs truncate"
+                                              style={{ color: "#3a6a4a" }}
                                             >
                                               {dayData.holidayName}
                                             </div>
@@ -1664,12 +1697,12 @@ export default function DashboardPage() {
                                         {/* Timesheet entries */}
                                         {dayData.timesheetEntries.length >
                                           0 && (
-                                          <div className="space-y-0.5">
+                                          <div className="space-y-1">
                                             {dayData.timesheetEntries.map(
                                               (entry, i) => (
                                                 <div
                                                   key={i}
-                                                  className="text-[10px] truncate flex items-center gap-1"
+                                                  className="text-xs truncate flex items-center gap-1"
                                                 >
                                                   <span
                                                     className="font-medium truncate"
@@ -1682,6 +1715,7 @@ export default function DashboardPage() {
                                                       "Project"}
                                                   </span>
                                                   <span
+                                                    className="font-medium flex-shrink-0"
                                                     style={{
                                                       color: "var(--muted)",
                                                     }}
@@ -1691,9 +1725,9 @@ export default function DashboardPage() {
                                                   {dayData.day.timesheet
                                                     ?.state === "rejected" && (
                                                     <span
+                                                      className="flex-shrink-0"
                                                       style={{
-                                                        color:
-                                                          "var(--color-red-text)",
+                                                        color: "#903030",
                                                       }}
                                                     >
                                                       ×
@@ -1707,12 +1741,12 @@ export default function DashboardPage() {
 
                                         {/* Leave entries */}
                                         {dayData.leaveEntries.length > 0 && (
-                                          <div className="space-y-0.5">
+                                          <div className="space-y-1">
                                             {dayData.leaveEntries.map(
                                               (entry: any, i) => (
                                                 <div
                                                   key={i}
-                                                  className="text-[10px] truncate flex items-center gap-1"
+                                                  className="text-xs truncate flex items-center gap-1"
                                                 >
                                                   <span
                                                     className="font-medium truncate"
@@ -1724,6 +1758,7 @@ export default function DashboardPage() {
                                                     {entry.leaveType.name}
                                                   </span>
                                                   <span
+                                                    className="font-medium flex-shrink-0"
                                                     style={{
                                                       color: "var(--muted)",
                                                     }}
@@ -1733,9 +1768,9 @@ export default function DashboardPage() {
                                                   {entry.state ===
                                                     "pending" && (
                                                     <span
+                                                      className="flex-shrink-0"
                                                       style={{
-                                                        color:
-                                                          "var(--color-yellow-text)",
+                                                        color: "#806020",
                                                       }}
                                                     >
                                                       ○
@@ -1744,9 +1779,9 @@ export default function DashboardPage() {
                                                   {entry.state ===
                                                     "rejected" && (
                                                     <span
+                                                      className="flex-shrink-0"
                                                       style={{
-                                                        color:
-                                                          "var(--color-red-text)",
+                                                        color: "#903030",
                                                       }}
                                                     >
                                                       ×
@@ -1761,10 +1796,10 @@ export default function DashboardPage() {
                                         {/* Unfilled indicator */}
                                         {dayData.isUnfilled && (
                                           <div
-                                            className="text-[10px] italic"
-                                            style={{ color: "var(--muted)" }}
+                                            className="text-xs font-medium"
+                                            style={{ color: "#907030" }}
                                           >
-                                            —
+                                            Missing entry
                                           </div>
                                         )}
                                       </div>
@@ -1793,6 +1828,9 @@ export default function DashboardPage() {
                             </TableHead>
                             <TableHead className="whitespace-nowrap w-28">
                               Day
+                            </TableHead>
+                            <TableHead className="whitespace-nowrap w-20 text-center">
+                              Total
                             </TableHead>
                             <TableHead className="whitespace-nowrap w-32">
                               Project
@@ -1829,17 +1867,23 @@ export default function DashboardPage() {
                               (row.isLeave && row.leaveStatus === "rejected") ||
                               row.timesheetState === "rejected"
                             ) {
+                              bgColor = "#f0c0c0";
                               isColored = true;
                             } else if (
                               row.isLeave &&
                               row.leaveStatus === "pending"
                             ) {
+                              bgColor = "#f5eab0";
                               isColored = true;
                             } else if (
-                              row.isHoliday ||
-                              row.isWeekend ||
-                              (row.isLeave && row.leaveStatus === "approved")
+                              row.isLeave && row.leaveStatus === "approved"
                             ) {
+                              bgColor = "#c8e4d4";
+                              isColored = true;
+                            } else if (row.isHoliday) {
+                              bgColor = "#c8e4d4";
+                              isColored = true;
+                            } else if (row.isWeekend) {
                               bgColor = "var(--secondary-background)";
                               isColored = true;
                             } else {
@@ -1865,6 +1909,9 @@ export default function DashboardPage() {
                                   backgroundColor: bgColor,
                                   borderBottom: isSameDateAsNext
                                     ? "none"
+                                    : undefined,
+                                  borderTop: !isSameDateAsPrev && index > 0
+                                    ? "2px solid var(--border)"
                                     : undefined,
                                 }}
                                 className={isColored ? "hover:opacity-95" : ""}
@@ -1894,6 +1941,13 @@ export default function DashboardPage() {
                                 </TableCell>
                                 <TableCell className="px-3 py-2.5 text-sm text-foreground whitespace-nowrap">
                                   {!isSameDateAsPrev ? row.day : ""}
+                                </TableCell>
+                                <TableCell className="px-3 py-2.5 text-sm text-center whitespace-nowrap font-semibold">
+                                  {!isSameDateAsPrev ? (
+                                    <span style={{ color: "var(--foreground)" }}>
+                                      {dailyTotals.get(row.date) ?? 0}h
+                                    </span>
+                                  ) : ""}
                                 </TableCell>
                                 <TableCell className="px-3 py-2.5 text-sm text-foreground whitespace-nowrap">
                                   {isEditing ? (
@@ -1967,18 +2021,35 @@ export default function DashboardPage() {
                                     <>
                                       {row.activities}
                                       {row.leaveStatus === "pending" && (
-                                        <span className=" font-bold">
-                                          (Pending)
+                                        <span
+                                          className="font-semibold ml-1"
+                                          style={{ color: "#806020" }}
+                                        >
+                                          · Pending approval
                                         </span>
                                       )}
                                       {row.leaveStatus === "rejected" && (
-                                        <span className="font-bold">
-                                          (Rejected)
+                                        <span
+                                          className="font-semibold ml-1"
+                                          style={{ color: "#903030" }}
+                                        >
+                                          · Rejected
                                         </span>
                                       )}
                                       {row.leaveStatus === "approved" && (
-                                        <span className="font-bold">
-                                          (Approved)
+                                        <span
+                                          className="font-semibold ml-1"
+                                          style={{ color: "#2d6647" }}
+                                        >
+                                          · Approved
+                                        </span>
+                                      )}
+                                      {!row.isLeave && row.timesheetState === "rejected" && (
+                                        <span
+                                          className="font-semibold ml-1"
+                                          style={{ color: "#903030" }}
+                                        >
+                                          · Rejected
                                         </span>
                                       )}
                                     </>
@@ -2154,13 +2225,28 @@ export default function DashboardPage() {
                               <p className="text-sm text-foreground">
                                 {row.activities}
                                 {row.leaveStatus === "pending" && (
-                                  <span>(Pending)</span>
+                                  <span
+                                    className="font-semibold ml-1"
+                                    style={{ color: "var(--color-yellow-text)" }}
+                                  >
+                                    · Pending approval
+                                  </span>
                                 )}
                                 {row.leaveStatus === "rejected" && (
-                                  <span>(Rejected)</span>
+                                  <span
+                                    className="font-semibold ml-1"
+                                    style={{ color: "var(--color-red-text)" }}
+                                  >
+                                    · Rejected
+                                  </span>
                                 )}
                                 {row.leaveStatus === "approved" && (
-                                  <span>(Approved)</span>
+                                  <span
+                                    className="font-semibold ml-1"
+                                    style={{ color: "var(--color-green-text)" }}
+                                  >
+                                    · Approved
+                                  </span>
                                 )}
                               </p>
                             </div>

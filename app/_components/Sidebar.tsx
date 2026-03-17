@@ -13,7 +13,7 @@ import {
   LogOut,
   Target,
   TreePalm,
-  Users,
+
 } from "lucide-react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -42,7 +42,7 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
   SidebarRail,
-  SidebarTrigger,
+
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useAuth } from "@/hooks/use-auth";
@@ -151,7 +151,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   Simple Tracking Until Better
                 </span>
               </Link>
-              <SidebarTrigger className="ml-auto group-data-[collapsible=icon]:hidden flex-shrink-0" />
             </div>
           </SidebarMenuItem>
         </SidebarMenu>
@@ -190,7 +189,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                             asChild
                             className="text-sm text-foreground rounded-[4px] hover:bg-secondary-background cursor-pointer"
                           >
-                            <a href={subItem.url}>{subItem.title}</a>
+                            <Link href={subItem.url}>{subItem.title}</Link>
                           </DropdownMenuItem>
                         ))}
                       </DropdownMenuContent>
@@ -235,9 +234,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                                     "text-foreground bg-secondary-background font-medium"
                                 )}
                               >
-                                <a href={subItem.url}>
+                                <Link href={subItem.url}>
                                   <span>{subItem.title}</span>
-                                </a>
+                                </Link>
                               </SidebarMenuSubButton>
                             </SidebarMenuSubItem>
                           ))}
@@ -258,10 +257,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                         "bg-secondary-background font-medium text-foreground"
                     )}
                   >
-                    <a href={item.url}>
+                    <Link href={item.url}>
                       {item.icon && <item.icon style={ICON_SIZE} />}
                       <span>{item.title}</span>
-                    </a>
+                    </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               )
@@ -287,10 +286,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                         "bg-secondary-background font-medium text-foreground"
                     )}
                   >
-                    <a href={item.url}>
+                    <Link href={item.url}>
                       {item.icon && <item.icon style={ICON_SIZE} />}
                       <span>{item.title}</span>
-                    </a>
+                    </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
