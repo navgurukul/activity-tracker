@@ -1026,22 +1026,6 @@ export default function DashboardPage() {
     <>
       <AppHeader
         crumbs={[{ label: isTeamMode ? "Team Dashboard" : "My Dashboard" }]}
-        right={
-          canAccessTeamDashboard && !isTeamMode ? (
-            <button
-              onClick={() => {
-                setIsTeamMode(true);
-                setTeamSearch("");
-                setTeamSearchError(null);
-                setTeamUser(null);
-              }}
-              className="text-xs text-muted-foreground bg-background border border-border px-3 py-1  hover:shadow-sm"
-              
-            >
-              Team Dashboard
-            </button>
-          ) : undefined
-        }
       />
       <PageWrapper>
         <div className="p-4 md:p-6 space-y-5">
