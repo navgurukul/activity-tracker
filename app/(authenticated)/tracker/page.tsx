@@ -485,10 +485,51 @@ export default function TrackerPage() {
         <div className="flex w-full justify-center p-4">
           <Card className="mx-auto w-full min-w-[120px] max-w-[80vw] sm:max-w-xs md:max-w-lg lg:max-w-2xl xl:max-w-3xl">
             <CardHeader>
-              <CardTitle className="text-2xl mb-2">Activity Logger</CardTitle>
-              <CardDescription className="text-muted-foreground">
-                Log your daily activities and manage your time effectively.
-              </CardDescription>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <CardTitle className="text-2xl mb-2">Activity Logger</CardTitle>
+                  <CardDescription className="text-muted-foreground">
+                    Log your daily activities and manage your time effectively.
+                  </CardDescription>
+                </div>
+                <div
+                  className={cn(
+                    "w-full sm:w-auto min-w-[170px] bg-background border border-border rounded-lg p-3 border-l-4",
+                    (user?.backfill?.remaining ?? 0) > 0
+                      ? "border-l-[#748074]"
+                      : "border-l-amber-400"
+                  )}
+                >
+                  <div className="flex items-start justify-between mb-2">
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      Lifelines
+                    </span>
+                    <span
+                      className={cn(
+                        "p-1.5 rounded-md",
+                        (user?.backfill?.remaining ?? 0) > 0
+                          ? "bg-[#e5eeea]"
+                          : "bg-amber-50"
+                      )}
+                    >
+                      <AlertCircle
+                        className={cn(
+                          "h-3.5 w-3.5",
+                          (user?.backfill?.remaining ?? 0) > 0
+                            ? "text-[#748074]"
+                            : "text-amber-600"
+                        )}
+                      />
+                    </span>
+                  </div>
+                  <p className="text-2xl font-bold text-foreground tabular-nums leading-none">
+                    {user?.backfill?.remaining ?? 0}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    of {user?.backfill?.limit ?? 0} available
+                  </p>
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
               <Form {...form}>

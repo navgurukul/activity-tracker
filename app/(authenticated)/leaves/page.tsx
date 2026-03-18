@@ -270,7 +270,6 @@ export default function LeavesPage() {
     {
       label: "Available",
       value: summaryStats.available,
-      sub: "days remaining",
       icon: TreePalm,
       accent: "border-l-[#8a6f5e]",
       iconBg: "bg-[#f0ebe3]",
@@ -280,7 +279,6 @@ export default function LeavesPage() {
     {
       label: "Allocated",
       value: summaryStats.allocated,
-      sub: "total this year",
       icon: CalendarIcon,
       accent: "border-l-[#748074]",
       iconBg: "bg-[#e5eeea]",
@@ -290,7 +288,6 @@ export default function LeavesPage() {
     {
       label: "Pending",
       value: summaryStats.pending,
-      sub: "awaiting review",
       icon: Clock,
       accent: "border-l-amber-400",
       iconBg: "bg-amber-50",
@@ -300,7 +297,6 @@ export default function LeavesPage() {
     {
       label: "Approved",
       value: summaryStats.approved,
-      sub: `taken in ${fyLabel}`,
       icon: CheckCircle2,
       accent: "border-l-emerald-400",
       iconBg: "bg-emerald-50",
@@ -380,7 +376,7 @@ export default function LeavesPage() {
                           <span className="text-sm font-normal text-muted-foreground ml-1">days</span>
                         </p>
                       )}
-                      <p className="text-xs text-muted-foreground mt-1">{card.sub}</p>
+                      {/* <p className="text-xs text-muted-foreground mt-1">{card.sub}</p> */}
                     </div>
                   );
                 })}
@@ -394,7 +390,7 @@ export default function LeavesPage() {
                     placeholder="Search leave type or reason..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-9 h-9 bg-background text-sm"
+                    className="pl-9 h-9 bg-background text-sm font-base"
                   />
                 </div>
                 <Popover>
@@ -403,7 +399,7 @@ export default function LeavesPage() {
                       variant="outline"
                       size="sm"
                       className={cn(
-                        "h-9 gap-2 font-normal min-w-[200px] justify-start",
+                        "h-9 gap-2 min-w-[200px] justify-start text-sm font-base",
                         !filterDateRange?.from && "text-muted-foreground"
                       )}
                     >
@@ -447,7 +443,7 @@ export default function LeavesPage() {
                   </PopoverContent>
                 </Popover>
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="h-9 w-[130px] bg-background text-foreground border-border text-sm">
+                  <SelectTrigger className="h-9 w-[130px] bg-background text-foreground border-border text-sm font-base">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
