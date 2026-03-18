@@ -499,10 +499,14 @@ export default function DashboardPage() {
         isSaturday && (weekOfMonth === 2 || weekOfMonth === 4);
       const isSunday = dayOfWeek === "Sunday";
       const isWeekendOff = is2ndOr4thSaturday || isSunday;
+      const timesheetEntries = day.timesheet?.entries ?? [];
+      const leaveEntries = day.leaves?.entries ?? [];
+      const hasTimesheetEntries = timesheetEntries.length > 0;
+      const hasLeaveEntries = leaveEntries.length > 0;
 
       // Add timesheet entries
-      if (day.timesheet?.entries && day.timesheet.entries.length > 0) {
-        day.timesheet.entries.forEach((entry) => {
+      if (hasTimesheetEntries) {
+        timesheetEntries.forEach((entry) => {
           rows.push({
             sno: sno++,
             project: entry.projectName || "-",
@@ -522,8 +526,8 @@ export default function DashboardPage() {
       }
 
       // Add leave entries
-      if (day.leaves?.entries && day.leaves.entries.length > 0) {
-        day.leaves.entries.forEach((entry) => {
+      if (hasLeaveEntries) {
+        leaveEntries.forEach((entry) => {
           const leaveStatus =
             (entry as any).state === "rejected"
               ? "rejected"
@@ -549,8 +553,8 @@ export default function DashboardPage() {
       // Add weekend/holiday rows if no entries exist
       if (
         (isWeekendOff || day.isHoliday) &&
-        (!day.timesheet?.entries || day.timesheet.entries.length === 0) &&
-        (!day.leaves?.entries || day.leaves.entries.length === 0)
+        !hasTimesheetEntries &&
+        !hasLeaveEntries
       ) {
         let offType = "";
         if (day.isHoliday) {
@@ -576,6 +580,20 @@ export default function DashboardPage() {
           holidayName: day.holidayName,
         });
       }
+      if (!isWeekendOff && !day.isHoliday && !hasTimesheetEntries && !hasLeaveEntries) {
+        rows.push({
+          sno: sno++,
+          project: "-",
+          activities: "No entry",
+          date: format(parsedDate, "dd/MM/yyyy"),
+          dateApi: format(parsedDate, DATE_FORMATS.API),
+          day: dayOfWeek,
+          hours: 0,
+          isLeave: false,
+          isWeekend: false,
+          isHoliday: false,
+        });
+      }
     });
 
     return rows;
@@ -585,6 +603,17 @@ export default function DashboardPage() {
     const map = new Map<string, number>();
     timesheetRows.forEach((row) => {
       map.set(row.date, (map.get(row.date) ?? 0) + row.hours);
+    });
+    return map;
+  }, [timesheetRows]);
+
+  const dateSerialMap = useMemo(() => {
+    const map = new Map<string, number>();
+    let serial = 1;
+    timesheetRows.forEach((row) => {
+      if (!map.has(row.date)) {
+        map.set(row.date, serial++);
+      }
     });
     return map;
   }, [timesheetRows]);
@@ -1777,15 +1806,6 @@ export default function DashboardPage() {
                                           </div>
                                         )}
 
-                                        {/* Unfilled indicator */}
-                                        {dayData.isUnfilled && (
-                                          <div
-                                            className="text-xs font-medium"
-                                            style={{ color: "#907030" }}
-                                          >
-                                            Missing entry
-                                          </div>
-                                        )}
                                       </div>
                                     </div>
                                   );
@@ -1807,7 +1827,7 @@ export default function DashboardPage() {
                             <TableHead className="whitespace-nowrap w-16">
                               Sr
                             </TableHead>
-                            <TableHead className="whitespace-nowrap w-28">
+                            <TableHead className="whitespace-nowrap w-28 text-center">
                               Date
                             </TableHead>
                             <TableHead className="whitespace-nowrap w-28">
@@ -1901,10 +1921,12 @@ export default function DashboardPage() {
                                 className={isColored ? "hover:opacity-95" : ""}
                               >
                                 <TableCell className="px-3 py-2.5 text-sm text-muted-foreground whitespace-nowrap">
-                                  {row.sno}
+                                  {!isSameDateAsPrev
+                                    ? dateSerialMap.get(row.date) ?? ""
+                                    : ""}
                                 </TableCell>
 
-                                <TableCell className="px-3 py-2.5 text-sm text-foreground whitespace-nowrap">
+                                <TableCell className="px-3 py-2.5 text-sm text-foreground whitespace-nowrap text-center">
                                   {isEditing ? (
                                     <Input
                                       type="date"
@@ -2180,7 +2202,9 @@ export default function DashboardPage() {
                             <div className="flex justify-between items-start">
                               <div className="space-y-0.5 flex-1">
                                 <p className="text-xs text-muted-foreground">
-                                  #{row.sno}
+                                  {!isSameDateAsPrev
+                                    ? `#${dateSerialMap.get(row.date) ?? ""}`
+                                    : ""}
                                 </p>
                                 {!isSameDateAsPrev && (
                                   <p className="text-sm font-medium text-foreground">
