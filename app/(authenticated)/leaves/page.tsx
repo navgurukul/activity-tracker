@@ -136,19 +136,34 @@ export default function LeavesPage() {
     fetchMyLeaves();
   }, [fetchBalances, fetchMyLeaves]);
 
+  const visibleBalances = useMemo(() => {
+    return balances.filter((balance) => {
+      const leaveName = String(balance.leaveType?.name ?? "").trim().toLowerCase();
+      const leaveCode = String(balance.leaveType?.code ?? "").trim().toLowerCase();
+
+      const isCompensatoryLeave =
+        leaveName === "compensatory leave" ||
+        leaveCode === "compensatory_leave" ||
+        leaveCode === "compensatory-leave" ||
+        leaveCode === "compensatory";
+
+      return !isCompensatoryLeave;
+    });
+  }, [balances]);
+
   // Summary stats from balances
   const summaryStats = useMemo(() => {
-    const allocated = balances.reduce((sum, b) => sum + b.allocatedHours / 8, 0);
-    const available = balances.reduce((sum, b) => sum + b.balanceHours / 8, 0);
-    const pending = balances.reduce((sum, b) => sum + b.pendingHours / 8, 0);
-    const approved = balances.reduce((sum, b) => sum + b.bookedHours / 8, 0);
+    const allocated = visibleBalances.reduce((sum, b) => sum + b.allocatedHours / 8, 0);
+    const available = visibleBalances.reduce((sum, b) => sum + b.balanceHours / 8, 0);
+    const pending = visibleBalances.reduce((sum, b) => sum + b.pendingHours / 8, 0);
+    const approved = visibleBalances.reduce((sum, b) => sum + b.bookedHours / 8, 0);
     return {
       available: Math.round(available),
       allocated: Math.round(allocated),
       pending: Math.round(pending),
       approved: Math.round(approved),
     };
-  }, [balances]);
+  }, [visibleBalances]);
 
   // Filtered leave requests
   const filteredLeaves = useMemo(() => {
@@ -223,7 +238,7 @@ export default function LeavesPage() {
   // Sorted balances (casual/wellness first)
   const sortedBalances = useMemo(() => {
     const priority = ["casual leave", "wellness leave"];
-    return [...balances].sort((a, b) => {
+    return [...visibleBalances].sort((a, b) => {
       const aKey = (a.leaveType?.name || "").toLowerCase();
       const bKey = (b.leaveType?.name || "").toLowerCase();
       const ai = priority.findIndex((p) => aKey.includes(p));
@@ -233,7 +248,7 @@ export default function LeavesPage() {
         aKey.localeCompare(bKey)
       );
     });
-  }, [balances]);
+  }, [visibleBalances]);
 
   const formatDays = (leave: LeaveRequest) => {
     const days = leave.hours / 8;
@@ -261,6 +276,14 @@ export default function LeavesPage() {
         {c.label}
       </span>
     );
+  };
+
+  const getDisplayLeaveTypeName = (name: string) => {
+    const normalizedName = name.trim().toLowerCase();
+    if (normalizedName === "comp off") {
+      return "Compensatory Leave";
+    }
+    return name;
   };
 
   const currentYear = new Date().getFullYear();
@@ -521,7 +544,7 @@ export default function LeavesPage() {
                         >
                           <td className="px-4 py-3.5 text-xs text-muted-foreground tabular-nums">{idx + 1}</td>
                           <td className="px-4 py-3.5">
-                            <span className="font-medium text-foreground">{leave.leaveType.name}</span>
+                            <span className="font-medium text-foreground">{getDisplayLeaveTypeName(leave.leaveType.name)}</span>
                           </td>
                           <td className="px-4 py-3.5 text-foreground">
                             <span>{format(parseISO(leave.startDate), "d MMM yyyy")}</span>
@@ -596,7 +619,7 @@ export default function LeavesPage() {
                           <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-4">
                             {/* Leave type name */}
                             <div className="flex items-center gap-2 sm:w-44 sm:flex-shrink-0">
-                              <span className="text-sm font-medium text-foreground">{balance.leaveType.name}</span>
+                              <span className="text-sm font-medium text-foreground">{getDisplayLeaveTypeName(balance.leaveType.name)}</span>
                               {balance.leaveType.paid && (
                                 <span className="text-[10px] font-medium text-[#748074] bg-[#e5eeea] rounded px-1.5 py-0.5">Paid</span>
                               )}

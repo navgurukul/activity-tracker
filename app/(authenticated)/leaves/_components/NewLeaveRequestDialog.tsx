@@ -282,9 +282,15 @@ export function NewLeaveRequestDialog({
   }
 
   const priority = ["casual leave", "wellness leave"];
+  const getDisplayLeaveTypeName = (name: string) => {
+    return name.trim().toLowerCase() === "comp off"
+      ? "Compensatory Leave"
+      : name;
+  };
+
   const sortedLeaveTypes = [...leaveTypes].sort((a, b) => {
-    const aKey = (a.name || "").toLowerCase();
-    const bKey = (b.name || "").toLowerCase();
+    const aKey = getDisplayLeaveTypeName(a.name || "").toLowerCase();
+    const bKey = getDisplayLeaveTypeName(b.name || "").toLowerCase();
     const ai = priority.findIndex((p) => aKey.includes(p));
     const bi = priority.findIndex((p) => bKey.includes(p));
     return (
@@ -329,7 +335,7 @@ export function NewLeaveRequestDialog({
                     <SelectContent>
                       {sortedLeaveTypes.map((type) => (
                         <SelectItem key={type.id} value={type.code}>
-                          {type.name} — {Math.floor(type.balanceHours / 8)} remaining
+                          {getDisplayLeaveTypeName(type.name)} — {Math.floor(type.balanceHours / 8)} remaining
                         </SelectItem>
                       ))}
                     </SelectContent>

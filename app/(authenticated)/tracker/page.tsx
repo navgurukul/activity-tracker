@@ -270,13 +270,12 @@ export default function TrackerPage() {
           if (isEffectiveToday) return true;
           return (
             d.getTime() >= earliestAllowed.getTime() &&
-            d.getTime() <= dayBeforeToday.getTime() &&
-            !isNonWorkingDay(d)
+            d.getTime() <= dayBeforeToday.getTime()
           );
         },
         {
           message:
-            "Activity can be added for the past 3 working days (excluding today and non-working days). You may have exhausted your backfill limit.",
+            "Activity can be added for today and recent backfill dates allowed by your lifeline limit. You may have exhausted your backfill limit.",
         }
       ),
     projectEntries: z
