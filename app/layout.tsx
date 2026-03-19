@@ -14,6 +14,11 @@ const ibmPlexMono = IBM_Plex_Mono({
 export const metadata: Metadata = {
   title: "STUB",
   description: "Simple Tracking Until Better",
+  icons: {
+    icon: "/stub-logo.svg",
+    shortcut: "/stub-logo.svg",
+    apple: "/stub-logo.svg",
+  },
 };
 
 export default function RootLayout({

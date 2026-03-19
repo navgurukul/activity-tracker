@@ -3,11 +3,13 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { format, parseISO } from "date-fns";
 import { toast } from "sonner";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ChevronLeft,
   ChevronRight,
   LayoutGrid,
   List,
+  Plus,
   Briefcase,
   Calendar,
   Clock,
@@ -27,6 +29,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableHeader,
@@ -128,6 +138,12 @@ interface TimesheetRow {
 interface ProjectOption {
   id: number;
   name: string;
+}
+
+interface DepartmentOption {
+  id: number;
+  name: string;
+  code: string;
 }
 
 /**
@@ -238,7 +254,10 @@ export const TimesheetTable: React.FC<TimesheetTableProps> = ({
 };
 
 export default function DashboardPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { isLoading: authLoading, user } = useAuth();
+  const targetDateParam = searchParams.get("date");
   const [currentMonth, setCurrentMonth] = useState<Date>(() => {
     const date = new Date();
     date.setMonth(date.getMonth() - 1);
@@ -261,6 +280,10 @@ export default function DashboardPage() {
   });
   const [selectedDay, setSelectedDay] = useState<DayData | null>(null);
   const [isDaySheetOpen, setIsDaySheetOpen] = useState(false);
+  const [highlightedDateApi, setHighlightedDateApi] = useState<string | null>(
+    null
+  );
+  const hasAutoScrolledToDateRef = useRef(false);
 
   // Team dashboard / search (admin/super admin/manager)
   const [isTeamMode, setIsTeamMode] = useState(false);
@@ -285,6 +308,32 @@ export default function DashboardPage() {
   const [isEditingLifeline, setIsEditingLifeline] = useState(false);
   const [lifelineDraft, setLifelineDraft] = useState("");
   const [isSavingLifeline, setIsSavingLifeline] = useState(false);
+  const [isTeamLoggerOpen, setIsTeamLoggerOpen] = useState(false);
+  const [isSubmittingTeamLogger, setIsSubmittingTeamLogger] = useState(false);
+  const [teamDepartments, setTeamDepartments] = useState<DepartmentOption[]>([]);
+  const [teamProjectsByDepartment, setTeamProjectsByDepartment] = useState<
+    Record<string, ProjectOption[]>
+  >({});
+  const [teamLoggerProjectsLoading, setTeamLoggerProjectsLoading] = useState(false);
+  const [teamLoggerForm, setTeamLoggerForm] = useState({
+    workDate: format(new Date(), DATE_FORMATS.API),
+    departmentId: "",
+    projectId: "",
+    hours: "",
+    activities: "",
+  });
+
+  const getBillingCycleAnchorDate = (inputDate: Date) => {
+    const d = new Date(inputDate);
+    const cycleStartsOn = 26;
+    if (d.getDate() < cycleStartsOn) {
+      d.setMonth(d.getMonth() - 1);
+    }
+
+    d.setDate(1);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  };
 
   const getResolvedUserId = (candidate: any): number | null => {
     const rawId =
@@ -347,6 +396,19 @@ export default function DashboardPage() {
     setIsEditingLifeline(false);
     setLifelineDraft("");
   }, [isTeamMode, teamUser?.id]);
+
+  useEffect(() => {
+    if (!targetDateParam || isTeamMode) return;
+
+    const parsedDate = parseISO(targetDateParam);
+    if (Number.isNaN(parsedDate.getTime())) return;
+
+    setCurrentMonth(getBillingCycleAnchorDate(parsedDate));
+    setViewMode("table");
+    localStorage.setItem("timesheet-view-mode", "table");
+    setHighlightedDateApi(targetDateParam);
+    hasAutoScrolledToDateRef.current = false;
+  }, [targetDateParam, isTeamMode]);
 
   // Fetch timesheet data
   useEffect(() => {
@@ -479,6 +541,34 @@ export default function DashboardPage() {
 
     fetchProjects();
   }, [authLoading, user?.orgId, canAccessTeamDashboard]);
+
+  useEffect(() => {
+    if (authLoading || !user?.orgId || !canAccessTeamDashboard) return;
+
+    const fetchDepartments = async () => {
+      try {
+        const res = await apiClient.get(API_PATHS.DEPARTMENTS, {
+          params: { orgId: user.orgId },
+        });
+        const list = Array.isArray(res.data) ? res.data : res.data?.data || [];
+        const normalized = list
+          .map((dept: any) => ({
+            id: Number(dept.id),
+            name: String(dept.name ?? ""),
+            code: String(dept.code ?? ""),
+          }))
+          .filter(
+            (dept: DepartmentOption) =>
+              Number.isFinite(dept.id) && Boolean(dept.name)
+          );
+        setTeamDepartments(normalized);
+      } catch (err: unknown) {
+        console.error("Failed to load departments for team logger:", err);
+      }
+    };
+
+    fetchDepartments();
+  }, [authLoading, user?.orgId, canAccessTeamDashboard]);
   // Flatten data into table rows
   const timesheetRows = useMemo((): TimesheetRow[] => {
     if (!monthlyData) return [];
@@ -599,6 +689,35 @@ export default function DashboardPage() {
     return rows;
   }, [monthlyData]);
 
+  useEffect(() => {
+    if (!highlightedDateApi || isLoading || hasAutoScrolledToDateRef.current) {
+      return;
+    }
+
+    const hasTargetRow = timesheetRows.some(
+      (row) => row.dateApi === highlightedDateApi
+    );
+    if (!hasTargetRow) return;
+
+    const targetRow = document.querySelector<HTMLElement>(
+      `[data-date-api='${highlightedDateApi}']`
+    );
+    if (!targetRow) return;
+
+    targetRow.scrollIntoView({ behavior: "smooth", block: "center" });
+    hasAutoScrolledToDateRef.current = true;
+
+    if (targetDateParam) {
+      router.replace("/", { scroll: false });
+    }
+
+    const clearHighlightTimer = window.setTimeout(() => {
+      setHighlightedDateApi(null);
+    }, 3000);
+
+    return () => window.clearTimeout(clearHighlightTimer);
+  }, [highlightedDateApi, isLoading, timesheetRows, router, targetDateParam]);
+
   const dailyTotals = useMemo(() => {
     const map = new Map<string, number>();
     timesheetRows.forEach((row) => {
@@ -666,6 +785,101 @@ export default function DashboardPage() {
     for (const payload of payloads) {
       try {
         await apiClient.post(API_PATHS.BACKFILL_LIMIT, payload);
+        return;
+      } catch (err: unknown) {
+        lastError = err;
+        if (!isUnknownProperty400(err)) {
+          throw err;
+        }
+      }
+    }
+    throw lastError;
+  };
+
+  const resetTeamLoggerForm = () => {
+    setTeamLoggerForm({
+      workDate: format(new Date(), DATE_FORMATS.API),
+      departmentId: "",
+      projectId: "",
+      hours: "",
+      activities: "",
+    });
+  };
+
+  const fetchTeamLoggerProjectsForDepartment = async (departmentId: string) => {
+    const numericDepartmentId = Number(departmentId);
+    if (!user?.orgId || !Number.isFinite(numericDepartmentId)) return;
+
+    if (teamProjectsByDepartment[departmentId]?.length) return;
+
+    setTeamLoggerProjectsLoading(true);
+    try {
+      let page = 1;
+      let hasMore = true;
+      const allProjects: ProjectOption[] = [];
+
+      while (hasMore) {
+        const res = await apiClient.get(API_PATHS.PROJECTS, {
+          params: {
+            orgId: user.orgId,
+            departmentId: numericDepartmentId,
+            page,
+            limit: 100,
+          },
+        });
+
+        const responseData = Array.isArray(res.data)
+          ? res.data
+          : res.data?.data || [];
+        const items = Array.isArray(responseData)
+          ? responseData
+          : responseData.data || [];
+
+        const normalized = items
+          .map((project: any) => ({
+            id: Number(project.id),
+            name: String(project.name ?? project.projectName ?? ""),
+          }))
+          .filter(
+            (project: ProjectOption) =>
+              Number.isFinite(project.id) && Boolean(project.name)
+          );
+
+        allProjects.push(...normalized);
+
+        const total = Number(res.data?.total ?? normalized.length);
+        hasMore = allProjects.length < total;
+        page += 1;
+
+        if (!res.data?.total) {
+          hasMore = false;
+        }
+      }
+
+      const unique = Array.from(
+        new Map(allProjects.map((project) => [project.id, project])).values()
+      );
+      setTeamProjectsByDepartment((prev) => ({
+        ...prev,
+        [departmentId]: unique,
+      }));
+    } catch (err: unknown) {
+      console.error("Failed to load department projects for team logger:", err);
+      toast.error("Failed to load projects", {
+        description: "Please try again.",
+      });
+    } finally {
+      setTeamLoggerProjectsLoading(false);
+    }
+  };
+
+  const postAdminCreateWithFallbackPayloads = async (
+    payloads: Array<Record<string, unknown>>
+  ) => {
+    let lastError: unknown;
+    for (const payload of payloads) {
+      try {
+        await apiClient.post(API_PATHS.TIMESHEET_ADMIN_CREATE, payload);
         return;
       } catch (err: unknown) {
         lastError = err;
@@ -1051,10 +1265,136 @@ export default function DashboardPage() {
     }
   };
 
+  const handleOpenTeamLogger = () => {
+    if (!canManageTeamEntries) return;
+    if (!isTeamMode) {
+      toast.error("Open Team Dashboard first");
+      return;
+    }
+    if (!teamUser) {
+      toast.error("Select a team member first");
+      return;
+    }
+    resetTeamLoggerForm();
+    setIsTeamLoggerOpen(true);
+  };
+
+  const handleSubmitTeamLogger = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    const targetUserId = getTeamTargetUserId();
+    if (!targetUserId) {
+      toast.error("Unable to identify team member");
+      return;
+    }
+
+    const selectedDepartmentId = Number(teamLoggerForm.departmentId);
+    const selectedProjectId = Number(teamLoggerForm.projectId);
+    const hours = Number(teamLoggerForm.hours);
+    const taskDescription = teamLoggerForm.activities.trim();
+    const workDate = teamLoggerForm.workDate;
+
+    if (!workDate) {
+      toast.error("Please select a date");
+      return;
+    }
+
+    if (!Number.isFinite(selectedDepartmentId) || selectedDepartmentId <= 0) {
+      toast.error("Please select a valid department");
+      return;
+    }
+
+    if (!Number.isFinite(selectedProjectId) || selectedProjectId <= 0) {
+      toast.error("Please select a valid project");
+      return;
+    }
+
+    if (
+      !Number.isFinite(hours) ||
+      hours < VALIDATION.MIN_HOURS_PER_ENTRY ||
+      hours > VALIDATION.MAX_HOURS_PER_ENTRY
+    ) {
+      toast.error("Invalid hours", {
+        description: `Hours must be between ${VALIDATION.MIN_HOURS_PER_ENTRY} and ${VALIDATION.MAX_HOURS_PER_ENTRY}`,
+      });
+      return;
+    }
+
+    if (taskDescription.length < VALIDATION.MIN_TASK_DESCRIPTION_LENGTH) {
+      toast.error("Invalid activity", {
+        description: `Activity should be at least ${VALIDATION.MIN_TASK_DESCRIPTION_LENGTH} characters`,
+      });
+      return;
+    }
+
+    const basePayload = {
+      workDate,
+      notes: "",
+      entries: [
+        {
+          projectId: selectedProjectId,
+          taskDescription,
+          hours,
+        },
+      ],
+    };
+
+    const payloadsToTry: Array<Record<string, unknown>> = [
+      { ...basePayload, userId: targetUserId },
+      { ...basePayload, targetUserId },
+      { ...basePayload, employeeId: targetUserId },
+    ];
+
+    setIsSubmittingTeamLogger(true);
+    try {
+      await postAdminCreateWithFallbackPayloads(payloadsToTry);
+      toast.success("Activity log added successfully");
+      setIsTeamLoggerOpen(false);
+      setRefreshTick((prev) => prev + 1);
+      resetTeamLoggerForm();
+    } catch (err: unknown) {
+      console.error("Failed to create team activity log:", err);
+      const error = err as {
+        response?: { data?: { message?: string | string[] } };
+        message?: string;
+      };
+      const messageFromResponse = error.response?.data?.message;
+      const parsedMessage = Array.isArray(messageFromResponse)
+        ? messageFromResponse.join(" | ")
+        : messageFromResponse;
+      toast.error("Failed to add activity log", {
+        description:
+          parsedMessage || error.message || "Please try again with valid details.",
+      });
+    } finally {
+      setIsSubmittingTeamLogger(false);
+    }
+  };
+
   return (
     <>
       <AppHeader
-        crumbs={[{ label: isTeamMode ? "Team Dashboard" : "My Dashboard" }]}
+        crumbs={
+          isTeamMode
+            ? [{ label: "My Dashboard", href: "/" }, { label: "Team Dashboard" }]
+            : [{ label: "My Dashboard" }]
+        }
+        right={
+          canAccessTeamDashboard && !isTeamMode ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setIsTeamMode(true);
+                setTeamSearch("");
+                setTeamSearchError(null);
+                setTeamUser(null);
+              }}
+            >
+              Team Dashboard
+            </Button>
+          ) : null
+        }
       />
       <PageWrapper>
         <div className="p-4 md:p-6 space-y-5">
@@ -1235,6 +1575,18 @@ export default function DashboardPage() {
                   {canAccessTeamDashboard && isTeamMode && (
                     <div className="mr-2">
                       <div className="flex items-center gap-2">
+                        {canManageTeamEntries && (
+                          <Button
+                            variant="outline"
+                            size="default"
+                            onClick={handleOpenTeamLogger}
+                            disabled={teamSearchLoading || !teamUser}
+                            className="h-10 rounded-md border-input bg-background px-4 text-sm font-normal whitespace-nowrap"
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                            Add Activity Log
+                          </Button>
+                        )}
                         <Input
                           value={teamSearch}
                           onChange={(e) => {
@@ -1273,9 +1625,12 @@ export default function DashboardPage() {
                                   return;
                                 }
 
+                                const fallbackEmail = teamSearch.trim();
+
                                 if (data && data.days && data.user) {
                                   const normalizedTeamUser = {
                                     ...data.user,
+                                    searchedEmail: fallbackEmail,
                                     backfill:
                                       (data.user as any)?.backfill ??
                                       (data as any)?.backfill ??
@@ -1288,6 +1643,7 @@ export default function DashboardPage() {
                                 } else if (data?.user) {
                                   const normalizedTeamUser = {
                                     ...data.user,
+                                    searchedEmail: fallbackEmail,
                                     backfill:
                                       (data.user as any)?.backfill ??
                                       (data as any)?.backfill ??
@@ -1297,7 +1653,10 @@ export default function DashboardPage() {
                                   setTeamSearchError(null);
                                   toast.success("Team member selected");
                                 } else {
-                                  setTeamUser(data);
+                                  setTeamUser({
+                                    ...(data || {}),
+                                    searchedEmail: fallbackEmail,
+                                  });
                                   setTeamSearchError(null);
                                   toast.success("Team member selected");
                                 }
@@ -1314,18 +1673,6 @@ export default function DashboardPage() {
                           placeholder="Search by email and press Enter"
                           className="w-[260px]"
                         />
-                        <Button
-                          variant="ghost"
-                          onClick={() => {
-                            setIsTeamMode(false);
-                            setTeamUser(null);
-                            setTeamSearch("");
-                            setTeamSearchError(null);
-                          }}
-                          size="sm"
-                        >
-                          Close
-                        </Button>
                       </div>
                       {teamSearchError && (
                         <p className="mt-1 text-xs text-red-600">{teamSearchError}</p>
@@ -1905,10 +2252,14 @@ export default function DashboardPage() {
                             const isSaving = savingRowKey === rowKey;
                             const isDeleting = deletingRowKey === rowKey;
                             const isConfirmingDelete = confirmDeleteRowKey === rowKey;
+                            const isTargetDateRow =
+                              highlightedDateApi !== null &&
+                              row.dateApi === highlightedDateApi;
 
                             return (
                               <TableRow
                                 key={`${row.date}-${index}`}
+                                data-date-api={row.dateApi ?? undefined}
                                 style={{
                                   backgroundColor: bgColor,
                                   borderBottom: isSameDateAsNext
@@ -1917,8 +2268,14 @@ export default function DashboardPage() {
                                   borderTop: !isSameDateAsPrev && index > 0
                                     ? "2px solid var(--border)"
                                     : undefined,
+                                  boxShadow: isTargetDateRow
+                                    ? "inset 5px 0 0 #2f2f2f, 0 0 0 2px rgba(0, 0, 0, 0.22)"
+                                    : undefined,
                                 }}
-                                className={isColored ? "hover:opacity-95" : ""}
+                                className={cn(
+                                  isColored ? "hover:opacity-95" : "",
+                                  isTargetDateRow && "animate-[pulse_1s_ease-in-out_3]"
+                                )}
                               >
                                 <TableCell className="px-3 py-2.5 text-sm text-muted-foreground whitespace-nowrap">
                                   {!isSameDateAsPrev
@@ -2194,9 +2551,20 @@ export default function DashboardPage() {
                         return (
                           <div
                             key={`${row.date}-${index}`}
-                            className="border border-border rounded-[4px] p-4 space-y-2"
+                            data-date-api={row.dateApi ?? undefined}
+                            className={cn(
+                              "border border-border rounded-[4px] p-4 space-y-2",
+                              highlightedDateApi !== null &&
+                                row.dateApi === highlightedDateApi &&
+                                "animate-[pulse_1s_ease-in-out_3]"
+                            )}
                             style={{
                               backgroundColor: bgColor,
+                              boxShadow:
+                                highlightedDateApi !== null &&
+                                row.dateApi === highlightedDateApi
+                                  ? "inset 5px 0 0 #2f2f2f, 0 0 0 2px rgba(0, 0, 0, 0.22)"
+                                  : undefined,
                             }}
                           >
                             <div className="flex justify-between items-start">
@@ -2267,6 +2635,187 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
+
+        {/* Team Activity Logger Sheet (admin/super admin) */}
+        <Sheet open={isTeamLoggerOpen} onOpenChange={setIsTeamLoggerOpen}>
+          <SheetContent side="right" className="w-full sm:w-[520px] p-0">
+            <div className="h-full flex flex-col">
+              <SheetHeader className="px-6 py-5 border-b border-border">
+                <SheetTitle>Team Activity Logger</SheetTitle>
+                <SheetDescription>
+                  Add activity log for selected team member.
+                </SheetDescription>
+              </SheetHeader>
+
+                <form onSubmit={handleSubmitTeamLogger} className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Team Member</Label>
+                    <p className="text-sm font-medium text-foreground break-all">
+                      {teamUser?.email ||
+                        teamUser?.workEmail ||
+                        teamUser?.officialEmail ||
+                        teamUser?.user?.email ||
+                        teamUser?.searchedEmail ||
+                        (teamSearch ? teamSearch.trim() : "") ||
+                        "Email not available"}
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2.5">
+                      <Label htmlFor="team-activity-date">Work Date</Label>
+                      <Input
+                        id="team-activity-date"
+                        type="date"
+                        value={teamLoggerForm.workDate}
+                        onChange={(e) =>
+                          setTeamLoggerForm((prev) => ({
+                            ...prev,
+                            workDate: e.target.value,
+                          }))
+                        }
+                        required
+                      />
+                    </div>
+
+                    <div className="space-y-2.5">
+                      <Label htmlFor="team-activity-hours">Hours</Label>
+                      <Input
+                        id="team-activity-hours"
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="0.0"
+                        value={teamLoggerForm.hours}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/[^0-9.]/g, "");
+                          setTeamLoggerForm((prev) => ({
+                            ...prev,
+                            hours: val,
+                          }));
+                        }}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    <Label htmlFor="team-activity-department">
+                      Current Working Department
+                    </Label>
+                    <Select
+                      value={teamLoggerForm.departmentId}
+                      onValueChange={(nextDepartmentId) => {
+                        setTeamLoggerForm((prev) => ({
+                          ...prev,
+                          departmentId: nextDepartmentId,
+                          projectId: "",
+                        }));
+                        if (nextDepartmentId) {
+                          fetchTeamLoggerProjectsForDepartment(nextDepartmentId);
+                        }
+                      }}
+                    >
+                      <SelectTrigger id="team-activity-department">
+                        <SelectValue placeholder="Select department" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {teamDepartments.map((department) => (
+                          <SelectItem
+                            key={department.id}
+                            value={String(department.id)}
+                          >
+                            {department.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    <Label htmlFor="team-activity-project">Project</Label>
+                    <Select
+                      value={teamLoggerForm.projectId}
+                      onValueChange={(value) =>
+                        setTeamLoggerForm((prev) => ({
+                          ...prev,
+                          projectId: value,
+                        }))
+                      }
+                      disabled={
+                        !teamLoggerForm.departmentId || teamLoggerProjectsLoading
+                      }
+                    >
+                      <SelectTrigger id="team-activity-project">
+                        <SelectValue
+                          placeholder={
+                            !teamLoggerForm.departmentId
+                              ? "Select department first"
+                              : teamLoggerProjectsLoading
+                              ? "Loading projects..."
+                              : "Select project"
+                          }
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(teamProjectsByDepartment[teamLoggerForm.departmentId] || []).map(
+                          (project) => (
+                            <SelectItem
+                              key={project.id}
+                              value={String(project.id)}
+                            >
+                              {project.name}
+                            </SelectItem>
+                          )
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    <Label htmlFor="team-activity-description">Activities</Label>
+                    <Textarea
+                      id="team-activity-description"
+                      placeholder="Describe the work done"
+                      value={teamLoggerForm.activities}
+                      onChange={(e) =>
+                        setTeamLoggerForm((prev) => ({
+                          ...prev,
+                          activities: e.target.value,
+                        }))
+                      }
+                      minLength={VALIDATION.MIN_TASK_DESCRIPTION_LENGTH}
+                      required
+                    />
+                  </div>
+
+                <div className="pt-3 flex items-center gap-2.5">
+                  <Button
+                    type="submit"
+                    disabled={isSubmittingTeamLogger || !teamUser}
+                    className="min-w-[150px]"
+                  >
+                    {isSubmittingTeamLogger ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Submitting...
+                      </>
+                    ) : (
+                      "Submit Activity Log"
+                    )}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsTeamLoggerOpen(false)}
+                    disabled={isSubmittingTeamLogger}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </form>
+            </div>
+          </SheetContent>
+        </Sheet>
 
         {/* Day Detail Sheet */}
         <Sheet open={isDaySheetOpen} onOpenChange={setIsDaySheetOpen}>

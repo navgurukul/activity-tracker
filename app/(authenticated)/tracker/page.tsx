@@ -54,6 +54,7 @@ import apiClient from "@/lib/api-client";
 import {
   API_PATHS,
   DATE_FORMATS,
+  TRACKER_BACKFILL_VALIDATION_MESSAGE,
   VALIDATION,
   WORK_DAYS_NEEDED,
 } from "@/lib/constants";
@@ -270,13 +271,11 @@ export default function TrackerPage() {
           if (isEffectiveToday) return true;
           return (
             d.getTime() >= earliestAllowed.getTime() &&
-            d.getTime() <= dayBeforeToday.getTime() &&
-            !isNonWorkingDay(d)
+            d.getTime() <= dayBeforeToday.getTime()
           );
         },
         {
-          message:
-            "Activity can be added for the past 3 working days (excluding today and non-working days). You may have exhausted your backfill limit.",
+          message: TRACKER_BACKFILL_VALIDATION_MESSAGE,
         }
       ),
     projectEntries: z
