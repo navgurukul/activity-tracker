@@ -54,6 +54,7 @@ import apiClient from "@/lib/api-client";
 import {
   API_PATHS,
   DATE_FORMATS,
+  TRACKER_BACKFILL_VALIDATION_MESSAGE,
   VALIDATION,
   WORK_DAYS_NEEDED,
 } from "@/lib/constants";
@@ -274,8 +275,7 @@ export default function TrackerPage() {
           );
         },
         {
-          message:
-            "Activity can be added for today and recent backfill dates allowed by your lifeline limit. You may have exhausted your backfill limit.",
+          message: TRACKER_BACKFILL_VALIDATION_MESSAGE,
         }
       ),
     projectEntries: z
