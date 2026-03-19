@@ -35,7 +35,7 @@ import {
 } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { format } from "date-fns";
-import { Calendar as CalendarIcon } from "lucide-react";
+import { Calendar as CalendarIcon, Check, ChevronDown } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import apiClient from "@/lib/api-client";
@@ -45,6 +45,14 @@ import { useAuth } from "@/hooks/use-auth";
 import { isNonWorkingDay } from "@/lib/leave-timesheet-validator";
 import { useRole } from "@/hooks/use-role";
 import { ROLES } from "@/lib/rbac-constants";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 
 const formSchema = z.object({
   userId: z.number().int().positive("Please select a valid employee."),
@@ -82,6 +90,8 @@ interface Employee {
 export function CompOffRequestForm() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [isLoadingEmployees, setIsLoadingEmployees] = useState(false);
+  const [employeeComboboxOpen, setEmployeeComboboxOpen] = useState(false);
+  const [employeeSearchValue, setEmployeeSearchValue] = useState("");
   const [holidayDates, setHolidayDates] = useState<Set<string>>(new Set());
   const { user } = useAuth();
 
@@ -351,44 +361,95 @@ export function CompOffRequestForm() {
               <FormField
                 control={form.control}
                 name="userId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Employee</FormLabel>
-                    <Select
-                      onValueChange={(value) => field.onChange(parseInt(value))}
-                      value={field.value?.toString()}
-                      // Disable selection for regular employees (they can only request for themselves).
-                      disabled={isLoadingEmployees || (!isAdminOrSuper && !isManager)}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue
-                            placeholder={
-                              isLoadingEmployees
-                                ? "Loading employees..."
-                                : "Select employee"
-                            }
-                          />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {employees.map((employee) => (
-                          <SelectItem
-                            key={employee.id}
-                            value={employee.id.toString()}
-                          >
-                            {employee.name} ({employee.email})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormDescription>
-                      Select the employee for whom this comp-off is being
-                      requested
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
+                render={({ field }) => {
+                  const selectedEmployee = employees.find(
+                    (employee) => employee.id === field.value
+                  );
+
+                  return (
+                    <FormItem>
+                      <FormLabel>Employee</FormLabel>
+                      <Popover
+                        open={employeeComboboxOpen}
+                        onOpenChange={setEmployeeComboboxOpen}
+                      >
+                        <PopoverTrigger asChild>
+                          <FormControl>
+                            <Button
+                              variant="noShadow"
+                              role="combobox"
+                              aria-expanded={employeeComboboxOpen}
+                              className={cn(
+                                "flex h-10 w-full items-center justify-between rounded-base border-2 border-border bg-main px-3 py-2 text-sm font-base text-main-foreground ring-offset-white focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus:outline-hidden focus:ring-2 focus:ring-black focus:ring-offset-2"
+                              )}
+                              // Disable selection for regular employees (they can only request for themselves).
+                              disabled={
+                                isLoadingEmployees || (!isAdminOrSuper && !isManager)
+                              }
+                            >
+                              <span className="truncate text-left">
+                                {selectedEmployee
+                                  ? `${selectedEmployee.name} (${selectedEmployee.email})`
+                                  : isLoadingEmployees
+                                  ? "Loading employees..."
+                                  : "Select employee"}
+                              </span>
+                              <ChevronDown className="ml-2 h-4 w-4 shrink-0" />
+                            </Button>
+                          </FormControl>
+                        </PopoverTrigger>
+                        <PopoverContent
+                          className="border-0 p-0"
+                          style={{ width: "var(--radix-popover-trigger-width)" }}
+                          align="start"
+                        >
+                          <Command>
+                            <CommandInput
+                              placeholder="Search employee..."
+                              value={employeeSearchValue}
+                              onValueChange={setEmployeeSearchValue}
+                            />
+                            <CommandList className="max-h-60 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                              <CommandEmpty>No employee found.</CommandEmpty>
+                              <CommandGroup>
+                                {employees.map((employee) => {
+                                  const label = `${employee.name} (${employee.email})`;
+
+                                  return (
+                                    <CommandItem
+                                      key={employee.id}
+                                      value={label}
+                                      onSelect={() => {
+                                        field.onChange(employee.id);
+                                        setEmployeeComboboxOpen(false);
+                                        setEmployeeSearchValue("");
+                                      }}
+                                    >
+                                      <Check
+                                        className={cn(
+                                          "mr-2 h-4 w-4",
+                                          field.value === employee.id
+                                            ? "opacity-100"
+                                            : "opacity-0"
+                                        )}
+                                      />
+                                      <span className="truncate">{label}</span>
+                                    </CommandItem>
+                                  );
+                                })}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
+                      <FormDescription>
+                        Select the employee for whom this comp-off is being
+                        requested
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  );
+                }}
               />
             </div>
 

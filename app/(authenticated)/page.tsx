@@ -3,13 +3,25 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { format, parseISO } from "date-fns";
 import { toast } from "sonner";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ChevronLeft,
   ChevronRight,
-  Download,
   LayoutGrid,
   List,
+  Plus,
+  Briefcase,
+  Calendar,
+  Clock,
+  AlertCircle,
+  TreePalm,
+  Check,
+  X,
+  Pencil,
+  Trash2,
+  Loader2,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 import { AppHeader } from "@/app/_components/AppHeader";
 import { PageWrapper } from "@/app/_components/wrapper";
@@ -17,6 +29,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableHeader,
@@ -25,13 +45,24 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
+import { Badge } from "@/components/ui/badge";
 import apiClient from "@/lib/api-client";
-import { API_PATHS, DATE_FORMATS } from "@/lib/constants";
+import { API_PATHS, DATE_FORMATS, VALIDATION } from "@/lib/constants";
 import { useAuth } from "@/hooks/use-auth";
 import { startOfMonth, endOfMonth, addMonths, subMonths } from "date-fns";
 
 // TypeScript interfaces for API response
 interface TimesheetEntry {
+  id?: number | string;
+  entryId?: number | string;
+  projectId?: number;
   departmentName: string;
   projectName?: string;
   taskDescription: string;
@@ -100,6 +131,19 @@ interface TimesheetRow {
   holidayName?: string;
   leaveStatus?: "approved" | "pending" | "rejected";
   timesheetState?: string;
+  entryId?: number | string;
+  projectId?: number;
+  dateApi?: string;
+}
+interface ProjectOption {
+  id: number;
+  name: string;
+}
+
+interface DepartmentOption {
+  id: number;
+  name: string;
+  code: string;
 }
 
 /**
@@ -210,7 +254,10 @@ export const TimesheetTable: React.FC<TimesheetTableProps> = ({
 };
 
 export default function DashboardPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { isLoading: authLoading, user } = useAuth();
+  const targetDateParam = searchParams.get("date");
   const [currentMonth, setCurrentMonth] = useState<Date>(() => {
     const date = new Date();
     date.setMonth(date.getMonth() - 1);
@@ -231,22 +278,164 @@ export default function DashboardPage() {
     }
     return "table";
   });
+  const [selectedDay, setSelectedDay] = useState<DayData | null>(null);
+  const [isDaySheetOpen, setIsDaySheetOpen] = useState(false);
+  const [highlightedDateApi, setHighlightedDateApi] = useState<string | null>(
+    null
+  );
+  const hasAutoScrolledToDateRef = useRef(false);
 
-  // Check if user is admin or super admin
-  const isAdminOrSuperAdmin = useMemo(() => {
+  // Team dashboard / search (admin/super admin/manager)
+  const [isTeamMode, setIsTeamMode] = useState(false);
+  const [teamSearch, setTeamSearch] = useState("");
+  const [teamSearchLoading, setTeamSearchLoading] = useState(false);
+  const [teamSearchError, setTeamSearchError] = useState<string | null>(null);
+  const [teamUser, setTeamUser] = useState<any | null>(null);
+  const [refreshTick, setRefreshTick] = useState(0);
+  const [editingRowKey, setEditingRowKey] = useState<string | null>(null);
+  const [editingForm, setEditingForm] = useState({
+    project: "",
+    projectId: "",
+    date: "",
+    hours: "",
+    activities: "",
+  });
+  const [savingRowKey, setSavingRowKey] = useState<string | null>(null);
+  const [deletingRowKey, setDeletingRowKey] = useState<string | null>(null);
+  const [confirmDeleteRowKey, setConfirmDeleteRowKey] = useState<string | null>(null);
+  const [teamProjects, setTeamProjects] = useState<ProjectOption[]>([]);
+  const [projectsLoading, setProjectsLoading] = useState(false);
+  const [isEditingLifeline, setIsEditingLifeline] = useState(false);
+  const [lifelineDraft, setLifelineDraft] = useState("");
+  const [isSavingLifeline, setIsSavingLifeline] = useState(false);
+  const [isTeamLoggerOpen, setIsTeamLoggerOpen] = useState(false);
+  const [isSubmittingTeamLogger, setIsSubmittingTeamLogger] = useState(false);
+  const [teamDepartments, setTeamDepartments] = useState<DepartmentOption[]>([]);
+  const [teamProjectsByDepartment, setTeamProjectsByDepartment] = useState<
+    Record<string, ProjectOption[]>
+  >({});
+  const [teamLoggerProjectsLoading, setTeamLoggerProjectsLoading] = useState(false);
+  const [teamLoggerForm, setTeamLoggerForm] = useState({
+    workDate: format(new Date(), DATE_FORMATS.API),
+    departmentId: "",
+    projectId: "",
+    hours: "",
+    activities: "",
+  });
+
+  const getBillingCycleAnchorDate = (inputDate: Date) => {
+    const d = new Date(inputDate);
+    const cycleStartsOn = 26;
+    if (d.getDate() < cycleStartsOn) {
+      d.setMonth(d.getMonth() - 1);
+    }
+
+    d.setDate(1);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  };
+
+  const getResolvedUserId = (candidate: any): number | null => {
+    const rawId =
+      candidate?.id ?? candidate?.userId ?? candidate?.user?.id ?? null;
+    const numericId = Number(rawId);
+    return Number.isFinite(numericId) ? numericId : null;
+  };
+  const isSelfAsTeamMember = (candidate: any) => {
+    const currentUserId = getResolvedUserId(user);
+    const candidateUserId = getResolvedUserId(candidate);
+    return (
+      currentUserId !== null &&
+      candidateUserId !== null &&
+      currentUserId === candidateUserId
+    );
+  };
+
+  // Check if user can access team dashboard
+  const canAccessTeamDashboard = useMemo(() => {
     const roles = (user as any)?.roles;
     if (Array.isArray(roles)) {
-      return roles.includes("admin") || roles.includes("super_admin");
+      return roles.some((role) => {
+        const normalizedRole = String(role).toLowerCase();
+        return (
+          normalizedRole === "admin" ||
+          normalizedRole === "super_admin" ||
+          normalizedRole === "manager"
+        );
+      });
     }
     if (typeof roles === "string") {
-      return roles === "admin" || roles === "super_admin";
+      const normalizedRole = roles.toLowerCase();
+      return (
+        normalizedRole === "admin" ||
+        normalizedRole === "super_admin" ||
+        normalizedRole === "manager"
+      );
     }
     return false;
   }, [user]);
 
+  const canEditTeamLifeline = useMemo(() => {
+    const roles = (user as any)?.roles;
+    if (Array.isArray(roles)) {
+      return roles.some((role) => {
+        const normalizedRole = String(role).toLowerCase();
+        return normalizedRole === "admin" || normalizedRole === "super_admin";
+      });
+    }
+    if (typeof roles === "string") {
+      const normalizedRole = roles.toLowerCase();
+      return normalizedRole === "admin" || normalizedRole === "super_admin";
+    }
+    return false;
+  }, [user]);
+
+  const canManageTeamEntries = canEditTeamLifeline;
+
+  useEffect(() => {
+    setIsEditingLifeline(false);
+    setLifelineDraft("");
+  }, [isTeamMode, teamUser?.id]);
+
+  useEffect(() => {
+    if (!targetDateParam || isTeamMode) return;
+
+    const parsedDate = parseISO(targetDateParam);
+    if (Number.isNaN(parsedDate.getTime())) return;
+
+    setCurrentMonth(getBillingCycleAnchorDate(parsedDate));
+    setViewMode("table");
+    localStorage.setItem("timesheet-view-mode", "table");
+    setHighlightedDateApi(targetDateParam);
+    hasAutoScrolledToDateRef.current = false;
+  }, [targetDateParam, isTeamMode]);
+
   // Fetch timesheet data
   useEffect(() => {
     if (authLoading) return;
+
+    // If we're in team mode but no team user selected, clear data and skip fetch.
+    if (isTeamMode && !teamUser) {
+      setMonthlyData(null);
+      setError(null);
+      setIsLoading(false);
+      return;
+    }
+
+    // Admin should not view their own data inside Team Dashboard mode.
+    if (isTeamMode && teamUser && isSelfAsTeamMember(teamUser)) {
+      setMonthlyData(null);
+      setError("You cannot view your own data in Team Dashboard");
+      setIsLoading(false);
+      return;
+    }
+
+
+    if (isTeamMode && teamUser && !canManageTeamEntries) {
+      setError(null);
+      setIsLoading(false);
+      return;
+    }
 
     const fetchMonthlyData = async () => {
       const id = ++fetchIdRef.current;
@@ -257,10 +446,14 @@ export default function DashboardPage() {
         const year = currentMonth.getFullYear();
         const month = currentMonth.getMonth() + 1;
 
+        // If teamUser is selected, include their id so backend returns that user's data
+        const params: Record<string, any> = { year, month };
+        if (teamUser?.id) params.userId = teamUser.id;
+
         const response = await apiClient.get<MonthlyTimesheetResponse>(
           API_PATHS.MONTHLY_TIMESHEET,
           {
-            params: { year, month },
+            params,
           }
         );
 
@@ -268,11 +461,18 @@ export default function DashboardPage() {
         setMonthlyData(response.data);
       } catch (err: unknown) {
         if (id !== fetchIdRef.current) return;
-        console.error("Error fetching monthly data:", err);
         const error = err as {
-          response?: { data?: { message?: string } };
+          response?: { status?: number; data?: { message?: string } };
           message?: string;
         };
+
+        if (error.response?.status === 403 && isTeamMode) {
+          setError(null);
+          return;
+        }
+
+        console.error("Error fetching monthly data:", err);
+
         const errorMessage =
           error.response?.data?.message ||
           error.message ||
@@ -288,8 +488,87 @@ export default function DashboardPage() {
     };
 
     fetchMonthlyData();
-  }, [currentMonth, authLoading]);
+  }, [currentMonth, authLoading, isTeamMode, teamUser, refreshTick, user?.id]);
+  useEffect(() => {
+    if (authLoading || !user?.orgId || !canAccessTeamDashboard) return;
 
+    const fetchProjects = async () => {
+      setProjectsLoading(true);
+      try {
+        let page = 1;
+        let hasMore = true;
+        const allProjects: ProjectOption[] = [];
+
+        while (hasMore) {
+          const res = await apiClient.get(API_PATHS.PROJECTS, {
+            params: { orgId: user.orgId, page, limit: 100 },
+          });
+
+          const responseData = Array.isArray(res.data)
+            ? res.data
+            : res.data?.data || [];
+          const items = Array.isArray(responseData)
+            ? responseData
+            : responseData.data || [];
+
+          const normalized = items
+            .map((p: any) => ({
+              id: Number(p.id),
+              name: String(p.name ?? p.projectName ?? ""),
+            }))
+            .filter((p: ProjectOption) => Number.isFinite(p.id) && p.name);
+
+          allProjects.push(...normalized);
+
+          const total = Number(res.data?.total ?? normalized.length);
+          hasMore = allProjects.length < total;
+          page += 1;
+
+          if (!res.data?.total) {
+            hasMore = false;
+          }
+        }
+        const unique = Array.from(
+          new Map(allProjects.map((p) => [p.id, p])).values()
+        );
+        setTeamProjects(unique);
+      } catch (err: unknown) {
+        console.error("Failed to load projects for edit:", err);
+      } finally {
+        setProjectsLoading(false);
+      }
+    };
+
+    fetchProjects();
+  }, [authLoading, user?.orgId, canAccessTeamDashboard]);
+
+  useEffect(() => {
+    if (authLoading || !user?.orgId || !canAccessTeamDashboard) return;
+
+    const fetchDepartments = async () => {
+      try {
+        const res = await apiClient.get(API_PATHS.DEPARTMENTS, {
+          params: { orgId: user.orgId },
+        });
+        const list = Array.isArray(res.data) ? res.data : res.data?.data || [];
+        const normalized = list
+          .map((dept: any) => ({
+            id: Number(dept.id),
+            name: String(dept.name ?? ""),
+            code: String(dept.code ?? ""),
+          }))
+          .filter(
+            (dept: DepartmentOption) =>
+              Number.isFinite(dept.id) && Boolean(dept.name)
+          );
+        setTeamDepartments(normalized);
+      } catch (err: unknown) {
+        console.error("Failed to load departments for team logger:", err);
+      }
+    };
+
+    fetchDepartments();
+  }, [authLoading, user?.orgId, canAccessTeamDashboard]);
   // Flatten data into table rows
   const timesheetRows = useMemo((): TimesheetRow[] => {
     if (!monthlyData) return [];
@@ -310,28 +589,35 @@ export default function DashboardPage() {
         isSaturday && (weekOfMonth === 2 || weekOfMonth === 4);
       const isSunday = dayOfWeek === "Sunday";
       const isWeekendOff = is2ndOr4thSaturday || isSunday;
+      const timesheetEntries = day.timesheet?.entries ?? [];
+      const leaveEntries = day.leaves?.entries ?? [];
+      const hasTimesheetEntries = timesheetEntries.length > 0;
+      const hasLeaveEntries = leaveEntries.length > 0;
 
       // Add timesheet entries
-      if (day.timesheet?.entries && day.timesheet.entries.length > 0) {
-        day.timesheet.entries.forEach((entry) => {
+      if (hasTimesheetEntries) {
+        timesheetEntries.forEach((entry) => {
           rows.push({
             sno: sno++,
             project: entry.projectName || "-",
             activities: entry.taskDescription || "-",
             date: format(parsedDate, "dd/MM/yyyy"),
+            dateApi: format(parsedDate, DATE_FORMATS.API),
             day: dayOfWeek,
             hours: entry.hours,
             isLeave: false,
             isWeekend: isWeekendOff,
             isHoliday: day.isHoliday,
             timesheetState: day.timesheet?.state,
+            entryId: (entry as any).id ?? (entry as any).entryId ?? undefined,
+            projectId: (entry as any).projectId,
           });
         });
       }
 
       // Add leave entries
-      if (day.leaves?.entries && day.leaves.entries.length > 0) {
-        day.leaves.entries.forEach((entry) => {
+      if (hasLeaveEntries) {
+        leaveEntries.forEach((entry) => {
           const leaveStatus =
             (entry as any).state === "rejected"
               ? "rejected"
@@ -357,8 +643,8 @@ export default function DashboardPage() {
       // Add weekend/holiday rows if no entries exist
       if (
         (isWeekendOff || day.isHoliday) &&
-        (!day.timesheet?.entries || day.timesheet.entries.length === 0) &&
-        (!day.leaves?.entries || day.leaves.entries.length === 0)
+        !hasTimesheetEntries &&
+        !hasLeaveEntries
       ) {
         let offType = "";
         if (day.isHoliday) {
@@ -384,10 +670,72 @@ export default function DashboardPage() {
           holidayName: day.holidayName,
         });
       }
+      if (!isWeekendOff && !day.isHoliday && !hasTimesheetEntries && !hasLeaveEntries) {
+        rows.push({
+          sno: sno++,
+          project: "-",
+          activities: "No entry",
+          date: format(parsedDate, "dd/MM/yyyy"),
+          dateApi: format(parsedDate, DATE_FORMATS.API),
+          day: dayOfWeek,
+          hours: 0,
+          isLeave: false,
+          isWeekend: false,
+          isHoliday: false,
+        });
+      }
     });
 
     return rows;
   }, [monthlyData]);
+
+  useEffect(() => {
+    if (!highlightedDateApi || isLoading || hasAutoScrolledToDateRef.current) {
+      return;
+    }
+
+    const hasTargetRow = timesheetRows.some(
+      (row) => row.dateApi === highlightedDateApi
+    );
+    if (!hasTargetRow) return;
+
+    const targetRow = document.querySelector<HTMLElement>(
+      `[data-date-api='${highlightedDateApi}']`
+    );
+    if (!targetRow) return;
+
+    targetRow.scrollIntoView({ behavior: "smooth", block: "center" });
+    hasAutoScrolledToDateRef.current = true;
+
+    if (targetDateParam) {
+      router.replace("/", { scroll: false });
+    }
+
+    const clearHighlightTimer = window.setTimeout(() => {
+      setHighlightedDateApi(null);
+    }, 3000);
+
+    return () => window.clearTimeout(clearHighlightTimer);
+  }, [highlightedDateApi, isLoading, timesheetRows, router, targetDateParam]);
+
+  const dailyTotals = useMemo(() => {
+    const map = new Map<string, number>();
+    timesheetRows.forEach((row) => {
+      map.set(row.date, (map.get(row.date) ?? 0) + row.hours);
+    });
+    return map;
+  }, [timesheetRows]);
+
+  const dateSerialMap = useMemo(() => {
+    const map = new Map<string, number>();
+    let serial = 1;
+    timesheetRows.forEach((row) => {
+      if (!map.has(row.date)) {
+        map.set(row.date, serial++);
+      }
+    });
+    return map;
+  }, [timesheetRows]);
 
   const leaveDaysDisplay = useMemo(() => {
     if (!monthlyData) return 0;
@@ -409,6 +757,265 @@ export default function DashboardPage() {
     if (!monthlyData) return 0;
     return monthlyData.totals.totalPayableDays || 0;
   }, [monthlyData]);
+
+  const resolvedBackfill = useMemo(() => {
+    if (isTeamMode) {
+      return (
+        (teamUser as any)?.backfill ??
+        (monthlyData as any)?.backfill ??
+        (monthlyData as any)?.user?.backfill ??
+        null
+      );
+    }
+    return (user as any)?.backfill ?? null;
+  }, [isTeamMode, teamUser, monthlyData, user]);
+
+  const getTeamTargetUserId = () => {
+    const teamSelectedId = Number(teamUser?.id);
+    if (Number.isFinite(teamSelectedId)) return teamSelectedId;
+    const fetchedUserId = Number((monthlyData as any)?.user?.id);
+    if (Number.isFinite(fetchedUserId)) return fetchedUserId;
+    return null;
+  };
+
+  const postBackfillLimitWithFallbackPayloads = async (
+    payloads: Array<Record<string, unknown>>
+  ) => {
+    let lastError: unknown;
+    for (const payload of payloads) {
+      try {
+        await apiClient.post(API_PATHS.BACKFILL_LIMIT, payload);
+        return;
+      } catch (err: unknown) {
+        lastError = err;
+        if (!isUnknownProperty400(err)) {
+          throw err;
+        }
+      }
+    }
+    throw lastError;
+  };
+
+  const resetTeamLoggerForm = () => {
+    setTeamLoggerForm({
+      workDate: format(new Date(), DATE_FORMATS.API),
+      departmentId: "",
+      projectId: "",
+      hours: "",
+      activities: "",
+    });
+  };
+
+  const fetchTeamLoggerProjectsForDepartment = async (departmentId: string) => {
+    const numericDepartmentId = Number(departmentId);
+    if (!user?.orgId || !Number.isFinite(numericDepartmentId)) return;
+
+    if (teamProjectsByDepartment[departmentId]?.length) return;
+
+    setTeamLoggerProjectsLoading(true);
+    try {
+      let page = 1;
+      let hasMore = true;
+      const allProjects: ProjectOption[] = [];
+
+      while (hasMore) {
+        const res = await apiClient.get(API_PATHS.PROJECTS, {
+          params: {
+            orgId: user.orgId,
+            departmentId: numericDepartmentId,
+            page,
+            limit: 100,
+          },
+        });
+
+        const responseData = Array.isArray(res.data)
+          ? res.data
+          : res.data?.data || [];
+        const items = Array.isArray(responseData)
+          ? responseData
+          : responseData.data || [];
+
+        const normalized = items
+          .map((project: any) => ({
+            id: Number(project.id),
+            name: String(project.name ?? project.projectName ?? ""),
+          }))
+          .filter(
+            (project: ProjectOption) =>
+              Number.isFinite(project.id) && Boolean(project.name)
+          );
+
+        allProjects.push(...normalized);
+
+        const total = Number(res.data?.total ?? normalized.length);
+        hasMore = allProjects.length < total;
+        page += 1;
+
+        if (!res.data?.total) {
+          hasMore = false;
+        }
+      }
+
+      const unique = Array.from(
+        new Map(allProjects.map((project) => [project.id, project])).values()
+      );
+      setTeamProjectsByDepartment((prev) => ({
+        ...prev,
+        [departmentId]: unique,
+      }));
+    } catch (err: unknown) {
+      console.error("Failed to load department projects for team logger:", err);
+      toast.error("Failed to load projects", {
+        description: "Please try again.",
+      });
+    } finally {
+      setTeamLoggerProjectsLoading(false);
+    }
+  };
+
+  const postAdminCreateWithFallbackPayloads = async (
+    payloads: Array<Record<string, unknown>>
+  ) => {
+    let lastError: unknown;
+    for (const payload of payloads) {
+      try {
+        await apiClient.post(API_PATHS.TIMESHEET_ADMIN_CREATE, payload);
+        return;
+      } catch (err: unknown) {
+        lastError = err;
+        if (!isUnknownProperty400(err)) {
+          throw err;
+        }
+      }
+    }
+    throw lastError;
+  };
+
+  const handleStartLifelineEdit = () => {
+    if (!isTeamMode || !teamUser || !canEditTeamLifeline) return;
+    const currentValue = Number(
+      (teamUser as any)?.backfill?.limit ??
+        (teamUser as any)?.backfill?.remaining ??
+        (monthlyData as any)?.backfill?.limit ??
+        (monthlyData as any)?.backfill?.remaining ??
+        0
+    );
+    setLifelineDraft(String(Number.isFinite(currentValue) ? currentValue : 0));
+    setIsEditingLifeline(true);
+  };
+
+  const handleCancelLifelineEdit = () => {
+    setIsEditingLifeline(false);
+    setLifelineDraft("");
+  };
+
+  const handleSaveLifeline = async () => {
+    const targetUserId = getTeamTargetUserId();
+    if (!targetUserId) {
+      toast.error("Unable to identify team member");
+      return;
+    }
+
+    const updatedLimit = Number(lifelineDraft);
+    if (!Number.isFinite(updatedLimit) || updatedLimit < 0) {
+      toast.error("Invalid lifeline value", {
+        description: "Lifelines must be a number greater than or equal to 0.",
+      });
+      return;
+    }
+
+    const normalizedLimit = Math.floor(updatedLimit);
+    const monthFromData = Number(monthlyData?.period?.month);
+    const yearFromData = Number(monthlyData?.period?.year);
+    const requestMonth = Number.isInteger(monthFromData)
+      ? monthFromData
+      : currentMonth.getMonth() + 1;
+    const requestYear = Number.isInteger(yearFromData)
+      ? yearFromData
+      : currentMonth.getFullYear();
+
+    if (!Number.isInteger(requestYear) || !Number.isInteger(requestMonth)) {
+      toast.error("Unable to update lifeline", {
+        description: "Month/year context is missing.",
+      });
+      return;
+    }
+
+    const contextPayload = {
+      year: requestYear,
+      month: requestMonth,
+    };
+
+    const payloadsToTry: Array<Record<string, unknown>> = [
+      { ...contextPayload, userId: targetUserId, limit: normalizedLimit },
+      { ...contextPayload, targetUserId, limit: normalizedLimit },
+      { ...contextPayload, employeeId: targetUserId, limit: normalizedLimit },
+      {
+        ...contextPayload,
+        userId: targetUserId,
+        backfillLimit: normalizedLimit,
+      },
+      {
+        ...contextPayload,
+        targetUserId,
+        backfillLimit: normalizedLimit,
+      },
+      {
+        ...contextPayload,
+        userId: targetUserId,
+        lifelineLimit: normalizedLimit,
+      },
+      {
+        ...contextPayload,
+        targetUserId,
+        lifelineLimit: normalizedLimit,
+      },
+      { ...contextPayload, userId: targetUserId, remaining: normalizedLimit },
+      { ...contextPayload, targetUserId, remaining: normalizedLimit },
+    ];
+
+    setIsSavingLifeline(true);
+    try {
+      await postBackfillLimitWithFallbackPayloads(payloadsToTry);
+      setTeamUser((prev: any) => {
+        if (!prev) return prev;
+        const previousLimit = Number(prev.backfill?.limit ?? 0);
+        const previousRemaining = Number(prev.backfill?.remaining ?? 0);
+        const consumedCount =
+          Number.isFinite(previousLimit) && Number.isFinite(previousRemaining)
+            ? Math.max(previousLimit - previousRemaining, 0)
+            : 0;
+        const nextRemaining = Math.max(normalizedLimit - consumedCount, 0);
+
+        return {
+          ...prev,
+          backfill: {
+            ...(prev.backfill || {}),
+            limit: normalizedLimit,
+            remaining: nextRemaining,
+          },
+        };
+      });
+      setIsEditingLifeline(false);
+      setRefreshTick((prev) => prev + 1);
+      toast.success("Lifeline updated successfully");
+    } catch (err: unknown) {
+      console.error("Failed to update lifeline:", err);
+      const error = err as {
+        response?: { data?: { message?: string } };
+        message?: string;
+      };
+      const message =
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to update lifeline";
+      toast.error("Lifeline update failed", {
+        description: message,
+      });
+    } finally {
+      setIsSavingLifeline(false);
+    }
+  };
 
   const handleSalarySummaryExport = async () => {
     if (!startDate || !endDate) {
@@ -471,179 +1078,691 @@ export default function DashboardPage() {
     setCurrentMonth((prev) => addMonths(prev, 1));
   };
 
+  const getRowKey = (row: TimesheetRow, index: number) =>
+    `${row.entryId ?? "no-entry"}-${row.date}-${index}`;
+  const getTeamEditContext = () => {
+    const actorId = (user as any)?.id;
+    const targetUserId =
+      (teamUser as any)?.id ?? (monthlyData as any)?.user?.id ?? null;
+
+    if (!actorId || !targetUserId) {
+      toast.error("Unable to identify actor or team member");
+      return null;
+    }
+    return { actorId, targetUserId };
+  };
+  const buildTimesheetEntryPath = (
+    template: string,
+    actorId: number | string,
+    targetUserId: number | string,
+    entryId: number | string
+  ) =>
+    template
+      .replace("{actorId}", String(actorId))
+      .replace("{targetUserId}", String(targetUserId))
+      .replace("{entryId}", String(entryId));
+
+  const handleStartEdit = (row: TimesheetRow, index: number) => {
+    const rowKey = getRowKey(row, index);
+    const mappedProjectId =
+      row.projectId ??
+      teamProjects.find(
+        (p) => p.name.toLowerCase() === row.project.toLowerCase()
+      )?.id;
+
+    setEditingRowKey(rowKey);
+    setEditingForm({
+      project: row.project,
+      projectId: mappedProjectId ? String(mappedProjectId) : "",
+      date: row.dateApi ?? "",
+      hours: String(row.hours),
+      activities: row.activities,
+    });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingRowKey(null);
+    setConfirmDeleteRowKey(null);
+    setEditingForm({
+      project: "",
+      projectId: "",
+      date: "",
+      hours: "",
+      activities: "",
+    });
+  };
+  const isUnknownProperty400 = (err: unknown) => {
+    const error = err as {
+      response?: { status?: number; data?: { message?: string | string[] } };
+    };
+    if (error.response?.status !== 400) return false;
+    const msg = error.response?.data?.message;
+    const text = Array.isArray(msg) ? msg.join(" | ") : msg || "";
+    return text.includes("should not exist");
+  };
+
+  const handleSaveEdit = async (row: TimesheetRow, index: number) => {
+    const rowKey = getRowKey(row, index);
+
+    if (!row.entryId) {
+      toast.error("Entry ID missing for update");
+      return;
+    }
+
+    const context = getTeamEditContext();
+    if (!context) return;
+
+    const selectedDate = editingForm.date;
+    const hours = Number(editingForm.hours);
+    const taskDescription = editingForm.activities.trim();
+    const selectedProjectId = Number(editingForm.projectId || row.projectId);
+    if (
+      !Number.isFinite(hours) ||
+      hours < VALIDATION.MIN_HOURS_PER_ENTRY ||
+      hours > VALIDATION.MAX_HOURS_PER_ENTRY
+    ) {
+      toast.error("Invalid hours", {
+        description: `Hours must be between ${VALIDATION.MIN_HOURS_PER_ENTRY} and ${VALIDATION.MAX_HOURS_PER_ENTRY}`,
+      });
+      return;
+    }
+    if (taskDescription.length < VALIDATION.MIN_TASK_DESCRIPTION_LENGTH) {
+      toast.error("Invalid activity", {
+        description: `Activity should be at least ${VALIDATION.MIN_TASK_DESCRIPTION_LENGTH} characters`,
+      });
+      return;
+    }
+
+    if (!Number.isFinite(selectedProjectId) || selectedProjectId <= 0) {
+      toast.error("Please select a valid project");
+      return;
+    }
+
+    if (!selectedDate) {
+      toast.error("Please select a valid date");
+      return;
+    }
+
+    const path = buildTimesheetEntryPath(
+      API_PATHS.TIMESHEET_ENTRY_PATCH,
+      context.actorId,
+      context.targetUserId,
+      row.entryId
+    );
+
+    const payload = {
+      projectId: selectedProjectId,
+      date: selectedDate,
+      hours,
+      activities: taskDescription,
+    };
+
+    setSavingRowKey(rowKey);
+    try {
+      await apiClient.patch(path, payload);
+      toast.success("Entry updated successfully");
+      setEditingRowKey(null);
+      setRefreshTick((prev) => prev + 1);
+    } catch (err: unknown) {
+      console.error("Error updating timesheet entry:", err);
+      const error = err as {
+        response?: { data?: { message?: string } };
+        message?: string;
+      };
+      const errorMessage =
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to update timesheet entry";
+      toast.error("Update failed", {
+        description: errorMessage,
+      });
+    } finally {
+      setSavingRowKey(null);
+    }
+  };
+
+  const handleDeleteEntry = async (row: TimesheetRow, index: number) => {
+    const rowKey = getRowKey(row, index);
+
+    if (!row.entryId) {
+      toast.error("Entry ID missing for delete");
+      return;
+    }
+
+    const context = getTeamEditContext();
+    if (!context) return;
+
+    const path = buildTimesheetEntryPath(
+      API_PATHS.TIMESHEET_ENTRY_DELETE,
+      context.actorId,
+      context.targetUserId,
+      row.entryId
+    );
+
+    setDeletingRowKey(rowKey);
+    try {
+      await apiClient.delete(path);
+      toast.success("Entry deleted successfully");
+      if (editingRowKey === rowKey) {
+        handleCancelEdit();
+      }
+      setRefreshTick((prev) => prev + 1);
+    } catch (err: unknown) {
+      console.error("Error deleting timesheet entry:", err);
+      const error = err as {
+        response?: { data?: { message?: string } };
+        message?: string;
+      };
+      const errorMessage =
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to delete timesheet entry";
+      toast.error("Delete failed", {
+        description: errorMessage,
+      });
+    } finally {
+      setDeletingRowKey(null);
+    }
+  };
+
+  const handleOpenTeamLogger = () => {
+    if (!canManageTeamEntries) return;
+    if (!isTeamMode) {
+      toast.error("Open Team Dashboard first");
+      return;
+    }
+    if (!teamUser) {
+      toast.error("Select a team member first");
+      return;
+    }
+    resetTeamLoggerForm();
+    setIsTeamLoggerOpen(true);
+  };
+
+  const handleSubmitTeamLogger = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    const targetUserId = getTeamTargetUserId();
+    if (!targetUserId) {
+      toast.error("Unable to identify team member");
+      return;
+    }
+
+    const selectedDepartmentId = Number(teamLoggerForm.departmentId);
+    const selectedProjectId = Number(teamLoggerForm.projectId);
+    const hours = Number(teamLoggerForm.hours);
+    const taskDescription = teamLoggerForm.activities.trim();
+    const workDate = teamLoggerForm.workDate;
+
+    if (!workDate) {
+      toast.error("Please select a date");
+      return;
+    }
+
+    if (!Number.isFinite(selectedDepartmentId) || selectedDepartmentId <= 0) {
+      toast.error("Please select a valid department");
+      return;
+    }
+
+    if (!Number.isFinite(selectedProjectId) || selectedProjectId <= 0) {
+      toast.error("Please select a valid project");
+      return;
+    }
+
+    if (
+      !Number.isFinite(hours) ||
+      hours < VALIDATION.MIN_HOURS_PER_ENTRY ||
+      hours > VALIDATION.MAX_HOURS_PER_ENTRY
+    ) {
+      toast.error("Invalid hours", {
+        description: `Hours must be between ${VALIDATION.MIN_HOURS_PER_ENTRY} and ${VALIDATION.MAX_HOURS_PER_ENTRY}`,
+      });
+      return;
+    }
+
+    if (taskDescription.length < VALIDATION.MIN_TASK_DESCRIPTION_LENGTH) {
+      toast.error("Invalid activity", {
+        description: `Activity should be at least ${VALIDATION.MIN_TASK_DESCRIPTION_LENGTH} characters`,
+      });
+      return;
+    }
+
+    const basePayload = {
+      workDate,
+      notes: "",
+      entries: [
+        {
+          projectId: selectedProjectId,
+          taskDescription,
+          hours,
+        },
+      ],
+    };
+
+    const payloadsToTry: Array<Record<string, unknown>> = [
+      { ...basePayload, userId: targetUserId },
+      { ...basePayload, targetUserId },
+      { ...basePayload, employeeId: targetUserId },
+    ];
+
+    setIsSubmittingTeamLogger(true);
+    try {
+      await postAdminCreateWithFallbackPayloads(payloadsToTry);
+      toast.success("Activity log added successfully");
+      setIsTeamLoggerOpen(false);
+      setRefreshTick((prev) => prev + 1);
+      resetTeamLoggerForm();
+    } catch (err: unknown) {
+      console.error("Failed to create team activity log:", err);
+      const error = err as {
+        response?: { data?: { message?: string | string[] } };
+        message?: string;
+      };
+      const messageFromResponse = error.response?.data?.message;
+      const parsedMessage = Array.isArray(messageFromResponse)
+        ? messageFromResponse.join(" | ")
+        : messageFromResponse;
+      toast.error("Failed to add activity log", {
+        description:
+          parsedMessage || error.message || "Please try again with valid details.",
+      });
+    } finally {
+      setIsSubmittingTeamLogger(false);
+    }
+  };
+
   return (
     <>
-      <AppHeader crumbs={[{ label: "Dashboard" }]} />
+      <AppHeader
+        crumbs={
+          isTeamMode
+            ? [{ label: "My Dashboard", href: "/" }, { label: "Team Dashboard" }]
+            : [{ label: "My Dashboard" }]
+        }
+        right={
+          canAccessTeamDashboard && !isTeamMode ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setIsTeamMode(true);
+                setTeamSearch("");
+                setTeamSearchError(null);
+                setTeamUser(null);
+              }}
+            >
+              Team Dashboard
+            </Button>
+          ) : null
+        }
+      />
       <PageWrapper>
-        <div className="flex w-full justify-center p-4">
-          <div className="w-full max-w-7xl space-y-6">
-            {/* Header for Statistics - Data cycle info */}
-            <div className="mb-3">
-              <p className="text-sm text-[#9B9A97]">
-                Data shown is according to cycle: 26th to 25th of the month
-              </p>
-            </div>
+        <div className="p-4 md:p-6 space-y-5">
+          {/* Billing cycle chip */}
+          <div>
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground bg-secondary-background border border-border px-3 py-1.5 rounded-full">
+              <Clock className="h-3 w-3 flex-shrink-0" />
+              Billing cycle: 26th to 25th of the month
+            </span>
+          </div>
 
-            {/* Statistics Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <Card className="border border-[#E9E9E7]">
-                <CardContent className="pt-6">
-                  <div className="space-y-1">
-                    <p className="text-xs font-medium text-[#9B9A97] uppercase tracking-wide">
-                      Total Hours Logged
-                    </p>
-                    <p className="text-3xl font-bold text-[#37352F]">
-                      {monthlyData?.totals.timesheetHours || 0}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-              <Card className="border border-[#E9E9E7]">
-                <CardContent className="pt-6">
-                  <div className="space-y-1">
-                    <p className="text-xs font-medium text-[#9B9A97] uppercase tracking-wide">
-                      Leave Days
-                    </p>
-                    <p className="text-3xl font-bold text-[#37352F]">
-                      {leaveDaysDisplay}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-              <Card className="border border-[#E9E9E7]">
-                <CardContent className="pt-6">
-                  <div className="space-y-1">
-                    <p className="text-xs font-medium text-[#9B9A97] uppercase tracking-wide">
-                      Lifelines Remaining
-                    </p>
-                    <p className="text-3xl font-bold text-[#37352F]">
-                      {user?.backfill?.remaining ?? 0}
-                    </p>
-                    <p className="text-xs text-[#9B9A97]">
-                      out of {user?.backfill?.limit ?? 0} available
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-              <Card className="border border-[#E9E9E7]">
-                <CardContent className="pt-6">
-                  <div className="space-y-1">
-                    <p className="text-xs font-medium text-[#9B9A97] uppercase tracking-wide">
-                      Total Payable Days
-                    </p>
-                    <p className="text-3xl font-bold text-[#37352F]">
-                      {payableDays}/{totalCycleDays}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Timesheet Table View */}
-            <Card className="border border-[#E9E9E7] shadow-[0_1px_3px_rgba(0,0,0,0.1)]">
-              <CardContent className="p-4 sm:p-6">
-                {/* Header Section */}
-                <div className="mb-6">
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
-                    <div className="space-y-0.5">
-                      <h2 className="text-xl font-semibold text-[#37352F]">
-                        Timesheet
-                      </h2>
-                      <p className="text-sm text-[#9B9A97] break-all">
-                        {user?.email || "user@example.com"}
-                      </p>
+          {/* Statistics Cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {[
+              {
+                label: "Hours Logged",
+                display: String(monthlyData?.totals.timesheetHours || 0),
+                unit: "hrs",
+                sub: "this cycle",
+                icon: Clock,
+                accent: "border-l-[#74808e]",
+                iconBg: "bg-[#e5edf5]",
+                iconColor: "text-[#74808e]",
+              },
+              {
+                label: "Leave Days",
+                display: String(leaveDaysDisplay),
+                unit: "days",
+                sub: "this cycle",
+                icon: TreePalm,
+                accent: "border-l-amber-400",
+                iconBg: "bg-amber-50",
+                iconColor: "text-amber-600",
+              },
+              {
+                label: "Lifelines",
+                display: String(resolvedBackfill?.remaining ?? 0),
+                unit: "",
+                sub: `of ${resolvedBackfill?.limit ?? 0} available`,
+                icon: AlertCircle,
+                accent: (resolvedBackfill?.remaining ?? 0) > 0 ? "border-l-emerald-400" : "border-l-amber-400",
+                iconBg: (resolvedBackfill?.remaining ?? 0) > 0 ? "bg-emerald-50" : "bg-amber-50",
+                iconColor: (resolvedBackfill?.remaining ?? 0) > 0 ? "text-emerald-600" : "text-amber-600",
+              },
+              {
+                label: "Payable Days",
+                display: `${payableDays}/${totalCycleDays}`,
+                unit: "",
+                sub: "this cycle",
+                icon: Briefcase,
+                accent: "border-l-[#8a6f5e]",
+                iconBg: "bg-[#f0ebe3]",
+                iconColor: "text-[#8a6f5e]",
+              },
+            ].map((card) => {
+              const Icon = card.icon;
+              const isLifelineCard = card.label === "Lifelines";
+              const canShowLifelineEditor =
+                isLifelineCard && isTeamMode && Boolean(teamUser) && canEditTeamLifeline;
+              return (
+                <div
+                  key={card.label}
+                  className={cn(
+                    "bg-background border border-border border-l-4 rounded-lg p-4 transition-shadow hover:shadow-sm",
+                    card.accent
+                  )}
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider leading-tight">
+                      {card.label}
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className={cn("p-1.5 rounded-md flex-shrink-0", card.iconBg)}>
+                        <Icon className={cn("h-3.5 w-3.5", card.iconColor)} />
+                      </span>
                     </div>
-                    <div className="flex items-center gap-2 w-full sm:w-auto justify-center sm:justify-end">
-                      {/* View toggle */}
-                      <div className="flex items-center border border-[#E9E9E7] rounded-[4px] overflow-hidden">
-                        <button
-                          onClick={() => {
-                            setViewMode("table");
-                            localStorage.setItem(
-                              "timesheet-view-mode",
-                              "table"
-                            );
-                          }}
-                          title="Table view"
-                          className={`h-7 w-7 flex items-center justify-center transition-colors cursor-pointer ${
-                            viewMode === "table"
-                              ? "bg-[#37352F] text-white"
-                              : "bg-transparent hover:bg-[#F7F7F5] text-[#37352F]"
-                          }`}
-                        >
-                          <List className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          onClick={() => {
-                            setViewMode("grid");
-                            localStorage.setItem("timesheet-view-mode", "grid");
-                          }}
-                          title="Grid view"
-                          className={`h-7 w-7 flex items-center justify-center transition-colors cursor-pointer ${
-                            viewMode === "grid"
-                              ? "bg-[#37352F] text-white"
-                              : "bg-transparent hover:bg-[#F7F7F5] text-[#37352F]"
-                          }`}
-                        >
-                          <LayoutGrid className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                      <button
-                        onClick={handlePreviousMonth}
-                        disabled={isLoading}
-                        className="h-7 w-7 bg-transparent hover:bg-[#F7F7F5] border border-[#E9E9E7] rounded-[4px] flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
-                      >
-                        <ChevronLeft className="h-4 w-4 text-[#37352F]" />
-                      </button>
-                      <div className="text-center px-3 py-1.5 rounded-[4px] border border-[#E9E9E7] bg-white">
-                        {monthlyData?.period && (
-                          <p className="text-xs text-[#9B9A97] whitespace-nowrap">
-                            {format(
-                              parseISO(monthlyData.period.start),
-                              "dd/MM/yyyy"
-                            )}{" "}
-                            -{" "}
-                            {format(
-                              parseISO(monthlyData.period.end),
-                              "dd/MM/yyyy"
-                            )}
-                          </p>
+                  </div>
+                  {isLoading ? (
+                    <div className="h-8 w-16 bg-secondary-background rounded animate-pulse" />
+                  ) : (
+                    <>
+                      <p className="text-2xl font-bold text-foreground tabular-nums leading-none">
+                        {card.display}
+                        {card.unit && (
+                          <span className="text-sm font-normal text-muted-foreground ml-1">{card.unit}</span>
                         )}
+                      </p>
+                    </>
+                  )}
+                  {isLifelineCard && canShowLifelineEditor ? (
+                    isEditingLifeline ? (
+                      <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                        <span>of</span>
+                        <Input
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          value={lifelineDraft}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/[^0-9]/g, "");
+                            setLifelineDraft(val);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              handleSaveLifeline();
+                            }
+                            if (e.key === "Escape") {
+                              e.preventDefault();
+                              handleCancelLifelineEdit();
+                            }
+                          }}
+                          disabled={isSavingLifeline}
+                          className="h-7 w-20"
+                        />
+                        <span>available</span>
+                        <button
+                          type="button"
+                          onClick={handleSaveLifeline}
+                          disabled={isSavingLifeline}
+                          className="h-6 w-6 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background disabled:opacity-40 disabled:cursor-not-allowed"
+                          title="Save available lifelines"
+                        >
+                          {isSavingLifeline ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin text-foreground" />
+                          ) : (
+                            <Check className="h-3.5 w-3.5 text-emerald-600" />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleCancelLifelineEdit}
+                          disabled={isSavingLifeline}
+                          className="h-6 w-6 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background disabled:opacity-40 disabled:cursor-not-allowed"
+                          title="Cancel available lifelines edit"
+                        >
+                          <X className="h-3.5 w-3.5 text-red-600" />
+                        </button>
                       </div>
-                      <button
-                        onClick={handleNextMonth}
-                        disabled={isLoading}
-                        className="h-7 w-7 bg-transparent hover:bg-[#F7F7F5] border border-[#E9E9E7] rounded-[4px] flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
-                      >
-                        <ChevronRight className="h-4 w-4 text-[#37352F]" />
-                      </button>
+                    ) : (
+                      <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                        <p>{card.sub}</p>
+                        <button
+                          type="button"
+                          onClick={handleStartLifelineEdit}
+                          className="h-5 w-5 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background"
+                          title="Edit available lifelines"
+                        >
+                          <Pencil className="h-3 w-3 text-foreground" />
+                        </button>
+                      </div>
+                    )
+                  ) : (
+                    <p className="text-xs text-muted-foreground mt-2">{card.sub}</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Timesheet */}
+          <div className="rounded-lg border border-border bg-background overflow-hidden">
+            {/* Timesheet header */}
+            <div className="px-5 py-4 border-b border-border bg-secondary-background">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-semibold text-foreground">Timesheet</h2>
+                  <p className="text-xs text-muted-foreground mt-0.5 break-all">
+                    {isTeamMode
+                      ? teamUser
+                        ? teamUser.email || teamUser.user?.email || teamUser.name || teamUser.user?.name || monthlyData?.user?.name
+                        : "Select team member"
+                      : user?.email || "user@example.com"}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                  {/* Team search (visible after clicking Team Dashboard) */}
+                  {canAccessTeamDashboard && isTeamMode && (
+                    <div className="mr-2">
+                      <div className="flex items-center gap-2">
+                        {canManageTeamEntries && (
+                          <Button
+                            variant="outline"
+                            size="default"
+                            onClick={handleOpenTeamLogger}
+                            disabled={teamSearchLoading || !teamUser}
+                            className="h-10 rounded-md border-input bg-background px-4 text-sm font-normal whitespace-nowrap"
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                            Add Activity Log
+                          </Button>
+                        )}
+                        <Input
+                          value={teamSearch}
+                          onChange={(e) => {
+                            setTeamSearch(e.target.value);
+                            if (teamSearchError) setTeamSearchError(null);
+                          }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            (async () => {
+                              if (!teamSearch) return;
+                              setTeamSearchLoading(true);
+                              setTeamSearchError(null);
+                              try {
+                                const res = await apiClient.get(
+                                  API_PATHS.EMPLOYEE_SEARCH,
+                                  {
+                                    params: { email: teamSearch },
+                                    headers: {
+                                      "Cache-Control": "no-cache",
+                                      Pragma: "no-cache",
+                                    },
+                                  }
+                                );
+                                const data = res.data;
+                                const searchedUser = data?.user ?? data;
+
+                                if (isSelfAsTeamMember(searchedUser)) {
+                                  setTeamUser(null);
+                                  setMonthlyData(null);
+                                  setTeamSearchError(
+                                    "You cannot select yourself."
+                                  );
+                                  toast.error(
+                                    "You cannot select yourself."
+                                  );
+                                  return;
+                                }
+
+                                const fallbackEmail = teamSearch.trim();
+
+                                if (data && data.days && data.user) {
+                                  const normalizedTeamUser = {
+                                    ...data.user,
+                                    searchedEmail: fallbackEmail,
+                                    backfill:
+                                      (data.user as any)?.backfill ??
+                                      (data as any)?.backfill ??
+                                      null,
+                                  };
+                                  setMonthlyData(data as MonthlyTimesheetResponse);
+                                  setTeamUser(normalizedTeamUser);
+                                  setTeamSearchError(null);
+                                  toast.success("Team member data loaded");
+                                } else if (data?.user) {
+                                  const normalizedTeamUser = {
+                                    ...data.user,
+                                    searchedEmail: fallbackEmail,
+                                    backfill:
+                                      (data.user as any)?.backfill ??
+                                      (data as any)?.backfill ??
+                                      null,
+                                  };
+                                  setTeamUser(normalizedTeamUser);
+                                  setTeamSearchError(null);
+                                  toast.success("Team member selected");
+                                } else {
+                                  setTeamUser({
+                                    ...(data || {}),
+                                    searchedEmail: fallbackEmail,
+                                  });
+                                  setTeamSearchError(null);
+                                  toast.success("Team member selected");
+                                }
+                              } catch (err: unknown) {
+                                console.error("Team search error:", err);
+                                setTeamSearchError("No user found");
+                                toast.error("Team search failed");
+                              } finally {
+                                setTeamSearchLoading(false);
+                              }
+                            })();
+                          }
+                        }}
+                          placeholder="Search by email and press Enter"
+                          className="w-[260px]"
+                        />
+                      </div>
+                      {teamSearchError && (
+                        <p className="mt-1 text-xs text-red-600">{teamSearchError}</p>
+                      )}
                     </div>
+                  )}
+                  {/* View toggle */}
+                  <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-background p-0.5">
+                    <button
+                      onClick={() => {
+                        setViewMode("table");
+                        localStorage.setItem("timesheet-view-mode", "table");
+                      }}
+                      title="List view"
+                      className={cn(
+                        "h-7 w-7 rounded-md flex items-center justify-center transition-all cursor-pointer",
+                        viewMode === "table"
+                          ? "bg-foreground text-background shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      <List className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      onClick={() => {
+                        setViewMode("grid");
+                        localStorage.setItem("timesheet-view-mode", "grid");
+                      }}
+                      title="Grid view"
+                      className={cn(
+                        "h-7 w-7 rounded-md flex items-center justify-center transition-all cursor-pointer",
+                        viewMode === "grid"
+                          ? "bg-foreground text-background shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      <LayoutGrid className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  {/* Period navigation */}
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={handlePreviousMonth}
+                      disabled={isLoading}
+                      className="h-7 w-7 rounded-md border border-border bg-background flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed hover:bg-secondary-background transition-colors cursor-pointer"
+                    >
+                      <ChevronLeft className="h-4 w-4 text-foreground" />
+                    </button>
+                    <div className="px-3 py-1 rounded-md border border-border bg-background text-xs text-foreground whitespace-nowrap tabular-nums min-w-[160px] text-center">
+                      {monthlyData?.period ? (
+                        <>
+                          {format(parseISO(monthlyData.period.start), "dd/MM/yyyy")}
+                          {" — "}
+                          {format(parseISO(monthlyData.period.end), "dd/MM/yyyy")}
+                        </>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </div>
+                    <button
+                      onClick={handleNextMonth}
+                      disabled={isLoading}
+                      className="h-7 w-7 rounded-md border border-border bg-background flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed hover:bg-secondary-background transition-colors cursor-pointer"
+                    >
+                      <ChevronRight className="h-4 w-4 text-foreground" />
+                    </button>
                   </div>
                 </div>
+              </div>
+            </div>
 
-                {/* Table Section */}
-                {isLoading ? (
-                  <div className="flex items-center justify-center py-16 bg-white rounded-[4px]">
-                    <div className="animate-spin rounded-full h-8 w-8 border-2 border-[#E9E9E7] border-t-[#37352F]"></div>
-                  </div>
-                ) : error ? (
-                  <div className="text-center py-16 bg-white rounded-[4px]">
-                    <p className="text-[#C2312B] mb-4 text-sm">{error}</p>
-                    <Button
-                      variant="outline"
-                      onClick={() => setCurrentMonth(new Date(currentMonth))}
-                    >
-                      Retry
-                    </Button>
-                  </div>
-                ) : timesheetRows.length === 0 && viewMode === "table" ? (
-                  <div className="text-center py-16 bg-white rounded-[4px] border border-[#E9E9E7]">
-                    <p className="text-[#9B9A97] text-sm">
-                      No records found for this month
-                    </p>
-                  </div>
-                ) : viewMode === "grid" ? (
-                  /* Grid View — built from raw monthlyData.days so unfilled days appear too */
+            {/* Timesheet content */}
+            <div className="p-4 sm:p-5">
+              {isLoading ? (
+                <div className="flex items-center justify-center py-16">
+                  <div className="animate-spin rounded-full h-8 w-8 border-2 border-border border-t-foreground" />
+                </div>
+              ) : error ? (
+                <div className="text-center py-16">
+                  <p className="text-sm text-muted-foreground mb-4">{error}</p>
+                  <Button variant="outline" size="sm" onClick={() => setCurrentMonth(new Date(currentMonth))}>
+                    Retry
+                  </Button>
+                </div>
+              ) : timesheetRows.length === 0 && viewMode === "table" ? (
+                <div className="text-center py-16">
+                  <p className="text-sm text-muted-foreground">No records found for this period</p>
+                </div>
+              ) : viewMode === "grid" ? (
+                  /* Calendar Week View — organized by weeks with day cards */
                   (() => {
                     const sortedGridDays = [...(monthlyData?.days ?? [])].sort(
                       (a, b) =>
@@ -653,165 +1772,387 @@ export default function DashboardPage() {
                     const todayMidnight = new Date();
                     todayMidnight.setHours(0, 0, 0, 0);
 
+                    // Group days by week
+                    const weeks: (typeof sortedGridDays)[] = [];
+                    let currentWeek: typeof sortedGridDays = [];
+                    let currentWeekNum = 0;
+
+                    sortedGridDays.forEach((day) => {
+                      const parsedDate = parseISO(day.date);
+                      const dayOfMonth = parsedDate.getDate();
+                      const weekNum = Math.ceil(dayOfMonth / 7);
+
+                      if (
+                        weekNum !== currentWeekNum &&
+                        currentWeek.length > 0
+                      ) {
+                        weeks.push(currentWeek);
+                        currentWeek = [];
+                      }
+                      currentWeekNum = weekNum;
+                      currentWeek.push(day);
+                    });
+                    if (currentWeek.length > 0) {
+                      weeks.push(currentWeek);
+                    }
+
+                    // Helper to get day card data
+                    const getDayCardData = (
+                      day: (typeof sortedGridDays)[0]
+                    ) => {
+                      const parsedDate = parseISO(day.date);
+                      const dayOfWeek = format(parsedDate, "EEEE");
+                      const dayShort = format(parsedDate, "EEE");
+                      const displayDate = format(parsedDate, "dd");
+                      const dayOfMonth = parsedDate.getDate();
+                      const weekOfMonth = Math.ceil(dayOfMonth / 7);
+                      const isSaturday = dayOfWeek === "Saturday";
+                      const is2ndOr4thSaturday =
+                        isSaturday && (weekOfMonth === 2 || weekOfMonth === 4);
+                      const isSunday = dayOfWeek === "Sunday";
+                      const isWeekendOff = is2ndOr4thSaturday || isSunday;
+
+                      const hasTimesheet =
+                        (day.timesheet?.entries?.length ?? 0) > 0;
+                      const hasLeave = (day.leaves?.entries?.length ?? 0) > 0;
+                      const isOff = isWeekendOff || day.isHoliday;
+                      const isUnfilled = !hasTimesheet && !hasLeave && !isOff;
+
+                      const isToday =
+                        parsedDate.getFullYear() ===
+                          todayMidnight.getFullYear() &&
+                        parsedDate.getMonth() === todayMidnight.getMonth() &&
+                        parsedDate.getDate() === todayMidnight.getDate();
+
+                      const timesheetEntries = day.timesheet?.entries ?? [];
+                      const leaveEntries = day.leaves?.entries ?? [];
+                      const totalHours =
+                        timesheetEntries.reduce((s, e) => s + e.hours, 0) +
+                        leaveEntries.reduce((s, e) => s + e.hours, 0);
+
+                      let status:
+                        | "off"
+                        | "unfilled"
+                        | "filled"
+                        | "rejected"
+                        | "pending" = "filled";
+                      if (isOff) status = "off";
+                      else if (isUnfilled) status = "unfilled";
+                      else if (day.timesheet?.state === "rejected")
+                        status = "rejected";
+                      else if (
+                        leaveEntries.some((e: any) => e.state === "rejected")
+                      )
+                        status = "rejected";
+                      else if (
+                        leaveEntries.some((e: any) => e.state === "pending")
+                      )
+                        status = "pending";
+
+                      return {
+                        day,
+                        parsedDate,
+                        dayOfWeek,
+                        dayShort,
+                        displayDate,
+                        isOff,
+                        isUnfilled,
+                        isToday,
+                        totalHours,
+                        status,
+                        timesheetEntries,
+                        leaveEntries,
+                        isHoliday: day.isHoliday,
+                        holidayName: day.holidayName,
+                        is2ndOr4thSaturday,
+                        isSunday,
+                      };
+                    };
+
                     return (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                        {sortedGridDays.map((day) => {
-                          const parsedDate = parseISO(day.date);
-                          const dayOfWeek = format(parsedDate, "EEEE");
-                          const displayDate = format(parsedDate, "dd/MM/yyyy");
-                          const dayOfMonth = parsedDate.getDate();
-                          const weekOfMonth = Math.ceil(dayOfMonth / 7);
-                          const isSaturday = dayOfWeek === "Saturday";
-                          const is2ndOr4thSaturday =
-                            isSaturday &&
-                            (weekOfMonth === 2 || weekOfMonth === 4);
-                          const isSunday = dayOfWeek === "Sunday";
-                          const isWeekendOff = is2ndOr4thSaturday || isSunday;
-
-                          const hasTimesheet =
-                            (day.timesheet?.entries?.length ?? 0) > 0;
-                          const hasLeave =
-                            (day.leaves?.entries?.length ?? 0) > 0;
-                          const isOff = isWeekendOff || day.isHoliday;
-                          const isUnfilled =
-                            !hasTimesheet && !hasLeave && !isOff;
-
-                          const isToday =
-                            parsedDate.getFullYear() ===
-                              todayMidnight.getFullYear() &&
-                            parsedDate.getMonth() ===
-                              todayMidnight.getMonth() &&
-                            parsedDate.getDate() === todayMidnight.getDate();
-
-                          // Card background
-                          let cardBg = "#FFFFFF";
-                          if (isUnfilled) cardBg = "#FAFAFA";
-                          else if (day.timesheet?.state === "rejected")
-                            cardBg = "#FDEAEA";
-                          else if (isOff) cardBg = "#E6F4EA";
-
-                          const timesheetEntries = day.timesheet?.entries ?? [];
-                          const leaveEntries = day.leaves?.entries ?? [];
-                          const totalHours =
-                            timesheetEntries.reduce((s, e) => s + e.hours, 0) +
-                            leaveEntries.reduce((s, e) => s + e.hours, 0);
-
-                          let offLabel = "";
-                          if (day.isHoliday)
-                            offLabel = day.holidayName
-                              ? `Holiday — ${day.holidayName}`
-                              : "Holiday";
-                          else if (isSunday) offLabel = "Sunday";
-                          else if (is2ndOr4thSaturday)
-                            offLabel = "Saturday (Off)";
+                      <div className="space-y-4">
+                        {weeks.map((weekDays, weekIndex) => {
+                          const weekData = weekDays.map(getDayCardData);
+                          const weekTotalHours = weekData.reduce(
+                            (sum, d) => sum + d.totalHours,
+                            0
+                          );
+                          const unfilledCount = weekData.filter(
+                            (d) => d.isUnfilled
+                          ).length;
 
                           return (
                             <div
-                              key={day.date}
-                              className="rounded-[6px] overflow-hidden"
-                              style={{
-                                backgroundColor: cardBg,
-                                border: isToday
-                                  ? "1.5px solid #6B6864"
-                                  : "1px solid #E9E9E7",
-                              }}
+                              key={weekIndex}
+                              className="rounded-[4px] border border-border overflow-hidden"
+                              style={{ backgroundColor: "var(--background)" }}
                             >
-                              {/* Card header */}
-                              <div className="px-3 py-2 border-b border-[#E9E9E7] flex items-center justify-between">
-                                <div>
-                                  <p className="text-xs font-semibold text-[#37352F]">
-                                    {displayDate}
-                                  </p>
-                                  <p className="text-xs text-[#9B9A97]">
-                                    {dayOfWeek}
-                                  </p>
-                                </div>
-                                {totalHours > 0 && (
-                                  <span className="text-xs font-bold text-[#37352F]">
-                                    {totalHours}h
+                              {/* Week Header */}
+                              <div
+                                className="px-3 py-2 border-b border-border flex items-center justify-between"
+                                style={{
+                                  backgroundColor:
+                                    "var(--secondary-background)",
+                                }}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className="text-xs font-semibold uppercase tracking-wide"
+                                    style={{ color: "var(--foreground)" }}
+                                  >
+                                    Week {weekIndex + 1}
                                   </span>
-                                )}
+                                  <span
+                                    className="text-xs"
+                                    style={{ color: "var(--muted)" }}
+                                  >
+                                    {format(weekData[0].parsedDate, "MMM dd")} —{" "}
+                                    {format(
+                                      weekData[weekData.length - 1].parsedDate,
+                                      "MMM dd"
+                                    )}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-3 text-xs">
+                                  {weekTotalHours > 0 && (
+                                    <span style={{ color: "var(--muted)" }}>
+                                      {weekTotalHours}h
+                                    </span>
+                                  )}
+                                  {unfilledCount > 0 && (
+                                    <span
+                                      className="font-medium"
+                                      style={{
+                                        color: "var(--color-orange-text)",
+                                      }}
+                                    >
+                                      {unfilledCount} pending
+                                    </span>
+                                  )}
+                                </div>
                               </div>
 
-                              {/* Body */}
-                              <div className="divide-y divide-[#E9E9E7]">
-                                {isOff && !hasTimesheet && !hasLeave && (
-                                  <div className="px-3 py-2">
-                                    <p className="text-xs text-[#9B9A97]">
-                                      {offLabel}
-                                    </p>
-                                  </div>
-                                )}
-                                {isUnfilled && (
-                                  <div className="px-3 py-2">
-                                    <p className="text-xs text-[#9B9A97] italic">
-                                      No entry
-                                    </p>
-                                  </div>
-                                )}
-                                {timesheetEntries.map((entry, i) => (
-                                  <div
-                                    key={`ts-${i}`}
-                                    className="px-3 py-2 space-y-0.5"
-                                  >
-                                    <p className="text-xs font-medium text-[#37352F] truncate">
-                                      {entry.projectName || "-"}
-                                    </p>
-                                    <p className="text-xs text-[#9B9A97] line-clamp-2">
-                                      {entry.taskDescription || "-"}
-                                    </p>
-                                    <div className="flex items-center justify-between pt-0.5">
-                                      <span className="text-xs text-[#9B9A97]">
-                                        {entry.hours}h
-                                      </span>
-                                      {day.timesheet?.state === "rejected" && (
-                                        <span className="text-xs text-[#C2312B] font-medium">
-                                          Rejected
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                ))}
-                                {leaveEntries.map((entry, i) => {
-                                  const leaveStatus =
-                                    (entry as any).state === "rejected"
-                                      ? "rejected"
-                                      : (entry as any).state === "pending"
-                                      ? "pending"
-                                      : "approved";
-                                  const leaveBg =
-                                    leaveStatus === "rejected"
-                                      ? "#FDEAEA"
-                                      : leaveStatus === "pending"
-                                      ? "#FBF3DB"
-                                      : undefined;
+                              {/* Week Days Grid */}
+                              <div
+                                className="grid grid-cols-7 divide-x divide-border"
+                                style={{ borderColor: "var(--border)" }}
+                              >
+                                {weekData.map((dayData) => {
+                                  // Determine cell background
+                                  let cellBg = "var(--background)";
+                                  if (dayData.isHoliday)
+                                    cellBg = "#ddeee6";
+                                  else if (dayData.isSunday || dayData.is2ndOr4thSaturday)
+                                    cellBg = "var(--secondary-background)";
+                                  else if (dayData.isUnfilled)
+                                    cellBg = "#ede4c8";
+                                  else if (dayData.status === "rejected")
+                                    cellBg = "#eddcdc";
+                                  else if (dayData.status === "pending")
+                                    cellBg = "#ece6cc";
+
+                                  // Left-border accent via inset shadow (doesn't break divide-x)
+                                  let accentShadow = "";
+                                  if (dayData.isHoliday)
+                                    accentShadow = "inset 3px 0 0 #5a8a6a";
+                                  else if (dayData.isUnfilled)
+                                    accentShadow = "inset 3px 0 0 #b89848";
+                                  else if (dayData.status === "rejected")
+                                    accentShadow = "inset 3px 0 0 #a05858";
+                                  else if (dayData.status === "pending")
+                                    accentShadow = "inset 3px 0 0 #8a7838";
+
+                                  const boxShadow = accentShadow || undefined;
+
                                   return (
                                     <div
-                                      key={`lv-${i}`}
-                                      className="px-3 py-2 space-y-0.5"
-                                      style={
-                                        leaveBg
-                                          ? { backgroundColor: leaveBg }
-                                          : undefined
-                                      }
+                                      key={dayData.day.date}
+                                      className={`min-h-[110px] p-2.5 relative cursor-pointer hover:brightness-[0.97] transition-all rounded-[4px]${dayData.isToday ? " today-cell" : ""}`}
+                                      style={{
+                                        backgroundColor: cellBg,
+                                        borderColor: "var(--border)",
+                                        boxShadow,
+                                      }}
+                                      onClick={() => {
+                                        setSelectedDay(dayData.day);
+                                        setIsDaySheetOpen(true);
+                                      }}
                                     >
-                                      <p className="text-xs font-medium text-[#37352F] truncate">
-                                        Leave — {entry.leaveType.name}
-                                      </p>
-                                      <div className="flex items-center justify-between pt-0.5">
-                                        <span className="text-xs text-[#9B9A97]">
-                                          {entry.hours}h
-                                        </span>
-                                        {leaveStatus === "pending" && (
-                                          <span className="text-xs text-[#CB8907] font-medium">
-                                            Pending
+                                      {/* Day Header */}
+                                      <div className="flex items-start justify-between mb-1.5">
+                                        <div className="flex flex-col">
+                                          <span
+                                            className="text-lg font-semibold leading-none"
+                                            style={{
+                                              color: "var(--foreground)",
+                                            }}
+                                          >
+                                            {dayData.displayDate}
+                                          </span>
+                                          <span
+                                            className="text-xs uppercase mt-0.5"
+                                            style={{ color: "var(--muted)" }}
+                                          >
+                                            {dayData.dayShort}
+                                          </span>
+                                        </div>
+                                        {dayData.totalHours > 0 && (
+                                          <span
+                                            className="text-xs font-semibold px-1.5 py-0.5 rounded-[3px]"
+                                            style={{
+                                              backgroundColor:
+                                                dayData.status === "rejected"
+                                                  ? "#ecdcdc"
+                                                  : dayData.status === "pending"
+                                                  ? "#ece6cc"
+                                                  : dayData.status === "filled"
+                                                  ? "#daeae2"
+                                                  : "var(--secondary-background)",
+                                              color:
+                                                dayData.status === "rejected"
+                                                  ? "#803838"
+                                                  : dayData.status === "pending"
+                                                  ? "#786020"
+                                                  : dayData.status === "filled"
+                                                  ? "#386050"
+                                                  : "var(--foreground)",
+                                            }}
+                                          >
+                                            {dayData.totalHours}h
                                           </span>
                                         )}
-                                        {leaveStatus === "rejected" && (
-                                          <span className="text-xs text-[#C2312B] font-medium">
-                                            Rejected
-                                          </span>
+                                      </div>
+
+                                      {/* Day Content */}
+                                      <div className="space-y-0.5">
+                                        {/* Off day indicator */}
+                                        {dayData.isOff && (
+                                          <div
+                                            className="text-xs font-medium"
+                                            style={{
+                                              color: dayData.isHoliday
+                                                ? "#3a6a4a"
+                                                : "var(--muted)",
+                                            }}
+                                          >
+                                            {dayData.isHoliday
+                                              ? "Holiday"
+                                              : dayData.isSunday
+                                              ? "Sunday"
+                                              : "Off"}
+                                          </div>
                                         )}
+
+                                        {/* Holiday name */}
+                                        {dayData.isHoliday &&
+                                          dayData.holidayName && (
+                                            <div
+                                              className="text-xs truncate"
+                                              style={{ color: "#3a6a4a" }}
+                                            >
+                                              {dayData.holidayName}
+                                            </div>
+                                          )}
+
+                                        {/* Timesheet entries */}
+                                        {dayData.timesheetEntries.length >
+                                          0 && (
+                                          <div className="space-y-1">
+                                            {dayData.timesheetEntries.map(
+                                              (entry, i) => (
+                                                <div
+                                                  key={i}
+                                                  className="text-xs truncate flex items-center gap-1"
+                                                >
+                                                  <span
+                                                    className="font-medium truncate"
+                                                    style={{
+                                                      color:
+                                                        "var(--foreground)",
+                                                    }}
+                                                  >
+                                                    {entry.projectName ||
+                                                      "Project"}
+                                                  </span>
+                                                  <span
+                                                    className="font-medium flex-shrink-0"
+                                                    style={{
+                                                      color: "var(--muted)",
+                                                    }}
+                                                  >
+                                                    {entry.hours}h
+                                                  </span>
+                                                  {dayData.day.timesheet
+                                                    ?.state === "rejected" && (
+                                                    <span
+                                                      className="flex-shrink-0"
+                                                      style={{
+                                                        color: "#903030",
+                                                      }}
+                                                    >
+                                                      ×
+                                                    </span>
+                                                  )}
+                                                </div>
+                                              )
+                                            )}
+                                          </div>
+                                        )}
+
+                                        {/* Leave entries */}
+                                        {dayData.leaveEntries.length > 0 && (
+                                          <div className="space-y-1">
+                                            {dayData.leaveEntries.map(
+                                              (entry: any, i) => (
+                                                <div
+                                                  key={i}
+                                                  className="text-xs truncate flex items-center gap-1"
+                                                >
+                                                  <span
+                                                    className="font-medium truncate"
+                                                    style={{
+                                                      color:
+                                                        "var(--foreground)",
+                                                    }}
+                                                  >
+                                                    {entry.leaveType.name}
+                                                  </span>
+                                                  <span
+                                                    className="font-medium flex-shrink-0"
+                                                    style={{
+                                                      color: "var(--muted)",
+                                                    }}
+                                                  >
+                                                    {entry.hours}h
+                                                  </span>
+                                                  {entry.state ===
+                                                    "pending" && (
+                                                    <span
+                                                      className="flex-shrink-0"
+                                                      style={{
+                                                        color: "#806020",
+                                                      }}
+                                                    >
+                                                      ○
+                                                    </span>
+                                                  )}
+                                                  {entry.state ===
+                                                    "rejected" && (
+                                                    <span
+                                                      className="flex-shrink-0"
+                                                      style={{
+                                                        color: "#903030",
+                                                      }}
+                                                    >
+                                                      ×
+                                                    </span>
+                                                  )}
+                                                </div>
+                                              )
+                                            )}
+                                          </div>
+                                        )}
+
                                       </div>
                                     </div>
                                   );
@@ -833,11 +2174,14 @@ export default function DashboardPage() {
                             <TableHead className="whitespace-nowrap w-16">
                               Sr
                             </TableHead>
-                            <TableHead className="whitespace-nowrap w-28">
+                            <TableHead className="whitespace-nowrap w-28 text-center">
                               Date
                             </TableHead>
                             <TableHead className="whitespace-nowrap w-28">
                               Day
+                            </TableHead>
+                            <TableHead className="whitespace-nowrap w-20 text-center">
+                              Total
                             </TableHead>
                             <TableHead className="whitespace-nowrap w-32">
                               Project
@@ -846,6 +2190,11 @@ export default function DashboardPage() {
                               Hours
                             </TableHead>
                             <TableHead>Activities</TableHead>
+                            {isTeamMode && canManageTeamEntries && (
+                              <TableHead className="whitespace-nowrap w-32 text-center">
+                                Actions
+                              </TableHead>
+                            )}
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -869,70 +2218,298 @@ export default function DashboardPage() {
                               (row.isLeave && row.leaveStatus === "rejected") ||
                               row.timesheetState === "rejected"
                             ) {
-                            
+                              bgColor = "#f0c0c0";
                               isColored = true;
                             } else if (
                               row.isLeave &&
                               row.leaveStatus === "pending"
                             ) {
-                              
+                              bgColor = "#f5eab0";
                               isColored = true;
                             } else if (
-                              row.isHoliday ||
-                              row.isWeekend ||
-                              (row.isLeave && row.leaveStatus === "approved")
+                              row.isLeave && row.leaveStatus === "approved"
                             ) {
-                              bgColor = "#E6F4EA";
+                              bgColor = "#c8e4d4";
+                              isColored = true;
+                            } else if (row.isHoliday) {
+                              bgColor = "#c8e4d4";
+                              isColored = true;
+                            } else if (row.isWeekend) {
+                              bgColor = "var(--secondary-background)";
                               isColored = true;
                             } else {
-                              bgColor = "#FFFFFF";
+                              bgColor = "var(--background)";
                             }
+
+                            const rowKey = getRowKey(row, index);
+                            const canManageEntry =
+                              isTeamMode &&
+                              canManageTeamEntries &&
+                              !row.isLeave &&
+                              Boolean(row.entryId);
+                            const isEditing =
+                              canManageTeamEntries && editingRowKey === rowKey;
+                            const isSaving = savingRowKey === rowKey;
+                            const isDeleting = deletingRowKey === rowKey;
+                            const isConfirmingDelete = confirmDeleteRowKey === rowKey;
+                            const isTargetDateRow =
+                              highlightedDateApi !== null &&
+                              row.dateApi === highlightedDateApi;
 
                             return (
                               <TableRow
                                 key={`${row.date}-${index}`}
+                                data-date-api={row.dateApi ?? undefined}
                                 style={{
                                   backgroundColor: bgColor,
                                   borderBottom: isSameDateAsNext
                                     ? "none"
                                     : undefined,
+                                  borderTop: !isSameDateAsPrev && index > 0
+                                    ? "2px solid var(--border)"
+                                    : undefined,
+                                  boxShadow: isTargetDateRow
+                                    ? "inset 5px 0 0 #2f2f2f, 0 0 0 2px rgba(0, 0, 0, 0.22)"
+                                    : undefined,
                                 }}
-                                className={isColored ? "hover:opacity-95" : ""}
+                                className={cn(
+                                  isColored ? "hover:opacity-95" : "",
+                                  isTargetDateRow && "animate-[pulse_1s_ease-in-out_3]"
+                                )}
                               >
-                                <TableCell className="px-3 py-2.5 text-sm text-[#9B9A97] whitespace-nowrap">
-                                  {row.sno}
+                                <TableCell className="px-3 py-2.5 text-sm text-muted-foreground whitespace-nowrap">
+                                  {!isSameDateAsPrev
+                                    ? dateSerialMap.get(row.date) ?? ""
+                                    : ""}
                                 </TableCell>
-                               
-                                <TableCell className="px-3 py-2.5 text-sm text-[#37352F] whitespace-nowrap">
-                                  {!isSameDateAsPrev ? row.date : ""}
+
+                                <TableCell className="px-3 py-2.5 text-sm text-foreground whitespace-nowrap text-center">
+                                  {isEditing ? (
+                                    <Input
+                                      type="date"
+                                      value={editingForm.date}
+                                      onChange={(e) =>
+                                        setEditingForm((prev) => ({
+                                          ...prev,
+                                          date: e.target.value,
+                                        }))
+                                      }
+                                      className="h-8 w-36"
+                                    />
+                                  ) : !isSameDateAsPrev ? (
+                                    row.date
+                                  ) : (
+                                    ""
+                                  )}
                                 </TableCell>
-                                <TableCell className="px-3 py-2.5 text-sm text-[#37352F] whitespace-nowrap">
+                                <TableCell className="px-3 py-2.5 text-sm text-foreground whitespace-nowrap">
                                   {!isSameDateAsPrev ? row.day : ""}
                                 </TableCell>
-                                 <TableCell className="px-3 py-2.5 text-sm text-[#37352F] whitespace-nowrap">
-                                  {row.project}
-                                </TableCell>
-                                <TableCell className="px-3 py-2.5 text-sm text-[#37352F] text-center font-medium whitespace-nowrap">
-                                  {row.hours}
-                                </TableCell>
-                                <TableCell className="px-3 py-2.5 text-sm text-[#37352F]">
-                                  {row.activities}
-                                  {row.leaveStatus === "pending" && (
-                                    <span className=" font-bold">
-                                      (Pending)
+                                <TableCell className="px-3 py-2.5 text-sm text-center whitespace-nowrap font-semibold">
+                                  {!isSameDateAsPrev ? (
+                                    <span style={{ color: "var(--foreground)" }}>
+                                      {dailyTotals.get(row.date) ?? 0}h
                                     </span>
-                                  )}
-                                  {row.leaveStatus === "rejected" && (
-                                    <span className="font-bold">
-                                      (Rejected)
-                                    </span>
-                                  )}
-                                  {row.leaveStatus === "approved" && (
-                                    <span className="font-bold">
-                                      (Approved)
-                                    </span>
+                                  ) : ""}
+                                </TableCell>
+                                <TableCell className="px-3 py-2.5 text-sm text-foreground whitespace-nowrap">
+                                  {isEditing ? (
+                                    <select
+                                      value={editingForm.projectId}
+                                      onChange={(e) =>
+                                        setEditingForm((prev) => ({
+                                          ...prev,
+                                          projectId: e.target.value,
+                                          project:
+                                            teamProjects.find(
+                                              (p) =>
+                                                String(p.id) === e.target.value
+                                            )?.name ?? prev.project,
+                                        }))
+                                      }
+                                      className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
+                                      disabled={projectsLoading}
+                                    >
+                                      <option value="">
+                                        {projectsLoading
+                                          ? "Loading projects..."
+                                          : "Select project"}
+                                      </option>
+                                      {teamProjects.map((project) => (
+                                        <option
+                                          key={project.id}
+                                          value={String(project.id)}
+                                        >
+                                          {project.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  ) : (
+                                    row.project
                                   )}
                                 </TableCell>
+                                <TableCell className="px-3 py-2.5 text-sm text-foreground text-center font-medium whitespace-nowrap">
+                                  {isEditing ? (
+                                    <Input
+                                      type="text"
+                                      inputMode="decimal"
+                                      value={editingForm.hours}
+                                      onChange={(e) => {
+                                        const val = e.target.value.replace(/[^0-9.]/g, "");
+                                        setEditingForm((prev) => ({
+                                          ...prev,
+                                          hours: val,
+                                        }));
+                                      }}
+                                      className="h-8 w-16 text-center"
+                                    />
+                                  ) : (
+                                    row.hours
+                                  )}
+                                </TableCell>
+                                <TableCell className="px-3 py-2.5 text-sm text-foreground">
+                                  {isEditing ? (
+                                    <Input
+                                      type="text"
+                                      value={editingForm.activities}
+                                      onChange={(e) =>
+                                        setEditingForm((prev) => ({
+                                          ...prev,
+                                          activities: e.target.value,
+                                        }))
+                                      }
+                                      className="h-8"
+                                    />
+                                  ) : (
+                                    <>
+                                      {row.activities}
+                                      {row.leaveStatus === "pending" && (
+                                        <span
+                                          className="font-semibold ml-1"
+                                          style={{ color: "#806020" }}
+                                        >
+                                          · Pending approval
+                                        </span>
+                                      )}
+                                      {row.leaveStatus === "rejected" && (
+                                        <span
+                                          className="font-semibold ml-1"
+                                          style={{ color: "#903030" }}
+                                        >
+                                          · Rejected
+                                        </span>
+                                      )}
+                                      {row.leaveStatus === "approved" && (
+                                        <span
+                                          className="font-semibold ml-1"
+                                          style={{ color: "#2d6647" }}
+                                        >
+                                          · Approved
+                                        </span>
+                                      )}
+                                      {!row.isLeave && row.timesheetState === "rejected" && (
+                                        <span
+                                          className="font-semibold ml-1"
+                                          style={{ color: "#903030" }}
+                                        >
+                                          · Rejected
+                                        </span>
+                                      )}
+                                    </>
+                                  )}
+                                </TableCell>
+                                {isTeamMode && canManageTeamEntries && (
+                                  <TableCell className="px-3 py-2.5 text-center">
+                                    {canManageEntry ? (
+                                      <div className="inline-flex items-center gap-1.5">
+                                        {isEditing ? (
+                                          <>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                handleSaveEdit(row, index)
+                                              }
+                                              disabled={isSaving || isDeleting}
+                                              className="h-7 w-7 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background disabled:opacity-40 disabled:cursor-not-allowed"
+                                              title="Save changes"
+                                            >
+                                              {isSaving ? (
+                                                <Loader2 className="h-3.5 w-3.5 animate-spin text-foreground" />
+                                              ) : (
+                                                <Check className="h-3.5 w-3.5 text-emerald-600" />
+                                              )}
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={handleCancelEdit}
+                                              disabled={isSaving || isDeleting}
+                                              className="h-7 w-7 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background disabled:opacity-40 disabled:cursor-not-allowed"
+                                              title="Cancel editing"
+                                            >
+                                              <X className="h-3.5 w-3.5 text-red-600" />
+                                            </button>
+                                          </>
+                                        ) : isConfirmingDelete ? (
+                                          <div className="inline-flex items-center gap-1.5">
+                                            <span className="text-xs text-muted-foreground whitespace-nowrap">Are you sure you want to delete this entry?</span>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setConfirmDeleteRowKey(null);
+                                                handleDeleteEntry(row, index);
+                                              }}
+                                              disabled={isDeleting}
+                                              className="h-7 w-7 rounded-md border border-red-300 bg-red-50 flex items-center justify-center hover:bg-red-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                                              title="Confirm delete"
+                                            >
+                                              {isDeleting ? (
+                                                <Loader2 className="h-3.5 w-3.5 animate-spin text-red-600" />
+                                              ) : (
+                                                <Trash2 className="h-3.5 w-3.5 text-red-600" />
+                                              )}
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => setConfirmDeleteRowKey(null)}
+                                              disabled={isDeleting}
+                                              className="h-7 w-7 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background disabled:opacity-40 disabled:cursor-not-allowed"
+                                              title="Cancel delete"
+                                            >
+                                              <X className="h-3.5 w-3.5 text-foreground" />
+                                            </button>
+                                          </div>
+                                        ) : (
+                                          <>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                handleStartEdit(row, index)
+                                              }
+                                              disabled={isSaving || isDeleting}
+                                              className="h-7 w-7 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background disabled:opacity-40 disabled:cursor-not-allowed"
+                                              title="Edit entry"
+                                            >
+                                              <Pencil className="h-3.5 w-3.5 text-foreground" />
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                setConfirmDeleteRowKey(rowKey)
+                                              }
+                                              disabled={isSaving || isDeleting}
+                                              className="h-7 w-7 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background disabled:opacity-40 disabled:cursor-not-allowed"
+                                              title="Delete entry"
+                                            >
+                                              <Trash2 className="h-3.5 w-3.5 text-red-600" />
+                                            </button>
+                                          </>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <span className="text-xs text-muted-foreground">-</span>
+                                    )}
+                                  </TableCell>
+                                )}
                               </TableRow>
                             );
                           })}
@@ -955,70 +2532,96 @@ export default function DashboardPage() {
                           (row.isLeave && row.leaveStatus === "rejected") ||
                           row.timesheetState === "rejected"
                         ) {
-                          bgColor = "#FDEAEA";
+                          bgColor = "var(--color-red-bg)";
                         } else if (
                           row.isLeave &&
                           row.leaveStatus === "pending"
                         ) {
-                          bgColor = "#FBF3DB";
+                          bgColor = "var(--color-yellow-bg)";
                         } else if (
                           row.isHoliday ||
                           row.isWeekend ||
                           (row.isLeave && row.leaveStatus === "approved")
                         ) {
-                          bgColor = "#E6F4EA";
+                          bgColor = "var(--color-green-bg)";
                         } else {
-                          bgColor = "#FFFFFF";
+                          bgColor = "var(--background)";
                         }
 
                         return (
                           <div
                             key={`${row.date}-${index}`}
-                            className="border border-[#E9E9E7] rounded-[4px] p-4 space-y-2"
-                            style={{ backgroundColor: bgColor }}
+                            data-date-api={row.dateApi ?? undefined}
+                            className={cn(
+                              "border border-border rounded-[4px] p-4 space-y-2",
+                              highlightedDateApi !== null &&
+                                row.dateApi === highlightedDateApi &&
+                                "animate-[pulse_1s_ease-in-out_3]"
+                            )}
+                            style={{
+                              backgroundColor: bgColor,
+                              boxShadow:
+                                highlightedDateApi !== null &&
+                                row.dateApi === highlightedDateApi
+                                  ? "inset 5px 0 0 #2f2f2f, 0 0 0 2px rgba(0, 0, 0, 0.22)"
+                                  : undefined,
+                            }}
                           >
                             <div className="flex justify-between items-start">
                               <div className="space-y-0.5 flex-1">
-                                <p className="text-xs text-[#9B9A97]">
-                                  #{row.sno}
+                                <p className="text-xs text-muted-foreground">
+                                  {!isSameDateAsPrev
+                                    ? `#${dateSerialMap.get(row.date) ?? ""}`
+                                    : ""}
                                 </p>
                                 {!isSameDateAsPrev && (
-                                  <p className="text-sm font-medium text-[#37352F]">
+                                  <p className="text-sm font-medium text-foreground">
                                     {row.date} - {row.day}
                                   </p>
                                 )}
                               </div>
                               <div className="text-right">
-                                <p className="text-xl font-bold text-[#37352F]">
+                                <p className="text-xl font-bold text-foreground">
                                   {row.hours}h
                                 </p>
                               </div>
                             </div>
                             <div className="space-y-0.5">
-                              <p className="text-xs text-[#9B9A97]">Project</p>
-                              <p className="text-sm text-[#37352F]">
+                              <p className="text-xs text-muted-foreground">
+                                Project
+                              </p>
+                              <p className="text-sm text-foreground">
                                 {row.project}
                               </p>
                             </div>
                             <div className="space-y-0.5">
-                              <p className="text-xs text-[#9B9A97]">
+                              <p className="text-xs text-muted-foreground">
                                 Activities
                               </p>
-                              <p className="text-sm text-[#37352F]">
+                              <p className="text-sm text-foreground">
                                 {row.activities}
                                 {row.leaveStatus === "pending" && (
-                                  <span>
-                                    (Pending)
+                                  <span
+                                    className="font-semibold ml-1"
+                                    style={{ color: "var(--color-yellow-text)" }}
+                                  >
+                                    · Pending approval
                                   </span>
                                 )}
                                 {row.leaveStatus === "rejected" && (
-                                  <span>
-                                    (Rejected)
+                                  <span
+                                    className="font-semibold ml-1"
+                                    style={{ color: "var(--color-red-text)" }}
+                                  >
+                                    · Rejected
                                   </span>
                                 )}
                                 {row.leaveStatus === "approved" && (
-                                  <span>
-                                    (Approved)
+                                  <span
+                                    className="font-semibold ml-1"
+                                    style={{ color: "var(--color-green-text)" }}
+                                  >
+                                    · Approved
                                   </span>
                                 )}
                               </p>
@@ -1029,10 +2632,404 @@ export default function DashboardPage() {
                     </div>
                   </>
                 )}
-              </CardContent>
-            </Card>
+            </div>
           </div>
         </div>
+
+        {/* Team Activity Logger Sheet (admin/super admin) */}
+        <Sheet open={isTeamLoggerOpen} onOpenChange={setIsTeamLoggerOpen}>
+          <SheetContent side="right" className="w-full sm:w-[520px] p-0">
+            <div className="h-full flex flex-col">
+              <SheetHeader className="px-6 py-5 border-b border-border">
+                <SheetTitle>Team Activity Logger</SheetTitle>
+                <SheetDescription>
+                  Add activity log for selected team member.
+                </SheetDescription>
+              </SheetHeader>
+
+                <form onSubmit={handleSubmitTeamLogger} className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Team Member</Label>
+                    <p className="text-sm font-medium text-foreground break-all">
+                      {teamUser?.email ||
+                        teamUser?.workEmail ||
+                        teamUser?.officialEmail ||
+                        teamUser?.user?.email ||
+                        teamUser?.searchedEmail ||
+                        (teamSearch ? teamSearch.trim() : "") ||
+                        "Email not available"}
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2.5">
+                      <Label htmlFor="team-activity-date">Work Date</Label>
+                      <Input
+                        id="team-activity-date"
+                        type="date"
+                        value={teamLoggerForm.workDate}
+                        onChange={(e) =>
+                          setTeamLoggerForm((prev) => ({
+                            ...prev,
+                            workDate: e.target.value,
+                          }))
+                        }
+                        required
+                      />
+                    </div>
+
+                    <div className="space-y-2.5">
+                      <Label htmlFor="team-activity-hours">Hours</Label>
+                      <Input
+                        id="team-activity-hours"
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="0.0"
+                        value={teamLoggerForm.hours}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/[^0-9.]/g, "");
+                          setTeamLoggerForm((prev) => ({
+                            ...prev,
+                            hours: val,
+                          }));
+                        }}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    <Label htmlFor="team-activity-department">
+                      Current Working Department
+                    </Label>
+                    <Select
+                      value={teamLoggerForm.departmentId}
+                      onValueChange={(nextDepartmentId) => {
+                        setTeamLoggerForm((prev) => ({
+                          ...prev,
+                          departmentId: nextDepartmentId,
+                          projectId: "",
+                        }));
+                        if (nextDepartmentId) {
+                          fetchTeamLoggerProjectsForDepartment(nextDepartmentId);
+                        }
+                      }}
+                    >
+                      <SelectTrigger id="team-activity-department">
+                        <SelectValue placeholder="Select department" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {teamDepartments.map((department) => (
+                          <SelectItem
+                            key={department.id}
+                            value={String(department.id)}
+                          >
+                            {department.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    <Label htmlFor="team-activity-project">Project</Label>
+                    <Select
+                      value={teamLoggerForm.projectId}
+                      onValueChange={(value) =>
+                        setTeamLoggerForm((prev) => ({
+                          ...prev,
+                          projectId: value,
+                        }))
+                      }
+                      disabled={
+                        !teamLoggerForm.departmentId || teamLoggerProjectsLoading
+                      }
+                    >
+                      <SelectTrigger id="team-activity-project">
+                        <SelectValue
+                          placeholder={
+                            !teamLoggerForm.departmentId
+                              ? "Select department first"
+                              : teamLoggerProjectsLoading
+                              ? "Loading projects..."
+                              : "Select project"
+                          }
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(teamProjectsByDepartment[teamLoggerForm.departmentId] || []).map(
+                          (project) => (
+                            <SelectItem
+                              key={project.id}
+                              value={String(project.id)}
+                            >
+                              {project.name}
+                            </SelectItem>
+                          )
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    <Label htmlFor="team-activity-description">Activities</Label>
+                    <Textarea
+                      id="team-activity-description"
+                      placeholder="Describe the work done"
+                      value={teamLoggerForm.activities}
+                      onChange={(e) =>
+                        setTeamLoggerForm((prev) => ({
+                          ...prev,
+                          activities: e.target.value,
+                        }))
+                      }
+                      minLength={VALIDATION.MIN_TASK_DESCRIPTION_LENGTH}
+                      required
+                    />
+                  </div>
+
+                <div className="pt-3 flex items-center gap-2.5">
+                  <Button
+                    type="submit"
+                    disabled={isSubmittingTeamLogger || !teamUser}
+                    className="min-w-[150px]"
+                  >
+                    {isSubmittingTeamLogger ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Submitting...
+                      </>
+                    ) : (
+                      "Submit Activity Log"
+                    )}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsTeamLoggerOpen(false)}
+                    disabled={isSubmittingTeamLogger}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </form>
+            </div>
+          </SheetContent>
+        </Sheet>
+
+        {/* Day Detail Sheet */}
+        <Sheet open={isDaySheetOpen} onOpenChange={setIsDaySheetOpen}>
+          <SheetContent side="right" className="w-full md:w-[400px] p-0">
+            <SheetTitle className="sr-only">
+              {selectedDay
+                ? format(parseISO(selectedDay.date), "EEEE, MMM d")
+                : "Day Details"}
+            </SheetTitle>
+            {selectedDay && (
+              <div className="h-full flex flex-col">
+                {/* Header */}
+                <div
+                  className="px-5 py-4 border-b border-border"
+                  style={{ backgroundColor: "var(--secondary-background)" }}
+                >
+                  <div className="flex items-center gap-2">
+                    <Calendar
+                      className="h-4 w-4"
+                      style={{ color: "var(--foreground)" }}
+                    />
+                    <span
+                      className="text-sm font-semibold"
+                      style={{ color: "var(--foreground)" }}
+                    >
+                      {format(parseISO(selectedDay.date), "EEEE, MMM d")}
+                    </span>
+                  </div>
+                  <p className="text-xs mt-1" style={{ color: "var(--muted)" }}>
+                    {selectedDay.isHoliday
+                      ? selectedDay.holidayName
+                      : selectedDay.isWeekend
+                      ? "Weekend"
+                      : selectedDay.isWorkingDay
+                      ? "Working Day"
+                      : "Non-working Day"}
+                  </p>
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 overflow-y-auto p-5 space-y-5">
+                  {/* Hours Summary */}
+                  <div className="flex gap-4">
+                    <div className="flex-1">
+                      <p
+                        className="text-[10px] uppercase tracking-wide mb-1"
+                        style={{ color: "var(--muted)" }}
+                      >
+                        Timesheet
+                      </p>
+                      <p
+                        className="text-xl font-semibold"
+                        style={{ color: "var(--foreground)" }}
+                      >
+                        {selectedDay.timesheet?.totalHours || 0}h
+                      </p>
+                    </div>
+                    <div className="flex-1">
+                      <p
+                        className="text-[10px] uppercase tracking-wide mb-1"
+                        style={{ color: "var(--muted)" }}
+                      >
+                        Leave
+                      </p>
+                      <p
+                        className="text-xl font-semibold"
+                        style={{ color: "var(--foreground)" }}
+                      >
+                        {selectedDay.leaves?.totalHours || 0}h
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Timesheet Entries */}
+                  {selectedDay.timesheet &&
+                    selectedDay.timesheet.entries.length > 0 && (
+                      <div className="space-y-2">
+                        <p
+                          className="text-xs font-medium"
+                          style={{ color: "var(--foreground)" }}
+                        >
+                          Timesheet
+                        </p>
+                        <div className="space-y-2">
+                          {selectedDay.timesheet.entries.map((entry, index) => (
+                            <div
+                              key={index}
+                              className="py-2 border-b border-border last:border-0"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <p
+                                  className="text-sm font-medium truncate"
+                                  style={{ color: "var(--foreground)" }}
+                                >
+                                  {entry.projectName || "—"}
+                                </p>
+                                <span
+                                  className="text-xs shrink-0"
+                                  style={{ color: "var(--muted)" }}
+                                >
+                                  {entry.hours}h
+                                </span>
+                              </div>
+                              <p
+                                className="text-xs mt-0.5"
+                                style={{ color: "var(--muted)" }}
+                              >
+                                {entry.departmentName}
+                              </p>
+                              {entry.taskDescription && (
+                                <p
+                                  className="text-xs mt-1.5"
+                                  style={{ color: "var(--muted)" }}
+                                >
+                                  {entry.taskDescription}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        {selectedDay.timesheet.notes && (
+                          <p
+                            className="text-xs pt-2"
+                            style={{ color: "var(--color-yellow-text)" }}
+                          >
+                            Note: {selectedDay.timesheet.notes}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                  {/* Leave Entries */}
+                  {selectedDay.leaves &&
+                    selectedDay.leaves.entries.length > 0 && (
+                      <div className="space-y-2">
+                        <p
+                          className="text-xs font-medium"
+                          style={{ color: "var(--foreground)" }}
+                        >
+                          Leave
+                        </p>
+                        <div className="space-y-2">
+                          {selectedDay.leaves.entries.map(
+                            (entry: any, index) => {
+                              const status = entry.state || "approved";
+                              const statusColors: Record<string, string> = {
+                                approved: "var(--color-green-text)",
+                                pending: "var(--color-yellow-text)",
+                              };
+                              const color =
+                                statusColors[status] || statusColors.approved;
+
+                              return (
+                                <div
+                                  key={index}
+                                  className="py-2 border-b border-border last:border-0"
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span
+                                      className="text-sm"
+                                      style={{ color: "var(--foreground)" }}
+                                    >
+                                      {entry.leaveType.name}
+                                    </span>
+                                    <span
+                                      className="text-xs capitalize"
+                                      style={{ color }}
+                                    >
+                                      {status}
+                                    </span>
+                                  </div>
+                                  <p
+                                    className="text-xs mt-0.5"
+                                    style={{ color: "var(--muted)" }}
+                                  >
+                                    {entry.hours} hours
+                                  </p>
+                                </div>
+                              );
+                            }
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                  {/* Empty State */}
+                  {(!selectedDay.timesheet ||
+                    selectedDay.timesheet.entries.length === 0) &&
+                    (!selectedDay.leaves ||
+                      selectedDay.leaves.entries.length === 0) &&
+                    !selectedDay.isHoliday &&
+                    !selectedDay.isWeekend && (
+                      <p
+                        className="text-sm text-center py-4"
+                        style={{ color: "var(--muted)" }}
+                      >
+                        No entries
+                      </p>
+                    )}
+
+                  {/* Off Day */}
+                  {(selectedDay.isHoliday || selectedDay.isWeekend) && (
+                    <p
+                      className="text-sm"
+                      style={{ color: "var(--color-green-text)" }}
+                    >
+                      No timesheet required
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+          </SheetContent>
+        </Sheet>
       </PageWrapper>
     </>
   );
