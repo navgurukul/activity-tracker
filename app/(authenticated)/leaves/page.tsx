@@ -2,8 +2,11 @@
 
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { format, parseISO } from "date-fns";
-import { Search, TreePalm, Clock, CheckCircle2, Calendar as CalendarIcon, X } from "lucide-react";
+import { Search, TreePalm, Clock, CheckCircle2, Calendar as CalendarIcon, X, Pencil, Plus, AlertCircle } from "lucide-react";
 import { DateRange } from "react-day-picker";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
 
 import { AppHeader } from "@/app/_components/AppHeader";
 import { PageWrapper } from "@/app/_components/wrapper";
@@ -11,6 +14,28 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Calendar } from "@/components/ui/calendar";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Textarea } from "@/components/ui/textarea";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  SearchCombobox,
+  SearchComboboxOption,
+} from "@/components/ui/search-combobox";
+
 import {
   Popover,
   PopoverContent,
@@ -28,10 +53,17 @@ import { columns, type LeaveRequest as TeamLeaveRequest } from "./history/_compo
 import { LeaveTable } from "./history/_components/LeaveTable";
 import { NewLeaveRequestDialog } from "./_components/NewLeaveRequestDialog";
 import apiClient from "@/lib/api-client";
-import { API_PATHS } from "@/lib/constants";
+import { API_PATHS, DATE_FORMATS, VALIDATION } from "@/lib/constants";
+import { mockDataService } from "@/lib/mock-data";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
+import { useRole } from "@/hooks/use-role";
 import { cn } from "@/lib/utils";
+import { ROLES } from "@/lib/rbac-constants";
+import {
+  checkLeaveConflictWithTimesheet,
+  invalidateMonthlyTimesheetCache,
+} from "@/lib/leave-timesheet-validator";
 
 interface LeaveRequest {
   id: number;
@@ -52,6 +84,7 @@ interface LeaveRequest {
 
 interface LeaveBalanceItem {
   id: number;
+  userId?: number;
   leaveTypeId: number;
   balanceHours: number;
   pendingHours: number;
@@ -67,8 +100,18 @@ interface LeaveBalanceItem {
   };
 }
 
+type LeavesMainTab = "leaves" | "balance" | "team";
+
+interface PersistedLeavesState {
+  activeMainTab?: LeavesMainTab;
+  isTeamEmployeeBalanceView?: boolean;
+  teamEmployeeEmail?: string;
+}
+
 export default function LeavesPage() {
   const { user } = useAuth();
+  const canEditTeamPendingRequests = useRole([ROLES.ADMIN, ROLES.SUPER_ADMIN]);
+  const [activeMainTab, setActiveMainTab] = useState<LeavesMainTab>("leaves");
 
   const [leaveHistory, setLeaveHistory] = useState<LeaveRequest[]>([]);
   const [teamLeaveHistory, setTeamLeaveHistory] = useState<TeamLeaveRequest[]>([]);
@@ -81,10 +124,67 @@ export default function LeavesPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [filterDateRange, setFilterDateRange] = useState<DateRange | undefined>();
+  const [leavesPage, setLeavesPage] = useState(1);
 
   const [teamPage, setTeamPage] = useState(1);
   const [teamPageSize, setTeamPageSize] = useState(10);
   const [teamSearch, setTeamSearch] = useState("");
+  const [isTeamEmployeeBalanceView, setIsTeamEmployeeBalanceView] = useState(false);
+  const [showTeamEmployeeBalanceSearch, setShowTeamEmployeeBalanceSearch] = useState(false);
+  const [teamEmployeeBalanceEmail, setTeamEmployeeBalanceEmail] = useState("");
+  const [selectedTeamEmployeeEmail, setSelectedTeamEmployeeEmail] = useState("");
+  const [selectedTeamEmployeeUserId, setSelectedTeamEmployeeUserId] = useState<number | null>(null);
+  const [teamEmployeeBalances, setTeamEmployeeBalances] = useState<LeaveBalanceItem[]>([]);
+  const [isTeamEmployeeBalanceLoading, setIsTeamEmployeeBalanceLoading] =
+    useState(false);
+
+  // Edit allocated balance state
+  const [editingAllocatedBalance, setEditingAllocatedBalance] = useState<LeaveBalanceItem | null>(null);
+  const [editingAllocatedHours, setEditingAllocatedHours] = useState<string>("");
+  const [isUpdatingAllocated, setIsUpdatingAllocated] = useState(false);
+
+  // Admin apply leave state
+  const [adminApplyLeaveOpen, setAdminApplyLeaveOpen] = useState(false);
+  const [adminApplLeaveSubmitting, setAdminApplyLeaveSubmitting] = useState(false);
+  const [adminLeaveTypes, setAdminLeaveTypes] = useState<any[]>([]);
+  const [adminLeaveDateRange, setAdminLeaveDateRange] = useState<DateRange | undefined>();
+  const [adminLeaveValidationError, setAdminLeaveValidationError] = useState<string | null>(null);
+  const [adminLeaveIsValidating, setAdminLeaveIsValidating] = useState(false);
+
+  const adminApplyLeaveFormSchema = z
+    .object({
+      leaveType: z.string().min(1, "Please select a leave type."),
+      reason: z
+        .string()
+        .min(
+          VALIDATION.MIN_LEAVE_REASON_LENGTH,
+          `Please provide at least ${VALIDATION.MIN_LEAVE_REASON_LENGTH} characters.`
+        ),
+      startDate: z.date({ message: "Start date is required." }),
+      endDate: z.date({ message: "End date is required." }),
+      durationType: z.string().min(1, "Please select a duration type."),
+      halfDaySegment: z.string().optional(),
+    })
+    .refine((data) => data.endDate >= data.startDate, {
+      message: "End date must be on or after the start date.",
+      path: ["endDate"],
+    });
+
+  const adminApplyLeaveForm = useForm<z.infer<typeof adminApplyLeaveFormSchema>>({
+    resolver: zodResolver(adminApplyLeaveFormSchema),
+    defaultValues: {
+      leaveType: "",
+      reason: "",
+      startDate: undefined,
+      endDate: undefined,
+      durationType: "",
+      halfDaySegment: "",
+    },
+  });
+
+  const durationTypes = mockDataService.getDurationTypes();
+
+  const leavesPageSize = 10;
 
   const fetchBalances = useCallback(async () => {
     setIsBalancesLoading(true);
@@ -125,16 +225,343 @@ export default function LeavesPage() {
     }
   }, []);
 
+  const fetchEmployeeEmailSuggestions = useCallback(
+    async (query: string): Promise<SearchComboboxOption[]> => {
+      if (!user?.orgId) return [];
+
+      try {
+        const res = await apiClient.get(API_PATHS.EMPLOYEES, {
+          params: { orgId: user.orgId, q: query, page: 1, limit: 8 },
+        });
+
+        const responseData = Array.isArray(res.data)
+          ? res.data
+          : res.data?.data || [];
+        const items = Array.isArray(responseData)
+          ? responseData
+          : responseData.data || [];
+
+        return items
+          .map((item: any) => ({
+            value: String(item?.email ?? "").trim(),
+            label: String(item?.name ?? item?.email ?? "").trim(),
+            description: String(item?.email ?? "").trim(),
+          }))
+          .filter((item: SearchComboboxOption) => Boolean(item.value));
+      } catch {
+        return [];
+      }
+    },
+    [user?.orgId]
+  );
+
   useEffect(() => {
     fetchBalances();
     fetchMyLeaves();
     fetchTeamLeaves();
   }, [fetchBalances, fetchMyLeaves, fetchTeamLeaves]);
 
+  const persistLeavesState = useCallback((nextState: PersistedLeavesState) => {
+    if (typeof window === "undefined") return;
+
+    const currentState = (window.history.state ?? {}) as Record<string, unknown>;
+    const existingLeavesState =
+      (currentState.__leavesState as PersistedLeavesState | undefined) ?? {};
+
+    window.history.replaceState(
+      {
+        ...currentState,
+        __leavesState: {
+          ...existingLeavesState,
+          ...nextState,
+        },
+      },
+      "",
+      window.location.pathname
+    );
+  }, []);
+
+  useEffect(() => {
+    if (!adminApplyLeaveOpen) return;
+    let isMounted = true;
+    async function fetchLeaveTypesForAdmin() {
+      try {
+        const res = await apiClient.get(API_PATHS.LEAVES_TYPES);
+        const types = Array.isArray(res.data?.data) ? res.data.data : Array.isArray(res.data) ? res.data : [];
+        if (isMounted) {
+          setAdminLeaveTypes(types);
+        }
+      } catch {
+        if (isMounted) {
+          setAdminLeaveTypes([]);
+        }
+      }
+    }
+    fetchLeaveTypesForAdmin();
+    return () => {
+      isMounted = false;
+    };
+  }, [adminApplyLeaveOpen]);
+
   const handleNewRequestSuccess = useCallback(() => {
     fetchBalances();
     fetchMyLeaves();
   }, [fetchBalances, fetchMyLeaves]);
+
+  const handleAdminApplyLeaveSubmit = useCallback(
+    async (values: z.infer<typeof adminApplyLeaveFormSchema>) => {
+      if (!selectedTeamEmployeeUserId) {
+        toast.error("Please select an employee first");
+        return;
+      }
+
+      setAdminApplyLeaveSubmitting(true);
+      try {
+        const selectedLeaveType = adminLeaveTypes.find(
+          (t) => t.id === parseInt(values.leaveType)
+        );
+        if (!selectedLeaveType) {
+          toast.error("Invalid leave type selected");
+          setAdminApplyLeaveSubmitting(false);
+          return;
+        }
+
+        const start = new Date(values.startDate);
+        const end = new Date(values.endDate);
+        const days =
+          Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+        const hours =
+          values.durationType === "full_day" ? days * 8 : days * 4;
+
+        const payload: Record<string, unknown> = {
+          userId: selectedTeamEmployeeUserId,
+          leaveTypeId: selectedLeaveType.id,
+          startDate: format(values.startDate, DATE_FORMATS.API),
+          endDate: format(values.endDate, DATE_FORMATS.API),
+          hours,
+          reason: values.reason,
+          durationType: values.durationType,
+        };
+        if (values.durationType === "half_day" && values.halfDaySegment) {
+          payload.halfDaySegment = values.halfDaySegment;
+        }
+
+        const response = await apiClient.post(
+          API_PATHS.LEAVES_ADMIN_APPLY,
+          payload
+        );
+        if (response.status === 200 || response.status === 201) {
+          toast.success(`Leave applied successfully for ${selectedTeamEmployeeEmail}!`);
+          invalidateMonthlyTimesheetCache(
+            values.startDate.getFullYear(),
+            values.startDate.getMonth() + 1
+          );
+          if (values.startDate.getMonth() !== values.endDate.getMonth()) {
+            invalidateMonthlyTimesheetCache(
+              values.endDate.getFullYear(),
+              values.endDate.getMonth() + 1
+            );
+          }
+          adminApplyLeaveForm.reset({
+            leaveType: "",
+            reason: "",
+            startDate: undefined,
+            endDate: undefined,
+            durationType: "",
+            halfDaySegment: "",
+          });
+          setAdminLeaveDateRange(undefined);
+          setAdminLeaveValidationError(null);
+          setAdminApplyLeaveOpen(false);
+          fetchTeamLeaves();
+        }
+      } catch (error: unknown) {
+        const msg =
+          typeof error === "object" &&
+          error !== null &&
+          "response" in error &&
+          (error as { response?: { data?: { message?: string } } }).response?.data
+            ?.message
+            ? (error as { response?: { data?: { message?: string } } }).response
+                ?.data?.message
+            : error instanceof Error
+            ? error.message
+            : "Failed to apply leave.";
+        toast.error("Submission failed", { description: msg });
+      } finally {
+        setAdminApplyLeaveSubmitting(false);
+      }
+    },
+    [selectedTeamEmployeeUserId, selectedTeamEmployeeEmail, adminLeaveTypes, adminApplyLeaveForm, fetchTeamLeaves]
+  );
+
+  const openAdminApplyLeaveDialog = useCallback(() => {
+    if (!selectedTeamEmployeeUserId || !selectedTeamEmployeeEmail) {
+      toast.error("Please search for an employee first");
+      return;
+    }
+    setAdminApplyLeaveOpen(true);
+  }, [selectedTeamEmployeeUserId, selectedTeamEmployeeEmail]);
+
+  useEffect(() => {
+    if (adminLeaveDateRange?.from && adminLeaveDateRange?.to) {
+      adminApplyLeaveForm.setValue("startDate", adminLeaveDateRange.from);
+      adminApplyLeaveForm.setValue("endDate", adminLeaveDateRange.to);
+    } else if (adminLeaveDateRange?.from && !adminLeaveDateRange?.to) {
+      adminApplyLeaveForm.setValue("startDate", adminLeaveDateRange.from);
+      adminApplyLeaveForm.setValue("endDate", adminLeaveDateRange.from);
+    }
+  }, [adminLeaveDateRange, adminApplyLeaveForm]);
+
+  // Internal search function that only fetches data
+  const fetchEmployeeLeaveBalance = useCallback(async (email: string) => {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      return false;
+    }
+
+    setIsTeamEmployeeBalanceLoading(true);
+    try {
+      const response = await apiClient.get(API_PATHS.LEAVES_BALANCES_EMPLOYEE, {
+        params: { email: trimmedEmail },
+      });
+
+      const parsedBalances = Array.isArray(response.data?.balances)
+        ? response.data.balances
+        : Array.isArray(response.data?.data?.balances)
+        ? response.data.data.balances
+        : [];
+
+      // Try to get userId from response
+      const userId = response.data?.userId || response.data?.data?.userId || response.data?.user?.id || (parsedBalances[0]?.userId) || null;
+
+      setTeamEmployeeBalances(parsedBalances);
+      setSelectedTeamEmployeeEmail(trimmedEmail);
+      setSelectedTeamEmployeeUserId(userId);
+      return true;
+    } catch {
+      setTeamEmployeeBalances([]);
+      setSelectedTeamEmployeeEmail("");
+      setSelectedTeamEmployeeUserId(null);
+      toast.error("Unable to load employee leave balance");
+      return false;
+    } finally {
+      setIsTeamEmployeeBalanceLoading(false);
+    }
+  }, []);
+
+  // Restore team balance state from browser history on refresh
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const currentState = (window.history.state ?? {}) as Record<string, unknown>;
+    const leavesState =
+      (currentState.__leavesState as PersistedLeavesState | undefined) ?? {};
+
+    if (leavesState.activeMainTab) {
+      setActiveMainTab(leavesState.activeMainTab);
+    }
+
+    if (leavesState.isTeamEmployeeBalanceView) {
+      setIsTeamEmployeeBalanceView(true);
+      setShowTeamEmployeeBalanceSearch(true);
+      setActiveMainTab("team");
+    }
+
+    if (leavesState.teamEmployeeEmail) {
+      setTeamEmployeeBalanceEmail(leavesState.teamEmployeeEmail);
+      void fetchEmployeeLeaveBalance(leavesState.teamEmployeeEmail);
+    }
+  }, [fetchEmployeeLeaveBalance]);
+
+  useEffect(() => {
+    persistLeavesState({ activeMainTab });
+  }, [activeMainTab, persistLeavesState]);
+
+  const searchTeamEmployeeBalanceByEmail = useCallback(async (rawEmail: string) => {
+    const email = rawEmail.trim();
+    if (!email) {
+      toast.error("Please enter employee email");
+      return;
+    }
+
+    const success = await fetchEmployeeLeaveBalance(email);
+    if (success) {
+      setActiveMainTab("team");
+      setIsTeamEmployeeBalanceView(true);
+      setShowTeamEmployeeBalanceSearch(true);
+      persistLeavesState({
+        activeMainTab: "team",
+        isTeamEmployeeBalanceView: true,
+        teamEmployeeEmail: email,
+      });
+    }
+  }, [fetchEmployeeLeaveBalance, persistLeavesState]);
+
+  const handleSearchTeamEmployeeBalance = useCallback(async () => {
+    await searchTeamEmployeeBalanceByEmail(teamEmployeeBalanceEmail);
+  }, [searchTeamEmployeeBalanceByEmail, teamEmployeeBalanceEmail]);
+
+  const clearTeamEmployeeBalanceSearch = useCallback(() => {
+    // Clear search field and data, but keep search interface visible
+    setTeamEmployeeBalanceEmail("");
+    setSelectedTeamEmployeeEmail("");
+    setSelectedTeamEmployeeUserId(null);
+    setTeamEmployeeBalances([]);
+    
+    persistLeavesState({
+      activeMainTab: "team",
+      isTeamEmployeeBalanceView: true,
+      teamEmployeeEmail: "",
+    });
+  }, [persistLeavesState]);
+
+  const backToTeamLeaves = useCallback(() => {
+    setIsTeamEmployeeBalanceView(false);
+    setShowTeamEmployeeBalanceSearch(false);
+    persistLeavesState({
+      activeMainTab: "team",
+      isTeamEmployeeBalanceView: false,
+      teamEmployeeEmail: teamEmployeeBalanceEmail,
+    });
+  }, [persistLeavesState, teamEmployeeBalanceEmail]);
+
+  const handleUpdateAllocatedBalance = useCallback(async () => {
+    if (!editingAllocatedBalance || !selectedTeamEmployeeUserId) return;
+
+    const newAllocatedHours = parseFloat(editingAllocatedHours);
+    if (isNaN(newAllocatedHours) || newAllocatedHours < 0) {
+      toast.error("Please enter a valid number");
+      return;
+    }
+
+    setIsUpdatingAllocated(true);
+    try {
+      await apiClient.patch(API_PATHS.LEAVES_ADMIN_BALANCES_UPDATE, {
+        userId: selectedTeamEmployeeUserId,
+        leaveTypeId: editingAllocatedBalance.leaveTypeId,
+        allocatedHours: newAllocatedHours * 8,
+      });
+
+      toast.success("Allocated balance updated successfully");
+
+      // Update the local state with the new balance
+      setTeamEmployeeBalances((prev) =>
+        prev.map((balance) =>
+          balance.id === editingAllocatedBalance.id
+            ? { ...balance, allocatedHours: newAllocatedHours * 8 }
+            : balance
+        )
+      );
+
+      setEditingAllocatedBalance(null);
+      setEditingAllocatedHours("");
+    } catch {
+      toast.error("Failed to update allocated balance");
+    } finally {
+      setIsUpdatingAllocated(false);
+    }
+  }, [editingAllocatedBalance, editingAllocatedHours, selectedTeamEmployeeUserId])
 
   const visibleBalances = useMemo(() => {
     return balances.filter((balance) => {
@@ -180,6 +607,21 @@ export default function LeavesPage() {
       return matchesSearch && matchesStatus && matchesFrom && matchesTo;
     });
   }, [leaveHistory, searchQuery, statusFilter, filterDateRange]);
+
+  const leavesTotal = filteredLeaves.length;
+  const leavesTotalPages = Math.max(1, Math.ceil(leavesTotal / leavesPageSize));
+  const paginatedLeaves = useMemo(() => {
+    const start = (leavesPage - 1) * leavesPageSize;
+    return filteredLeaves.slice(start, start + leavesPageSize);
+  }, [filteredLeaves, leavesPage, leavesPageSize]);
+
+  useEffect(() => {
+    setLeavesPage(1);
+  }, [filteredLeaves, leavesPageSize]);
+
+  useEffect(() => {
+    setLeavesPage((prev) => Math.min(prev, leavesTotalPages));
+  }, [leavesTotalPages]);
 
   // Team leaves by state
   const teamPending = useMemo(
@@ -249,6 +691,33 @@ export default function LeavesPage() {
       );
     });
   }, [visibleBalances]);
+
+  const sortedTeamEmployeeBalances = useMemo(() => {
+    const priority = ["casual leave", "wellness leave"];
+    return teamEmployeeBalances
+      .filter((balance) => {
+        const leaveName = String(balance.leaveType?.name ?? "").trim().toLowerCase();
+        const leaveCode = String(balance.leaveType?.code ?? "").trim().toLowerCase();
+
+        const isCompensatoryLeave =
+          leaveName === "compensatory leave" ||
+          leaveCode === "compensatory_leave" ||
+          leaveCode === "compensatory-leave" ||
+          leaveCode === "compensatory";
+
+        return !isCompensatoryLeave;
+      })
+      .sort((a, b) => {
+        const aKey = (a.leaveType?.name || "").toLowerCase();
+        const bKey = (b.leaveType?.name || "").toLowerCase();
+        const ai = priority.findIndex((p) => aKey.includes(p));
+        const bi = priority.findIndex((p) => bKey.includes(p));
+        return (
+          (ai === -1 ? Infinity : ai) - (bi === -1 ? Infinity : bi) ||
+          aKey.localeCompare(bKey)
+        );
+      });
+  }, [teamEmployeeBalances]);
 
   const formatDays = (leave: LeaveRequest) => {
     const days = leave.hours / 8;
@@ -345,12 +814,16 @@ export default function LeavesPage() {
             />
           </div>
 
-          <Tabs defaultValue="leaves" className="w-full">
+          <Tabs
+            value={activeMainTab}
+            onValueChange={(value) => setActiveMainTab(value as LeavesMainTab)}
+            className="w-full"
+          >
             {/* Tab navigation — segmented pill style */}
             <TabsList className="inline-flex items-center gap-1 rounded-lg border border-border bg-secondary-background p-1 h-auto mb-6">
               {[
                 { value: "leaves", label: "My Leaves" },
-                { value: "balance", label: "Leave Balance" },
+                { value: "balance", label: "My Leave Balance" },
                 { value: "team", label: "Team" },
               ].map((tab) => (
                 <TabsTrigger
@@ -537,12 +1010,14 @@ export default function LeavesPage() {
                         </td>
                       </tr>
                     ) : (
-                      filteredLeaves.map((leave, idx) => (
+                      paginatedLeaves.map((leave, idx) => (
                         <tr
                           key={leave.id}
                           className="border-b border-border last:border-0 hover:bg-secondary-background/60 transition-colors"
                         >
-                          <td className="px-4 py-3.5 text-xs text-muted-foreground tabular-nums">{idx + 1}</td>
+                          <td className="px-4 py-3.5 text-xs text-muted-foreground tabular-nums">
+                            {(leavesPage - 1) * leavesPageSize + idx + 1}
+                          </td>
                           <td className="px-4 py-3.5">
                             <span className="font-medium text-foreground">{getDisplayLeaveTypeName(leave.leaveType.name)}</span>
                           </td>
@@ -572,6 +1047,32 @@ export default function LeavesPage() {
                   </tbody>
                 </table>
                 </div>
+                {!isLoading && filteredLeaves.length > 0 && leavesTotalPages > 1 && (
+                  <div className="px-4 py-3 border-t border-border bg-secondary-background flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div className="text-xs text-muted-foreground">
+                      Showing {(leavesPage - 1) * leavesPageSize + 1}-
+                      {Math.min(leavesPage * leavesPageSize, leavesTotal)} of {leavesTotal}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setLeavesPage((p) => Math.max(1, p - 1))}
+                        disabled={leavesPage === 1}
+                      >
+                        Previous
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setLeavesPage((p) => Math.min(leavesTotalPages, p + 1))}
+                        disabled={leavesPage === leavesTotalPages}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             </TabsContent>
 
@@ -678,103 +1179,472 @@ export default function LeavesPage() {
               <Tabs defaultValue="pending" className="w-full">
                 {/* Inner tab bar for team sub-tabs */}
                 <div className="flex items-center justify-between mb-5 border-b border-border">
-                  <div className="flex items-center gap-1">
-                    {[
-                      { val: "pending", label: "Pending", count: filteredTeamPending.length, activeColor: "data-[state=active]:text-amber-700 data-[state=active]:border-amber-500" },
-                      { val: "approved", label: "Approved", count: filteredTeamApproved.length, activeColor: "data-[state=active]:text-emerald-700 data-[state=active]:border-emerald-500" },
-                      { val: "rejected", label: "Rejected", count: filteredTeamRejected.length, activeColor: "data-[state=active]:text-red-700 data-[state=active]:border-red-500" },
-                    ].map(({ val, label, count, activeColor }) => (
-                       <TabsList key={val} className="h-auto p-0 bg-transparent border-0 rounded-none">
-                         <TabsTrigger
-                           value={val}
-                           className={cn(
-                             "rounded-none px-4 pb-3 pt-1 text-sm font-medium bg-transparent shadow-none",
-                             "border-b-2 border-transparent -mb-px",
-                             "text-muted-foreground hover:text-foreground transition-colors",
-                             "data-[state=active]:bg-transparent data-[state=active]:shadow-none",
-                             activeColor
-                           )}
-                         >
-                           {label}
-                           <span
-                             className={cn(
-                               "ml-2 inline-flex items-center justify-center min-w-[1.25rem] h-5 rounded-full px-1.5 text-[10px] font-semibold tabular-nums",
-                               val === "pending" ? "bg-amber-50 text-amber-700" :
-                               val === "approved" ? "bg-emerald-50 text-emerald-700" :
-                               "bg-red-50 text-red-700"
-                             )}
-                           >
-                             {count}
-                           </span>
-                         </TabsTrigger>
-                       </TabsList>
-                     ))}
-                   </div>
+                  {!isTeamEmployeeBalanceView && (
+                    <div className="flex items-center gap-1">
+                      {[
+                        { val: "pending", label: "Pending", count: filteredTeamPending.length, activeColor: "data-[state=active]:text-amber-700 data-[state=active]:border-amber-500" },
+                        { val: "approved", label: "Approved", count: filteredTeamApproved.length, activeColor: "data-[state=active]:text-emerald-700 data-[state=active]:border-emerald-500" },
+                        { val: "rejected", label: "Rejected", count: filteredTeamRejected.length, activeColor: "data-[state=active]:text-red-700 data-[state=active]:border-red-500" },
+                      ].map(({ val, label, count, activeColor }) => (
+                        <TabsList key={val} className="h-auto p-0 bg-transparent border-0 rounded-none">
+                          <TabsTrigger
+                            value={val}
+                            className={cn(
+                              "rounded-none px-4 pb-3 pt-1 text-sm font-medium bg-transparent shadow-none",
+                              "border-b-2 border-transparent -mb-px",
+                              "text-muted-foreground hover:text-foreground transition-colors",
+                              "data-[state=active]:bg-transparent data-[state=active]:shadow-none",
+                              activeColor
+                            )}
+                          >
+                            {label}
+                            <span
+                              className={cn(
+                                "ml-2 inline-flex items-center justify-center min-w-[1.25rem] h-5 rounded-full px-1.5 text-[10px] font-semibold tabular-nums",
+                                val === "pending" ? "bg-amber-50 text-amber-700" :
+                                val === "approved" ? "bg-emerald-50 text-emerald-700" :
+                                "bg-red-50 text-red-700"
+                              )}
+                            >
+                              {count}
+                            </span>
+                          </TabsTrigger>
+                        </TabsList>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Right-side search for team name / email */}
                   <div className="ml-4">
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                      <Input
-                        placeholder="Search team name or email..."
-                        value={teamSearch}
-                        onChange={(e) => setTeamSearch(e.target.value)}
-                        className="pl-9 h-8 bg-background text-sm min-w-[220px]"
-                      />
+                    <div className="flex items-center gap-2">
+                      {!isTeamEmployeeBalanceView && (
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                          <Input
+                            placeholder="Search team name or email..."
+                            value={teamSearch}
+                            onChange={(e) => setTeamSearch(e.target.value)}
+                            className="pl-9 h-8 bg-background text-sm min-w-[220px]"
+                          />
+                        </div>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          if (isTeamEmployeeBalanceView) {
+                            backToTeamLeaves();
+                            return;
+                          }
+                          setActiveMainTab("team");
+                          setIsTeamEmployeeBalanceView(true);
+                          setShowTeamEmployeeBalanceSearch(true);
+                          persistLeavesState({
+                            activeMainTab: "team",
+                            isTeamEmployeeBalanceView: true,
+                            teamEmployeeEmail: teamEmployeeBalanceEmail.trim(),
+                          });
+                        }}
+                      >
+                        {isTeamEmployeeBalanceView
+                          ? "Back to Team Leaves"
+                          : "Employee Leave Balance"}
+                      </Button>
                     </div>
                   </div>
                 </div>
 
-                <TabsContent value="pending" className="mt-0">
-                  <DataTable
-                    columns={columns}
-                    data={filteredTeamPending}
-                    onUpdate={fetchTeamLeaves}
-                  />
-                </TabsContent>
-                <TabsContent value="approved" className="mt-0">
-                  <LeaveTable
-                    leaves={paginatedTeamApproved}
-                    isLoading={isTeamLoading}
-                    showEmployee={true}
-                  />
-                  <div className="flex items-center justify-between px-4 py-3 border-t border-border bg-secondary-background gap-3 mt-2">
-                    <div className="text-xs text-muted-foreground">
-                      {`0 of ${teamTotal} row(s) selected.`}
+                {isTeamEmployeeBalanceView && showTeamEmployeeBalanceSearch && (
+                  <div className="mb-4 rounded-lg border border-border bg-background p-4">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                      <SearchCombobox
+                        value={teamEmployeeBalanceEmail}
+                        onValueChange={setTeamEmployeeBalanceEmail}
+                        onSelect={(option) => {
+                          setTeamEmployeeBalanceEmail(option.value);
+                        }}
+                        fetchOptions={fetchEmployeeEmailSuggestions}
+                        placeholder="Enter employee email"
+                        searchPlaceholder="Type employee email..."
+                        emptyMessage="No employee found."
+                        className="h-9 w-full sm:min-w-[320px] sm:max-w-[460px]"
+                      />
+                      <Button
+                        size="sm"
+                        variant="default"
+                        onClick={() => void handleSearchTeamEmployeeBalance()}
+                        disabled={isTeamEmployeeBalanceLoading}
+                        className="sm:min-w-[92px]"
+                      >
+                        {isTeamEmployeeBalanceLoading ? "Searching..." : "Search"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={clearTeamEmployeeBalanceSearch}
+                        disabled={isTeamEmployeeBalanceLoading}
+                        className="sm:min-w-[72px]"
+                      >
+                        Clear
+                      </Button>
+                      {selectedTeamEmployeeEmail && canEditTeamPendingRequests && (
+                        <Button
+                          size="sm"
+                          variant="default"
+                          onClick={openAdminApplyLeaveDialog}
+                          className="sm:min-w-[160px] gap-1.5"
+                        >
+                          <Plus className="h-4 w-4" />
+                          Apply leave for employee
+                        </Button>
+                      )}
                     </div>
 
-                    <div className="flex items-center gap-3">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setTeamPage((p) => Math.max(1, p - 1))}
-                        disabled={teamPage === 1}
-                      >
-                        Previous
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setTeamPage((p) => Math.min(teamTotalPages, p + 1))}
-                        disabled={teamPage === teamTotalPages}
-                      >
-                        Next
-                      </Button>
-                    </div>
+                    {selectedTeamEmployeeEmail && (
+                      <p className="text-xs text-muted-foreground mt-3">
+                        Showing leave balance for: {selectedTeamEmployeeEmail}
+                      </p>
+                    )}
+
+                    {selectedTeamEmployeeEmail && (
+                      <div className="mt-3 overflow-x-auto rounded-md border border-border">
+                        <table className="w-full text-sm min-w-[640px]">
+                          <thead>
+                            <tr className="border-b border-border bg-secondary-background">
+                              <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Leave Type</th>
+                              <th className="text-center px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Allocated</th>
+                              <th className="text-center px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Available</th>
+                              <th className="text-center px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Pending</th>
+                              <th className="text-center px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Approved</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sortedTeamEmployeeBalances.length === 0 ? (
+                              <tr>
+                                <td colSpan={5} className="px-4 py-6 text-center text-sm text-muted-foreground">
+                                  No leave balance found for this employee.
+                                </td>
+                              </tr>
+                            ) : (
+                              sortedTeamEmployeeBalances.map((balance) => (
+                                <tr key={balance.id} className="border-b border-border last:border-0">
+                                  <td className="px-4 py-3 font-medium text-foreground">
+                                    {getDisplayLeaveTypeName(balance.leaveType.name)}
+                                  </td>
+                                  <td className="px-4 py-3 text-center tabular-nums">
+                                    {editingAllocatedBalance?.id === balance.id ? (
+                                      <div className="flex items-center justify-center gap-1">
+                                        <Input
+                                          type="number"
+                                          inputMode="decimal"
+                                          step="0.5"
+                                          min="0"
+                                          value={editingAllocatedHours}
+                                          onChange={(e) => setEditingAllocatedHours(e.target.value)}
+                                          className="h-7 w-16 text-center text-sm"
+                                          disabled={isUpdatingAllocated}
+                                        />
+                                        <button
+                                          onClick={() => void handleUpdateAllocatedBalance()}
+                                          disabled={isUpdatingAllocated}
+                                          className="p-1 text-emerald-600 hover:bg-emerald-50 rounded transition-colors disabled:opacity-50"
+                                          title="Confirm"
+                                        >
+                                          <CheckCircle2 className="h-4 w-4" />
+                                        </button>
+                                        <button
+                                          onClick={() => {
+                                            setEditingAllocatedBalance(null);
+                                            setEditingAllocatedHours("");
+                                          }}
+                                          disabled={isUpdatingAllocated}
+                                          className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-50"
+                                          title="Cancel"
+                                        >
+                                          <X className="h-4 w-4" />
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center justify-center gap-2">
+                                        <span>{balance.allocatedHours / 8}</span>
+                                        {canEditTeamPendingRequests && (
+                                          <button
+                                            onClick={() => {
+                                              setEditingAllocatedBalance(balance);
+                                              setEditingAllocatedHours(String(balance.allocatedHours / 8));
+                                            }}
+                                            className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+                                            title="Edit allocated balance"
+                                          >
+                                            <Pencil className="h-4 w-4" />
+                                          </button>
+                                        )}
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3 text-center tabular-nums">
+                                    {balance.balanceHours / 8}
+                                  </td>
+                                  <td className="px-4 py-3 text-center tabular-nums">
+                                    {balance.pendingHours / 8}
+                                  </td>
+                                  <td className="px-4 py-3 text-center tabular-nums">
+                                    {balance.bookedHours / 8}
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
-                </TabsContent>
-                <TabsContent value="rejected" className="mt-0">
-                  <LeaveTable
-                    leaves={filteredTeamRejected}
-                    isLoading={isTeamLoading}
-                    showEmployee={true}
-                  />
-                </TabsContent>
+                )}
+
+                {!isTeamEmployeeBalanceView && (
+                  <>
+                    <TabsContent value="pending" className="mt-0">
+                      <DataTable
+                        columns={columns}
+                        data={filteredTeamPending}
+                        onUpdate={fetchTeamLeaves}
+                        canEditPendingRequests={canEditTeamPendingRequests}
+                      />
+                    </TabsContent>
+                    <TabsContent value="approved" className="mt-0">
+                      <LeaveTable
+                        leaves={paginatedTeamApproved}
+                        isLoading={isTeamLoading}
+                        showEmployee={true}
+                        canDeleteApprovedRequests={canEditTeamPendingRequests}
+                        onUpdate={fetchTeamLeaves}
+                      />
+                      <div className="flex items-center justify-between px-4 py-3 border-t border-border bg-secondary-background gap-3 mt-2">
+                        <div className="text-xs text-muted-foreground">
+                          {`0 of ${teamTotal} row(s) selected.`}
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setTeamPage((p) => Math.max(1, p - 1))}
+                            disabled={teamPage === 1}
+                          >
+                            Previous
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setTeamPage((p) => Math.min(teamTotalPages, p + 1))}
+                            disabled={teamPage === teamTotalPages}
+                          >
+                            Next
+                          </Button>
+                        </div>
+                      </div>
+                    </TabsContent>
+                    <TabsContent value="rejected" className="mt-0">
+                      <LeaveTable
+                        leaves={filteredTeamRejected}
+                        isLoading={isTeamLoading}
+                        showEmployee={true}
+                        canDeleteApprovedRequests={false}
+                      />
+                    </TabsContent>
+                  </>
+                )}
               </Tabs>
             </TabsContent>
           </Tabs>
         </div>
+
       </PageWrapper>
+
+      {/* Admin Apply Leave Dialog */}
+      <Dialog open={adminApplyLeaveOpen} onOpenChange={setAdminApplyLeaveOpen}>
+        <DialogContent className="sm:max-w-[520px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Apply Leave for Employee</DialogTitle>
+            <DialogDescription>
+              Apply leave on behalf of {selectedTeamEmployeeEmail}
+            </DialogDescription>
+          </DialogHeader>
+
+          <Form {...adminApplyLeaveForm}>
+            <form
+              onSubmit={adminApplyLeaveForm.handleSubmit(handleAdminApplyLeaveSubmit)}
+              className="space-y-4 mt-2"
+            >
+              <FormField
+                control={adminApplyLeaveForm.control}
+                name="leaveType"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Leave Type</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="— Select leave type —" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {adminLeaveTypes.map((type) => (
+                          <SelectItem key={type.id} value={String(type.id)}>
+                            {type.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={adminApplyLeaveForm.control}
+                name="reason"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Reason for Leave</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        placeholder="Please provide a reason for the leave request..."
+                        className="min-h-[80px] resize-none"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={adminApplyLeaveForm.control}
+                name="startDate"
+                render={() => (
+                  <FormItem className="flex flex-col">
+                    <FormLabel>Leave Date Range</FormLabel>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <FormControl>
+                          <Button
+                            variant="outline"
+                            className={cn(
+                              "w-full justify-start text-left font-normal",
+                              !adminLeaveDateRange?.from && "text-muted-foreground"
+                            )}
+                          >
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {adminLeaveDateRange?.from ? (
+                              adminLeaveDateRange.to ? (
+                                <>
+                                  {format(adminLeaveDateRange.from, DATE_FORMATS.DISPLAY)}{" "}
+                                  –{" "}
+                                  {format(adminLeaveDateRange.to, DATE_FORMATS.DISPLAY)}
+                                </>
+                              ) : (
+                                format(adminLeaveDateRange.from, DATE_FORMATS.DISPLAY)
+                              )
+                            ) : (
+                              <span>Pick a date range</span>
+                            )}
+                          </Button>
+                        </FormControl>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0 border-0" align="start">
+                        <Calendar
+                          mode="range"
+                          defaultMonth={adminLeaveDateRange?.from}
+                          selected={adminLeaveDateRange}
+                          onSelect={setAdminLeaveDateRange}
+                          numberOfMonths={2}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={adminApplyLeaveForm.control}
+                name="durationType"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Duration Type</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="— Select duration —" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {durationTypes.map((type) => (
+                          <SelectItem key={type.value} value={type.value}>
+                            {type.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {adminApplyLeaveForm.watch("durationType") === "half_day" && (
+                <FormField
+                  control={adminApplyLeaveForm.control}
+                  name="halfDaySegment"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Half Day Segment</FormLabel>
+                      <Select value={field.value || ""} onValueChange={field.onChange}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="— Select segment —" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="first_half">First Half</SelectItem>
+                          <SelectItem value="second_half">Second Half</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+
+              {adminLeaveValidationError && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>{adminLeaveValidationError}</AlertDescription>
+                </Alert>
+              )}
+
+              <div className="flex gap-2 justify-end pt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setAdminApplyLeaveOpen(false)}
+                  disabled={adminApplLeaveSubmitting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={adminApplLeaveSubmitting}
+                >
+                  {adminApplLeaveSubmitting ? "Applying..." : "Apply Leave"}
+                </Button>
+              </div>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
+

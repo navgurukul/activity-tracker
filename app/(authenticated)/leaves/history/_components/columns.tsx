@@ -2,19 +2,30 @@
 
 import { ColumnDef } from "@tanstack/react-table";
 import { format, parseISO } from "date-fns";
-import { Ban, Check, CircleCheck, MoreHorizontal } from "lucide-react";
-import { useState } from "react";
+import { Ban, Check, Pencil } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { DATE_FORMATS, API_PATHS } from "@/lib/constants";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { DATE_FORMATS, API_PATHS, VALIDATION } from "@/lib/constants";
 import apiClient from "@/lib/api-client";
 import { toast } from "sonner";
 import { Spinner } from "@/components/ui/spinner";
@@ -44,6 +55,12 @@ export type LeaveRequest = {
   decidedByUserId: number | null;
 };
 
+type LeaveTypeOption = {
+  id: number;
+  name: string;
+  code?: string;
+};
+
 // Helper function to format duration
 const formatDuration = (leave: LeaveRequest) => {
   if (leave.durationType === "half_day") {
@@ -60,13 +77,92 @@ function ActionsCell({
   leave,
   onUpdate,
   isBulkOperationInProgress,
+  canEditPendingRequests,
 }: {
   leave: LeaveRequest;
   onUpdate?: () => void;
   isBulkOperationInProgress?: boolean;
+  canEditPendingRequests?: boolean;
 }) {
   const [isApproving, setIsApproving] = useState(false);
   const [isRejecting, setIsRejecting] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [isLoadingLeaveTypes, setIsLoadingLeaveTypes] = useState(false);
+  const [leaveTypes, setLeaveTypes] = useState<LeaveTypeOption[]>([]);
+
+  const [leaveTypeId, setLeaveTypeId] = useState(String(leave.leaveType?.id ?? ""));
+  const [startDate, setStartDate] = useState(leave.startDate?.slice(0, 10) ?? "");
+  const [endDate, setEndDate] = useState(leave.endDate?.slice(0, 10) ?? "");
+  const [durationType, setDurationType] = useState<"full_day" | "half_day">(
+    leave.durationType
+  );
+  const [halfDaySegment, setHalfDaySegment] = useState<"first_half" | "second_half" | "">(
+    leave.halfDaySegment ?? ""
+  );
+  const [reason, setReason] = useState(leave.reason ?? "");
+
+  useEffect(() => {
+    if (!isEditOpen || !canEditPendingRequests) {
+      return;
+    }
+
+    let isMounted = true;
+
+    const loadLeaveTypes = async () => {
+      setIsLoadingLeaveTypes(true);
+      try {
+        const response = await apiClient.get(API_PATHS.LEAVES_TYPES);
+        const source =
+          response.data?.leaveTypes ??
+          response.data?.data?.leaveTypes ??
+          response.data?.data ??
+          response.data;
+
+        const mapped = Array.isArray(source)
+          ? source
+              .map((type: any) => ({
+                id: Number(type?.id),
+                name: String(type?.name ?? ""),
+                code: type?.code ? String(type.code) : undefined,
+              }))
+              .filter((type) => Number.isFinite(type.id) && type.id > 0 && type.name)
+          : [];
+
+        if (isMounted) {
+          setLeaveTypes(mapped);
+
+          if (!leaveTypeId && mapped.length > 0) {
+            setLeaveTypeId(String(mapped[0].id));
+          }
+        }
+      } catch {
+        if (isMounted) {
+          setLeaveTypes([]);
+          toast.error("Failed to load leave types");
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingLeaveTypes(false);
+        }
+      }
+    };
+
+    loadLeaveTypes();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isEditOpen, canEditPendingRequests]);
+
+  const resetEditForm = () => {
+    setLeaveTypeId(String(leave.leaveType?.id ?? ""));
+    setStartDate(leave.startDate?.slice(0, 10) ?? "");
+    setEndDate(leave.endDate?.slice(0, 10) ?? "");
+    setDurationType(leave.durationType);
+    setHalfDaySegment(leave.halfDaySegment ?? "");
+    setReason(leave.reason ?? "");
+  };
 
   const handleApprove = async () => {
     setIsApproving(true);
@@ -110,11 +206,235 @@ function ActionsCell({
     }
   };
 
-  const isLoading = isApproving || isRejecting;
+  const handleSaveEdit = async () => {
+    if (!leaveTypeId || !startDate || !endDate || !reason.trim()) {
+      toast.error("Please fill all required fields");
+      return;
+    }
+
+    if (reason.trim().length < VALIDATION.MIN_LEAVE_REASON_LENGTH) {
+      toast.error("Reason is too short", {
+        description: `Please provide at least ${VALIDATION.MIN_LEAVE_REASON_LENGTH} characters.`,
+      });
+      return;
+    }
+
+    if (endDate < startDate) {
+      toast.error("Invalid date range", {
+        description: "End date must be on or after the start date.",
+      });
+      return;
+    }
+
+    if (durationType === "half_day" && !halfDaySegment) {
+      toast.error("Select half-day segment", {
+        description: "Please choose first or second half.",
+      });
+      return;
+    }
+
+    const start = new Date(`${startDate}T00:00:00`);
+    const end = new Date(`${endDate}T00:00:00`);
+    const days = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    const hours = durationType === "half_day" ? days * 4 : days * 8;
+
+    if (days <= 0 || Number.isNaN(hours)) {
+      toast.error("Invalid leave duration");
+      return;
+    }
+
+    const payload: Record<string, unknown> = {
+      leaveTypeId: Number(leaveTypeId),
+      startDate,
+      endDate,
+      durationType,
+      reason: reason.trim(),
+      hours,
+    };
+
+    if (durationType === "half_day") {
+      payload.halfDaySegment = halfDaySegment;
+    }
+
+    setIsSavingEdit(true);
+    try {
+      const path = API_PATHS.LEAVES_ADMIN_REQUEST_UPDATE.replace(
+        "{id}",
+        String(leave.id)
+      );
+
+      await apiClient.patch(path, payload);
+
+      toast.success("Leave request updated", {
+        description: `Pending request for ${leave.user.name} has been updated.`,
+      });
+
+      setIsEditOpen(false);
+      if (onUpdate) {
+        onUpdate();
+      }
+    } catch (error) {
+      console.error("Error updating leave request:", error);
+      toast.error("Failed to update leave request", {
+        description: "Unable to save changes. Please try again.",
+      });
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
+  const isLoading = isApproving || isRejecting || isSavingEdit;
   const isDisabled = isLoading || isBulkOperationInProgress;
 
   return (
     <div className="flex gap-2">
+      {canEditPendingRequests && (
+        <Dialog
+          open={isEditOpen}
+          onOpenChange={(open) => {
+            if (!open) {
+              resetEditForm();
+            }
+            setIsEditOpen(open);
+          }}
+        >
+          <DialogTrigger asChild>
+            <Button
+              variant="outline"
+              size="xs"
+              title={isBulkOperationInProgress ? "Bulk operation in progress" : "Edit request"}
+              disabled={Boolean(isBulkOperationInProgress)}
+            >
+              <Pencil />
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-[520px]">
+            <DialogHeader>
+              <DialogTitle>Edit Pending Leave</DialogTitle>
+              <DialogDescription>
+                Update leave details for {leave.user.name}.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="grid gap-4 py-1">
+              <div className="grid gap-2">
+                <Label htmlFor={`leave-type-${leave.id}`}>Leave Type</Label>
+                <Select value={leaveTypeId || undefined} onValueChange={setLeaveTypeId}>
+                  <SelectTrigger id={`leave-type-${leave.id}`}>
+                    <SelectValue
+                      placeholder={isLoadingLeaveTypes ? "Loading leave types..." : "Select leave type"}
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {leaveTypes.map((type) => (
+                      <SelectItem key={type.id} value={String(type.id)}>
+                        {type.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="grid gap-2">
+                  <Label htmlFor={`start-date-${leave.id}`}>Start Date</Label>
+                  <Input
+                    id={`start-date-${leave.id}`}
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor={`end-date-${leave.id}`}>End Date</Label>
+                  <Input
+                    id={`end-date-${leave.id}`}
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="grid gap-2">
+                  <Label htmlFor={`duration-${leave.id}`}>Duration</Label>
+                  <Select
+                    value={durationType}
+                    onValueChange={(value) => {
+                      const next = value as "full_day" | "half_day";
+                      setDurationType(next);
+                      if (next !== "half_day") {
+                        setHalfDaySegment("");
+                      }
+                    }}
+                  >
+                    <SelectTrigger id={`duration-${leave.id}`}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="full_day">Full Day</SelectItem>
+                      <SelectItem value="half_day">Half Day</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {durationType === "half_day" && (
+                  <div className="grid gap-2">
+                    <Label htmlFor={`half-day-${leave.id}`}>Half Day Segment</Label>
+                    <Select
+                      value={halfDaySegment || undefined}
+                      onValueChange={(value) =>
+                        setHalfDaySegment(value as "first_half" | "second_half")
+                      }
+                    >
+                      <SelectTrigger id={`half-day-${leave.id}`}>
+                        <SelectValue placeholder="Select segment" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="first_half">First Half</SelectItem>
+                        <SelectItem value="second_half">Second Half</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor={`reason-${leave.id}`}>Reason</Label>
+                <Textarea
+                  id={`reason-${leave.id}`}
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  className="min-h-[96px]"
+                />
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button
+                variant="neutral"
+                onClick={() => {
+                  resetEditForm();
+                  setIsEditOpen(false);
+                }}
+                disabled={isSavingEdit}
+              >
+                Cancel
+              </Button>
+              <Button onClick={handleSaveEdit} disabled={isSavingEdit || isLoadingLeaveTypes}>
+                {isSavingEdit ? (
+                  <>
+                    <Spinner className="mr-2 h-4 w-4" /> Saving...
+                  </>
+                ) : (
+                  "Save Changes"
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
       <Button
         variant="default"
         onClick={handleApprove}
@@ -228,12 +548,14 @@ export const columns: ColumnDef<LeaveRequest>[] = [
       const meta = table.options.meta as {
         onUpdate?: () => void;
         isBulkOperationInProgress?: boolean;
+        canEditPendingRequests?: boolean;
       };
       return (
         <ActionsCell
           leave={leave}
           onUpdate={meta?.onUpdate}
           isBulkOperationInProgress={meta?.isBulkOperationInProgress}
+          canEditPendingRequests={meta?.canEditPendingRequests}
         />
       );
     },
