@@ -53,6 +53,10 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
+import {
+  SearchCombobox,
+  SearchComboboxOption,
+} from "@/components/ui/search-combobox";
 import apiClient from "@/lib/api-client";
 import { API_PATHS, DATE_FORMATS, VALIDATION } from "@/lib/constants";
 import { useAuth } from "@/hooks/use-auth";
@@ -63,6 +67,7 @@ interface TimesheetEntry {
   id?: number | string;
   entryId?: number | string;
   projectId?: number;
+  departmentId?: number;
   departmentName: string;
   projectName?: string;
   taskDescription: string;
@@ -120,6 +125,8 @@ interface MonthlyTimesheetResponse {
 // Flattened row for table display
 interface TimesheetRow {
   sno: number;
+  department?: string;
+  departmentId?: number;
   project: string;
   activities: string;
   date: string;
@@ -294,6 +301,7 @@ export default function DashboardPage() {
   const [refreshTick, setRefreshTick] = useState(0);
   const [editingRowKey, setEditingRowKey] = useState<string | null>(null);
   const [editingForm, setEditingForm] = useState({
+    departmentId: "",
     project: "",
     projectId: "",
     date: "",
@@ -391,6 +399,103 @@ export default function DashboardPage() {
   }, [user]);
 
   const canManageTeamEntries = canEditTeamLifeline;
+
+  const fetchTeamMemberOptions = async (
+    query: string
+  ): Promise<SearchComboboxOption[]> => {
+    if (!user?.orgId) return [];
+
+    try {
+      const res = await apiClient.get(API_PATHS.EMPLOYEES, {
+        params: { orgId: user.orgId, q: query, page: 1, limit: 8 },
+      });
+
+      const responseData = Array.isArray(res.data)
+        ? res.data
+        : res.data?.data || [];
+      const items = Array.isArray(responseData)
+        ? responseData
+        : responseData.data || [];
+
+      return items
+        .map((item: any) => ({
+          value: String(item?.email ?? "").trim(),
+          label: String(item?.name ?? item?.email ?? "").trim(),
+          description: String(item?.email ?? "").trim(),
+        }))
+        .filter((item: SearchComboboxOption) => Boolean(item.value));
+    } catch (err: unknown) {
+      console.error("Failed to fetch team member suggestions:", err);
+      return [];
+    }
+  };
+
+  const searchTeamMemberByEmail = async (rawValue: string) => {
+    const normalizedValue = rawValue.trim();
+    if (!normalizedValue) return;
+
+    setTeamSearch(normalizedValue);
+    setTeamSearchLoading(true);
+    setTeamSearchError(null);
+
+    try {
+      const res = await apiClient.get(API_PATHS.EMPLOYEE_SEARCH, {
+        params: { email: normalizedValue },
+        headers: {
+          "Cache-Control": "no-cache",
+          Pragma: "no-cache",
+        },
+      });
+      const data = res.data;
+      const searchedUser = data?.user ?? data;
+
+      if (isSelfAsTeamMember(searchedUser)) {
+        setTeamUser(null);
+        setMonthlyData(null);
+        setTeamSearchError("You cannot select yourself.");
+        toast.error("You cannot select yourself.");
+        return;
+      }
+
+      const fallbackEmail = normalizedValue;
+
+      if (data && data.days && data.user) {
+        const normalizedTeamUser = {
+          ...data.user,
+          searchedEmail: fallbackEmail,
+          backfill:
+            (data.user as any)?.backfill ?? (data as any)?.backfill ?? null,
+        };
+        setMonthlyData(data as MonthlyTimesheetResponse);
+        setTeamUser(normalizedTeamUser);
+        setTeamSearchError(null);
+        toast.success("Team member data loaded");
+      } else if (data?.user) {
+        const normalizedTeamUser = {
+          ...data.user,
+          searchedEmail: fallbackEmail,
+          backfill:
+            (data.user as any)?.backfill ?? (data as any)?.backfill ?? null,
+        };
+        setTeamUser(normalizedTeamUser);
+        setTeamSearchError(null);
+        toast.success("Team member selected");
+      } else {
+        setTeamUser({
+          ...(data || {}),
+          searchedEmail: fallbackEmail,
+        });
+        setTeamSearchError(null);
+        toast.success("Team member selected");
+      }
+    } catch (err: unknown) {
+      console.error("Team search error:", err);
+      setTeamSearchError("No user found");
+      toast.error("Team search failed");
+    } finally {
+      setTeamSearchLoading(false);
+    }
+  };
 
   useEffect(() => {
     setIsEditingLifeline(false);
@@ -599,6 +704,8 @@ export default function DashboardPage() {
         timesheetEntries.forEach((entry) => {
           rows.push({
             sno: sno++,
+            department: entry.departmentName || "-",
+            departmentId: (entry as any).departmentId,
             project: entry.projectName || "-",
             activities: entry.taskDescription || "-",
             date: format(parsedDate, "dd/MM/yyyy"),
@@ -1104,14 +1211,34 @@ export default function DashboardPage() {
 
   const handleStartEdit = (row: TimesheetRow, index: number) => {
     const rowKey = getRowKey(row, index);
+    const mappedDepartmentId =
+      row.departmentId ??
+      teamDepartments.find(
+        (d) =>
+          row.department &&
+          d.name.toLowerCase() === row.department.toLowerCase()
+      )?.id;
+    const departmentKey = mappedDepartmentId ? String(mappedDepartmentId) : "";
+
+    if (departmentKey) {
+      void fetchTeamLoggerProjectsForDepartment(departmentKey);
+    }
+
+    const departmentProjects = departmentKey
+      ? teamProjectsByDepartment[departmentKey] || []
+      : [];
     const mappedProjectId =
       row.projectId ??
+      departmentProjects.find(
+        (p) => p.name.toLowerCase() === row.project.toLowerCase()
+      )?.id ??
       teamProjects.find(
         (p) => p.name.toLowerCase() === row.project.toLowerCase()
       )?.id;
 
     setEditingRowKey(rowKey);
     setEditingForm({
+      departmentId: departmentKey,
       project: row.project,
       projectId: mappedProjectId ? String(mappedProjectId) : "",
       date: row.dateApi ?? "",
@@ -1124,6 +1251,7 @@ export default function DashboardPage() {
     setEditingRowKey(null);
     setConfirmDeleteRowKey(null);
     setEditingForm({
+      departmentId: "",
       project: "",
       projectId: "",
       date: "",
@@ -1155,6 +1283,9 @@ export default function DashboardPage() {
     const selectedDate = editingForm.date;
     const hours = Number(editingForm.hours);
     const taskDescription = editingForm.activities.trim();
+    const selectedDepartmentId = Number(
+      editingForm.departmentId || row.departmentId
+    );
     const selectedProjectId = Number(editingForm.projectId || row.projectId);
     if (
       !Number.isFinite(hours) ||
@@ -1170,6 +1301,11 @@ export default function DashboardPage() {
       toast.error("Invalid activity", {
         description: `Activity should be at least ${VALIDATION.MIN_TASK_DESCRIPTION_LENGTH} characters`,
       });
+      return;
+    }
+
+    if (!Number.isFinite(selectedDepartmentId) || selectedDepartmentId <= 0) {
+      toast.error("Please select a valid department");
       return;
     }
 
@@ -1190,7 +1326,14 @@ export default function DashboardPage() {
       row.entryId
     );
 
-    const payload = {
+    const payloadWithDepartment = {
+      projectId: selectedProjectId,
+      departmentId: selectedDepartmentId,
+      date: selectedDate,
+      hours,
+      activities: taskDescription,
+    };
+    const payloadWithoutDepartment = {
       projectId: selectedProjectId,
       date: selectedDate,
       hours,
@@ -1199,7 +1342,14 @@ export default function DashboardPage() {
 
     setSavingRowKey(rowKey);
     try {
-      await apiClient.patch(path, payload);
+      try {
+        await apiClient.patch(path, payloadWithDepartment);
+      } catch (err: unknown) {
+        if (!isUnknownProperty400(err)) {
+          throw err;
+        }
+        await apiClient.patch(path, payloadWithoutDepartment);
+      }
       toast.success("Entry updated successfully");
       setEditingRowKey(null);
       setRefreshTick((prev) => prev + 1);
@@ -1587,90 +1737,22 @@ export default function DashboardPage() {
                             Add Activity Log
                           </Button>
                         )}
-                        <Input
+                        <SearchCombobox
                           value={teamSearch}
-                          onChange={(e) => {
-                            setTeamSearch(e.target.value);
+                          onValueChange={(nextValue) => {
+                            setTeamSearch(nextValue);
                             if (teamSearchError) setTeamSearchError(null);
                           }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            (async () => {
-                              if (!teamSearch) return;
-                              setTeamSearchLoading(true);
-                              setTeamSearchError(null);
-                              try {
-                                const res = await apiClient.get(
-                                  API_PATHS.EMPLOYEE_SEARCH,
-                                  {
-                                    params: { email: teamSearch },
-                                    headers: {
-                                      "Cache-Control": "no-cache",
-                                      Pragma: "no-cache",
-                                    },
-                                  }
-                                );
-                                const data = res.data;
-                                const searchedUser = data?.user ?? data;
-
-                                if (isSelfAsTeamMember(searchedUser)) {
-                                  setTeamUser(null);
-                                  setMonthlyData(null);
-                                  setTeamSearchError(
-                                    "You cannot select yourself."
-                                  );
-                                  toast.error(
-                                    "You cannot select yourself."
-                                  );
-                                  return;
-                                }
-
-                                const fallbackEmail = teamSearch.trim();
-
-                                if (data && data.days && data.user) {
-                                  const normalizedTeamUser = {
-                                    ...data.user,
-                                    searchedEmail: fallbackEmail,
-                                    backfill:
-                                      (data.user as any)?.backfill ??
-                                      (data as any)?.backfill ??
-                                      null,
-                                  };
-                                  setMonthlyData(data as MonthlyTimesheetResponse);
-                                  setTeamUser(normalizedTeamUser);
-                                  setTeamSearchError(null);
-                                  toast.success("Team member data loaded");
-                                } else if (data?.user) {
-                                  const normalizedTeamUser = {
-                                    ...data.user,
-                                    searchedEmail: fallbackEmail,
-                                    backfill:
-                                      (data.user as any)?.backfill ??
-                                      (data as any)?.backfill ??
-                                      null,
-                                  };
-                                  setTeamUser(normalizedTeamUser);
-                                  setTeamSearchError(null);
-                                  toast.success("Team member selected");
-                                } else {
-                                  setTeamUser({
-                                    ...(data || {}),
-                                    searchedEmail: fallbackEmail,
-                                  });
-                                  setTeamSearchError(null);
-                                  toast.success("Team member selected");
-                                }
-                              } catch (err: unknown) {
-                                console.error("Team search error:", err);
-                                setTeamSearchError("No user found");
-                                toast.error("Team search failed");
-                              } finally {
-                                setTeamSearchLoading(false);
-                              }
-                            })();
-                          }
-                        }}
-                          placeholder="Search by email and press Enter"
+                          onSelect={(option) => {
+                            void searchTeamMemberByEmail(option.value);
+                          }}
+                          onSubmitValue={(nextValue) => {
+                            void searchTeamMemberByEmail(nextValue);
+                          }}
+                          fetchOptions={fetchTeamMemberOptions}
+                          placeholder="Search by name or email"
+                          searchPlaceholder="Type name or email..."
+                          emptyMessage="No team member found."
                           className="w-[260px]"
                         />
                       </div>
@@ -2312,43 +2394,121 @@ export default function DashboardPage() {
                                     </span>
                                   ) : ""}
                                 </TableCell>
-                                <TableCell className="px-3 py-2.5 text-sm text-foreground whitespace-nowrap">
+                                <TableCell
+                                  className={cn(
+                                    "px-3 py-2.5 text-sm text-foreground whitespace-nowrap",
+                                    isEditing && "align-top min-w-[240px]"
+                                  )}
+                                >
                                   {isEditing ? (
-                                    <select
-                                      value={editingForm.projectId}
-                                      onChange={(e) =>
-                                        setEditingForm((prev) => ({
-                                          ...prev,
-                                          projectId: e.target.value,
-                                          project:
-                                            teamProjects.find(
-                                              (p) =>
-                                                String(p.id) === e.target.value
-                                            )?.name ?? prev.project,
-                                        }))
-                                      }
-                                      className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
-                                      disabled={projectsLoading}
-                                    >
-                                      <option value="">
-                                        {projectsLoading
-                                          ? "Loading projects..."
-                                          : "Select project"}
-                                      </option>
-                                      {teamProjects.map((project) => (
-                                        <option
-                                          key={project.id}
-                                          value={String(project.id)}
-                                        >
-                                          {project.name}
-                                        </option>
-                                      ))}
-                                    </select>
+                                    <div className="space-y-1.5">
+                                      <select
+                                        value={editingForm.departmentId}
+                                        onChange={(e) => {
+                                          const nextDepartmentId = e.target.value;
+                                          setEditingForm((prev) => ({
+                                            ...prev,
+                                            departmentId: nextDepartmentId,
+                                            projectId: "",
+                                            project: "",
+                                          }));
+                                          if (nextDepartmentId) {
+                                            void fetchTeamLoggerProjectsForDepartment(
+                                              nextDepartmentId
+                                            );
+                                          }
+                                        }}
+                                        className="block h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
+                                      >
+                                        <option value="">Select department</option>
+                                        {editingForm.departmentId &&
+                                          !teamDepartments.some(
+                                            (department) =>
+                                              String(department.id) ===
+                                              editingForm.departmentId
+                                          ) && (
+                                            <option value={editingForm.departmentId}>
+                                              {row.department || "Current department"}
+                                            </option>
+                                          )}
+                                        {teamDepartments.map((department) => (
+                                          <option
+                                            key={department.id}
+                                            value={String(department.id)}
+                                          >
+                                            {department.name}
+                                          </option>
+                                        ))}
+                                      </select>
+                                      {(() => {
+                                        const selectedDepartmentId =
+                                          editingForm.departmentId;
+                                        const projectOptions = selectedDepartmentId
+                                          ? teamProjectsByDepartment[
+                                              selectedDepartmentId
+                                            ] || []
+                                          : [];
+
+                                        return (
+                                          <select
+                                            value={editingForm.projectId}
+                                            onChange={(e) =>
+                                              setEditingForm((prev) => ({
+                                                ...prev,
+                                                projectId: e.target.value,
+                                                project:
+                                                  projectOptions.find(
+                                                    (p) =>
+                                                      String(p.id) ===
+                                                      e.target.value
+                                                  )?.name ?? prev.project,
+                                              }))
+                                            }
+                                            className="block h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
+                                            disabled={
+                                              !selectedDepartmentId ||
+                                              teamLoggerProjectsLoading
+                                            }
+                                          >
+                                            <option value="">
+                                              {!selectedDepartmentId
+                                                ? "Select department first"
+                                                : teamLoggerProjectsLoading
+                                                ? "Loading projects..."
+                                                : "Select project"}
+                                            </option>
+                                            {editingForm.projectId &&
+                                              !projectOptions.some(
+                                                (project) =>
+                                                  String(project.id) ===
+                                                  editingForm.projectId
+                                              ) && (
+                                                <option value={editingForm.projectId}>
+                                                  {editingForm.project || row.project}
+                                                </option>
+                                              )}
+                                            {projectOptions.map((project) => (
+                                              <option
+                                                key={project.id}
+                                                value={String(project.id)}
+                                              >
+                                                {project.name}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        );
+                                      })()}
+                                    </div>
                                   ) : (
                                     row.project
                                   )}
                                 </TableCell>
-                                <TableCell className="px-3 py-2.5 text-sm text-foreground text-center font-medium whitespace-nowrap">
+                                <TableCell
+                                  className={cn(
+                                    "px-3 py-2.5 text-sm text-foreground text-center font-medium whitespace-nowrap",
+                                    isEditing && "align-top"
+                                  )}
+                                >
                                   {isEditing ? (
                                     <Input
                                       type="text"
@@ -2367,7 +2527,12 @@ export default function DashboardPage() {
                                     row.hours
                                   )}
                                 </TableCell>
-                                <TableCell className="px-3 py-2.5 text-sm text-foreground">
+                                <TableCell
+                                  className={cn(
+                                    "px-3 py-2.5 text-sm text-foreground",
+                                    isEditing && "align-top"
+                                  )}
+                                >
                                   {isEditing ? (
                                     <Input
                                       type="text"
@@ -2378,7 +2543,7 @@ export default function DashboardPage() {
                                           activities: e.target.value,
                                         }))
                                       }
-                                      className="h-8"
+                                      className="h-8 min-w-[280px]"
                                     />
                                   ) : (
                                     <>
