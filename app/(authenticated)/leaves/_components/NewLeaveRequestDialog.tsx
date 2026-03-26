@@ -94,8 +94,18 @@ export function NewLeaveRequestDialog({
   const [leaveTypes, setLeaveTypes] = useState<LeaveTypeWithBalance[]>([]);
   const [selectedDurationType, setSelectedDurationType] = useState("");
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
+  const [dateRangeOpen, setDateRangeOpen] = useState(false);
 
   const durationTypes = mockDataService.getDurationTypes();
+
+  const formatLeaveDaysValue = (days: number) => {
+    const normalized = Math.round((days + Number.EPSILON) * 100) / 100;
+    return Number.isInteger(normalized)
+      ? String(normalized)
+      : String(normalized)
+          .replace(/\.0+$/, "")
+          .replace(/(\.\d*[1-9])0+$/, "$1");
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -335,7 +345,7 @@ export function NewLeaveRequestDialog({
                     <SelectContent>
                       {sortedLeaveTypes.map((type) => (
                         <SelectItem key={type.id} value={type.code}>
-                          {getDisplayLeaveTypeName(type.name)} — {Math.floor(type.balanceHours / 8)} remaining
+                          {getDisplayLeaveTypeName(type.name)} — {formatLeaveDaysValue(type.balanceHours / 8)} remaining
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -369,7 +379,7 @@ export function NewLeaveRequestDialog({
               render={() => (
                 <FormItem className="flex flex-col">
                   <FormLabel>Leave Date Range</FormLabel>
-                  <Popover>
+                  <Popover open={dateRangeOpen} onOpenChange={setDateRangeOpen}>
                     <PopoverTrigger asChild>
                       <FormControl>
                         <Button
@@ -404,7 +414,12 @@ export function NewLeaveRequestDialog({
                         mode="range"
                         defaultMonth={dateRange?.from}
                         selected={dateRange}
-                        onSelect={(range) => setDateRange(range)}
+                        onSelect={(range) => {
+                          setDateRange(range);
+                          if (range?.from && range?.to) {
+                            setDateRangeOpen(false);
+                          }
+                        }}
                         numberOfMonths={2}
                         disabled={(date) => date < new Date("1900-01-01")}
                         initialFocus
