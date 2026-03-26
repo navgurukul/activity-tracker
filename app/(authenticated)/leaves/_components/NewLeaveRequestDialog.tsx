@@ -103,8 +103,8 @@ export function NewLeaveRequestDialog({
     return Number.isInteger(normalized)
       ? String(normalized)
       : String(normalized)
-          .replace(/\.0+$/, "")
-          .replace(/(\.\d*[1-9])0+$/, "$1");
+        .replace(/\.0+$/, "")
+        .replace(/(\.\d*[1-9])0+$/, "$1");
   };
 
   useEffect(() => {
@@ -276,15 +276,15 @@ export function NewLeaveRequestDialog({
     } catch (error: unknown) {
       const msg =
         typeof error === "object" &&
-        error !== null &&
-        "response" in error &&
-        (error as { response?: { data?: { message?: string } } }).response?.data
-          ?.message
+          error !== null &&
+          "response" in error &&
+          (error as { response?: { data?: { message?: string } } }).response?.data
+            ?.message
           ? (error as { response?: { data?: { message?: string } } }).response
-              ?.data?.message
+            ?.data?.message
           : error instanceof Error
-          ? error.message
-          : "Failed to submit leave request.";
+            ? error.message
+            : "Failed to submit leave request.";
       toast.error("Submission failed", { description: msg });
     } finally {
       setIsSubmitting(false);
@@ -379,36 +379,42 @@ export function NewLeaveRequestDialog({
               render={() => (
                 <FormItem className="flex flex-col">
                   <FormLabel>Leave Date Range</FormLabel>
-                  <Popover open={dateRangeOpen} onOpenChange={setDateRangeOpen}>
+                  <Popover
+                    modal
+                    open={dateRangeOpen}
+                    onOpenChange={setDateRangeOpen}
+                  >
                     <PopoverTrigger asChild>
-                      <FormControl>
-                        <Button
-                          variant="outline"
-                          className={cn(
-                            "w-full justify-start text-left font-normal",
-                            !dateRange?.from && "text-muted-foreground"
-                          )}
-                        >
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {dateRange?.from ? (
-                            dateRange.to ? (
-                              <>
-                                {format(dateRange.from, DATE_FORMATS.DISPLAY)}{" "}
-                                –{" "}
-                                {format(dateRange.to, DATE_FORMATS.DISPLAY)}
-                              </>
-                            ) : (
-                              format(dateRange.from, DATE_FORMATS.DISPLAY)
-                            )
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className={cn(
+                          "w-full justify-start text-left font-normal",
+                          !dateRange?.from && "text-muted-foreground"
+                        )}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {dateRange?.from ? (
+                          dateRange.to ? (
+                            <>
+                              {format(dateRange.from, DATE_FORMATS.DISPLAY)}{" "}
+                              –{" "}
+                              {format(dateRange.to, DATE_FORMATS.DISPLAY)}
+                            </>
                           ) : (
-                            <span>Pick a date range</span>
-                          )}
-                        </Button>
-                      </FormControl>
+                            format(dateRange.from, DATE_FORMATS.DISPLAY)
+                          )
+                        ) : (
+                          <span>Pick a date range</span>
+                        )}
+                      </Button>
                     </PopoverTrigger>
                     <PopoverContent
                       className="w-auto p-0 border-0"
                       align="start"
+                      side="bottom"
+                      sideOffset={8}
+                      style={{ zIndex: 9999 }}
                     >
                       <Calendar
                         mode="range"
@@ -421,7 +427,7 @@ export function NewLeaveRequestDialog({
                           }
                         }}
                         numberOfMonths={2}
-                        disabled={(date) => date < new Date("1900-01-01")}
+                        disabled={(date) => date < new Date(1900, 0, 1)}
                         initialFocus
                       />
                     </PopoverContent>
@@ -509,8 +515,8 @@ export function NewLeaveRequestDialog({
                 {isSubmitting
                   ? "Submitting..."
                   : isValidating
-                  ? "Validating..."
-                  : "Submit Request"}
+                    ? "Validating..."
+                    : "Submit Request"}
               </Button>
             </div>
           </form>

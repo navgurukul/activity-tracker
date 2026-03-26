@@ -148,6 +148,7 @@ export default function LeavesPage() {
   const [adminApplLeaveSubmitting, setAdminApplyLeaveSubmitting] = useState(false);
   const [adminLeaveTypes, setAdminLeaveTypes] = useState<any[]>([]);
   const [adminLeaveDateRange, setAdminLeaveDateRange] = useState<DateRange | undefined>();
+  const [isAdminDatePickerOpen, setIsAdminDatePickerOpen] = useState(false);
   const [adminLeaveValidationError, setAdminLeaveValidationError] = useState<string | null>(null);
   const [adminLeaveIsValidating, setAdminLeaveIsValidating] = useState(false);
 
@@ -371,6 +372,7 @@ export default function LeavesPage() {
             halfDaySegment: "",
           });
           setAdminLeaveDateRange(undefined);
+          setIsAdminDatePickerOpen(false);
           setAdminLeaveValidationError(null);
           setAdminApplyLeaveOpen(false);
           fetchTeamLeaves();
@@ -378,15 +380,15 @@ export default function LeavesPage() {
       } catch (error: unknown) {
         const msg =
           typeof error === "object" &&
-          error !== null &&
-          "response" in error &&
-          (error as { response?: { data?: { message?: string } } }).response?.data
-            ?.message
+            error !== null &&
+            "response" in error &&
+            (error as { response?: { data?: { message?: string } } }).response?.data
+              ?.message
             ? (error as { response?: { data?: { message?: string } } }).response
-                ?.data?.message
+              ?.data?.message
             : error instanceof Error
-            ? error.message
-            : "Failed to apply leave.";
+              ? error.message
+              : "Failed to apply leave.";
         toast.error("Submission failed", { description: msg });
       } finally {
         setAdminApplyLeaveSubmitting(false);
@@ -429,8 +431,8 @@ export default function LeavesPage() {
       const parsedBalances = Array.isArray(response.data?.balances)
         ? response.data.balances
         : Array.isArray(response.data?.data?.balances)
-        ? response.data.data.balances
-        : [];
+          ? response.data.data.balances
+          : [];
 
       // Try to get userId from response
       const userId = response.data?.userId || response.data?.data?.userId || response.data?.user?.id || (parsedBalances[0]?.userId) || null;
@@ -508,7 +510,7 @@ export default function LeavesPage() {
     setSelectedTeamEmployeeEmail("");
     setSelectedTeamEmployeeUserId(null);
     setTeamEmployeeBalances([]);
-    
+
     persistLeavesState({
       activeMainTab: "team",
       isTeamEmployeeBalanceView: true,
@@ -724,8 +726,8 @@ export default function LeavesPage() {
     return Number.isInteger(normalized)
       ? String(normalized)
       : String(normalized)
-          .replace(/\.0+$/, "")
-          .replace(/(\.\d*[1-9])0+$/, "$1");
+        .replace(/\.0+$/, "")
+        .replace(/(\.\d*[1-9])0+$/, "$1");
   };
 
   const formatDays = (leave: LeaveRequest) => {
@@ -982,79 +984,79 @@ export default function LeavesPage() {
                   )}
                 </div>
                 <div className="overflow-x-auto">
-                <table className="w-full text-sm min-w-[600px]">
-                  <thead>
-                    <tr className="border-b border-border">
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider w-12">#</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Type</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Period</th>
-                      <th className="text-center px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Duration</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Reason</th>
-                      <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {isLoading ? (
-                      Array.from({ length: 5 }).map((_, i) => (
-                        <tr key={i} className="border-b border-border last:border-0">
-                          {Array.from({ length: 6 }).map((_, j) => (
-                            <td key={j} className="px-4 py-3.5">
-                              <div className="h-4 bg-secondary-background rounded animate-pulse" style={{ width: `${60 + Math.random() * 30}%` }} />
-                            </td>
-                          ))}
-                        </tr>
-                      ))
-                    ) : filteredLeaves.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="px-4 py-12 text-center">
-                          <div className="flex flex-col items-center gap-2">
-                            <TreePalm className="h-8 w-8 text-muted-foreground/40" />
-                            <p className="text-sm text-muted-foreground">No leave records found</p>
-                            {hasFilters && (
-                              <button onClick={clearFilters} className="text-xs text-foreground underline underline-offset-2">
-                                Clear filters
-                              </button>
-                            )}
-                          </div>
-                        </td>
+                  <table className="w-full text-sm min-w-[600px]">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider w-12">#</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Type</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Period</th>
+                        <th className="text-center px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Duration</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Reason</th>
+                        <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</th>
                       </tr>
-                    ) : (
-                      paginatedLeaves.map((leave, idx) => (
-                        <tr
-                          key={leave.id}
-                          className="border-b border-border last:border-0 hover:bg-secondary-background/60 transition-colors"
-                        >
-                          <td className="px-4 py-3.5 text-xs text-muted-foreground tabular-nums">
-                            {(leavesPage - 1) * leavesPageSize + idx + 1}
-                          </td>
-                          <td className="px-4 py-3.5">
-                            <span className="font-medium text-foreground">{getDisplayLeaveTypeName(leave.leaveType.name)}</span>
-                          </td>
-                          <td className="px-4 py-3.5 text-foreground">
-                            <span>{format(parseISO(leave.startDate), "d MMM yyyy")}</span>
-                            {leave.startDate !== leave.endDate && (
-                              <>
-                                <span className="mx-1.5 text-muted-foreground">→</span>
-                                <span>{format(parseISO(leave.endDate), "d MMM yyyy")}</span>
-                              </>
-                            )}
-                          </td>
-                          <td className="px-4 py-3.5 text-center">
-                            <span className="inline-flex items-center justify-center min-w-[2.5rem] rounded-md bg-secondary-background border border-border px-2 py-0.5 text-xs font-semibold text-foreground tabular-nums">
-                              {formatDays(leave)}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3.5 text-muted-foreground max-w-[220px] truncate text-sm">
-                            {leave.reason}
-                          </td>
-                          <td className="px-4 py-3.5 text-right">
-                            {getStatusBadge(leave.state)}
+                    </thead>
+                    <tbody>
+                      {isLoading ? (
+                        Array.from({ length: 5 }).map((_, i) => (
+                          <tr key={i} className="border-b border-border last:border-0">
+                            {Array.from({ length: 6 }).map((_, j) => (
+                              <td key={j} className="px-4 py-3.5">
+                                <div className="h-4 bg-secondary-background rounded animate-pulse" style={{ width: `${60 + Math.random() * 30}%` }} />
+                              </td>
+                            ))}
+                          </tr>
+                        ))
+                      ) : filteredLeaves.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="px-4 py-12 text-center">
+                            <div className="flex flex-col items-center gap-2">
+                              <TreePalm className="h-8 w-8 text-muted-foreground/40" />
+                              <p className="text-sm text-muted-foreground">No leave records found</p>
+                              {hasFilters && (
+                                <button onClick={clearFilters} className="text-xs text-foreground underline underline-offset-2">
+                                  Clear filters
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                      ) : (
+                        paginatedLeaves.map((leave, idx) => (
+                          <tr
+                            key={leave.id}
+                            className="border-b border-border last:border-0 hover:bg-secondary-background/60 transition-colors"
+                          >
+                            <td className="px-4 py-3.5 text-xs text-muted-foreground tabular-nums">
+                              {(leavesPage - 1) * leavesPageSize + idx + 1}
+                            </td>
+                            <td className="px-4 py-3.5">
+                              <span className="font-medium text-foreground">{getDisplayLeaveTypeName(leave.leaveType.name)}</span>
+                            </td>
+                            <td className="px-4 py-3.5 text-foreground">
+                              <span>{format(parseISO(leave.startDate), "d MMM yyyy")}</span>
+                              {leave.startDate !== leave.endDate && (
+                                <>
+                                  <span className="mx-1.5 text-muted-foreground">→</span>
+                                  <span>{format(parseISO(leave.endDate), "d MMM yyyy")}</span>
+                                </>
+                              )}
+                            </td>
+                            <td className="px-4 py-3.5 text-center">
+                              <span className="inline-flex items-center justify-center min-w-[2.5rem] rounded-md bg-secondary-background border border-border px-2 py-0.5 text-xs font-semibold text-foreground tabular-nums">
+                                {formatDays(leave)}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3.5 text-muted-foreground max-w-[220px] truncate text-sm">
+                              {leave.reason}
+                            </td>
+                            <td className="px-4 py-3.5 text-right">
+                              {getStatusBadge(leave.state)}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
                 </div>
                 {!isLoading && filteredLeaves.length > 0 && leavesTotalPages > 1 && (
                   <div className="px-4 py-3 border-t border-border bg-secondary-background flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -1211,8 +1213,8 @@ export default function LeavesPage() {
                               className={cn(
                                 "ml-2 inline-flex items-center justify-center min-w-[1.25rem] h-5 rounded-full px-1.5 text-[10px] font-semibold tabular-nums",
                                 val === "pending" ? "bg-amber-50 text-amber-700" :
-                                val === "approved" ? "bg-emerald-50 text-emerald-700" :
-                                "bg-red-50 text-red-700"
+                                  val === "approved" ? "bg-emerald-50 text-emerald-700" :
+                                    "bg-red-50 text-red-700"
                               )}
                             >
                               {count}
@@ -1471,7 +1473,15 @@ export default function LeavesPage() {
       </PageWrapper>
 
       {/* Admin Apply Leave Dialog */}
-      <Dialog open={adminApplyLeaveOpen} onOpenChange={setAdminApplyLeaveOpen}>
+      <Dialog
+        open={adminApplyLeaveOpen}
+        onOpenChange={(nextOpen) => {
+          setAdminApplyLeaveOpen(nextOpen);
+          if (!nextOpen) {
+            setIsAdminDatePickerOpen(false);
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-[520px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Apply Leave for Employee</DialogTitle>
@@ -1534,39 +1544,53 @@ export default function LeavesPage() {
                 render={() => (
                   <FormItem className="flex flex-col">
                     <FormLabel>Leave Date Range</FormLabel>
-                    <Popover>
+                    <Popover
+                      modal
+                      open={isAdminDatePickerOpen}
+                      onOpenChange={setIsAdminDatePickerOpen}
+                    >
                       <PopoverTrigger asChild>
-                        <FormControl>
-                          <Button
-                            variant="outline"
-                            className={cn(
-                              "w-full justify-start text-left font-normal",
-                              !adminLeaveDateRange?.from && "text-muted-foreground"
-                            )}
-                          >
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {adminLeaveDateRange?.from ? (
-                              adminLeaveDateRange.to ? (
-                                <>
-                                  {format(adminLeaveDateRange.from, DATE_FORMATS.DISPLAY)}{" "}
-                                  –{" "}
-                                  {format(adminLeaveDateRange.to, DATE_FORMATS.DISPLAY)}
-                                </>
-                              ) : (
-                                format(adminLeaveDateRange.from, DATE_FORMATS.DISPLAY)
-                              )
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className={cn(
+                            "w-full justify-start text-left font-normal",
+                            !adminLeaveDateRange?.from && "text-muted-foreground"
+                          )}
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {adminLeaveDateRange?.from ? (
+                            adminLeaveDateRange.to ? (
+                              <>
+                                {format(adminLeaveDateRange.from, DATE_FORMATS.DISPLAY)}{" "}
+                                –{" "}
+                                {format(adminLeaveDateRange.to, DATE_FORMATS.DISPLAY)}
+                              </>
                             ) : (
-                              <span>Pick a date range</span>
-                            )}
-                          </Button>
-                        </FormControl>
+                              format(adminLeaveDateRange.from, DATE_FORMATS.DISPLAY)
+                            )
+                          ) : (
+                            <span>Pick a date range</span>
+                          )}
+                        </Button>
                       </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0 border-0" align="start">
+                      <PopoverContent
+                        className="w-auto p-0 border-0"
+                        align="start"
+                        side="bottom"
+                        sideOffset={8}
+                        style={{ zIndex: 9999 }}
+                      >
                         <Calendar
                           mode="range"
                           defaultMonth={adminLeaveDateRange?.from}
                           selected={adminLeaveDateRange}
-                          onSelect={setAdminLeaveDateRange}
+                          onSelect={(range) => {
+                            setAdminLeaveDateRange(range);
+                            if (range?.from && range?.to) {
+                              setIsAdminDatePickerOpen(false);
+                            }
+                          }}
                           numberOfMonths={2}
                           initialFocus
                         />
