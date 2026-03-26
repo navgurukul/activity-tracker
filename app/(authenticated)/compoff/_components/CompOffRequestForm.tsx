@@ -93,6 +93,7 @@ export function CompOffRequestForm() {
   const [employeeComboboxOpen, setEmployeeComboboxOpen] = useState(false);
   const [employeeSearchValue, setEmployeeSearchValue] = useState("");
   const [holidayDates, setHolidayDates] = useState<Set<string>>(new Set());
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const { user } = useAuth();
 
   const isAdminOrSuper = useRole([ROLES.ADMIN, ROLES.SUPER_ADMIN]);
@@ -463,7 +464,7 @@ export function CompOffRequestForm() {
                 render={({ field }) => (
                   <FormItem className="flex flex-col">
                     <FormLabel>Work Date</FormLabel>
-                    <Popover>
+                    <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
                       <PopoverTrigger asChild>
                         <FormControl>
                           <Button
@@ -489,7 +490,10 @@ export function CompOffRequestForm() {
                         <Calendar
                           mode="single"
                           selected={field.value}
-                          onSelect={field.onChange}
+                          onSelect={(date) => {
+                            field.onChange(date);
+                            setCalendarOpen(false);
+                          }}
                           disabled={disableInvalidDates}
                           initialFocus
                         />

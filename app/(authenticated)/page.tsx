@@ -57,6 +57,7 @@ import {
   SearchCombobox,
   SearchComboboxOption,
 } from "@/components/ui/search-combobox";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import apiClient from "@/lib/api-client";
 import { API_PATHS, DATE_FORMATS, VALIDATION } from "@/lib/constants";
 import { useAuth } from "@/hooks/use-auth";
@@ -298,6 +299,17 @@ export default function DashboardPage() {
   const [teamSearchLoading, setTeamSearchLoading] = useState(false);
   const [teamSearchError, setTeamSearchError] = useState<string | null>(null);
   const [teamUser, setTeamUser] = useState<any | null>(null);
+
+  // Restore from browser history on mount
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const state = window.history.state || {};
+    if (state.__teamDashboard) {
+      setIsTeamMode(!!state.__teamDashboard.isTeamMode);
+      setTeamSearch(state.__teamDashboard.teamSearch || "");
+      setTeamUser(state.__teamDashboard.teamUser || null);
+    }
+  }, []);
   const [refreshTick, setRefreshTick] = useState(0);
   const [editingRowKey, setEditingRowKey] = useState<string | null>(null);
   const [editingForm, setEditingForm] = useState({
@@ -430,11 +442,23 @@ export default function DashboardPage() {
     }
   };
 
-  const searchTeamMemberByEmail = async (rawValue: string) => {
+  const searchTeamMemberByEmail = async (rawValue: string, persist = true) => {
     const normalizedValue = rawValue.trim();
     if (!normalizedValue) return;
 
     setTeamSearch(normalizedValue);
+    // Persist in browser history
+    if (persist && typeof window !== "undefined") {
+      const state = window.history.state || {};
+      window.history.replaceState({
+        ...state,
+        __teamDashboard: {
+          ...state.__teamDashboard,
+          isTeamMode: true,
+          teamSearch: normalizedValue,
+        },
+      }, "");
+    }
     setTeamSearchLoading(true);
     setTeamSearchError(null);
 
@@ -454,13 +478,24 @@ export default function DashboardPage() {
         setMonthlyData(null);
         setTeamSearchError("You cannot select yourself.");
         toast.error("You cannot select yourself.");
+        if (persist && typeof window !== "undefined") {
+          const state = window.history.state || {};
+          window.history.replaceState({
+            ...state,
+            __teamDashboard: {
+              ...state.__teamDashboard,
+              teamUser: null,
+            },
+          }, "");
+        }
         return;
       }
 
       const fallbackEmail = normalizedValue;
 
+      let normalizedTeamUser = null;
       if (data && data.days && data.user) {
-        const normalizedTeamUser = {
+        normalizedTeamUser = {
           ...data.user,
           searchedEmail: fallbackEmail,
           backfill:
@@ -471,7 +506,7 @@ export default function DashboardPage() {
         setTeamSearchError(null);
         toast.success("Team member data loaded");
       } else if (data?.user) {
-        const normalizedTeamUser = {
+        normalizedTeamUser = {
           ...data.user,
           searchedEmail: fallbackEmail,
           backfill:
@@ -481,12 +516,24 @@ export default function DashboardPage() {
         setTeamSearchError(null);
         toast.success("Team member selected");
       } else {
-        setTeamUser({
+        normalizedTeamUser = {
           ...(data || {}),
           searchedEmail: fallbackEmail,
-        });
+        };
+        setTeamUser(normalizedTeamUser);
         setTeamSearchError(null);
         toast.success("Team member selected");
+      }
+      if (persist && typeof window !== "undefined" && normalizedTeamUser) {
+        const state = window.history.state || {};
+        window.history.replaceState({
+          ...state,
+          __teamDashboard: {
+            ...state.__teamDashboard,
+            teamUser: normalizedTeamUser,
+            isTeamMode: true,
+          },
+        }, "");
       }
     } catch (err: unknown) {
       console.error("Team search error:", err);
@@ -496,11 +543,65 @@ export default function DashboardPage() {
       setTeamSearchLoading(false);
     }
   };
+  // Restore from browser history on mount and fetch data if needed
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const state = window.history.state || {};
+    if (state.__teamDashboard) {
+      setIsTeamMode(!!state.__teamDashboard.isTeamMode);
+      setTeamSearch(state.__teamDashboard.teamSearch || "");
+      setTeamUser(state.__teamDashboard.teamUser || null);
+      if (state.__teamDashboard.isTeamMode && state.__teamDashboard.teamSearch) {
+        searchTeamMemberByEmail(state.__teamDashboard.teamSearch, false);
+      }
+    }
+  }, []);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const state = window.history.state || {};
+    if (isTeamMode) {
+      window.history.replaceState({
+        ...state,
+        __teamDashboard: {
+          ...state.__teamDashboard,
+          isTeamMode: true,
+          teamUser,
+          teamSearch,
+        },
+      }, "");
+    } else {
+      const { __teamDashboard, ...rest } = state;
+      window.history.replaceState(rest, "");
+    }
+  }, [isTeamMode, teamUser, teamSearch]);
 
   useEffect(() => {
     setIsEditingLifeline(false);
     setLifelineDraft("");
+    // Persist team mode and user on change
+    if (typeof window !== "undefined") {
+      localStorage.setItem("team-dashboard-mode", String(isTeamMode));
+      if (!isTeamMode) {
+        localStorage.removeItem("team-dashboard-user");
+        localStorage.removeItem("team-dashboard-search");
+      }
+    }
   }, [isTeamMode, teamUser?.id]);
+  // Restore persisted team dashboard state on mount
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const persistedMode = localStorage.getItem("team-dashboard-mode") === "true";
+    const persistedUserRaw = localStorage.getItem("team-dashboard-user");
+    const persistedSearch = localStorage.getItem("team-dashboard-search");
+    if (persistedMode && persistedUserRaw) {
+      try {
+        const persistedUser = JSON.parse(persistedUserRaw);
+        setIsTeamMode(true);
+        setTeamUser(persistedUser);
+        if (persistedSearch) setTeamSearch(persistedSearch);
+      } catch {}
+    }
+  }, []);
 
   useEffect(() => {
     if (!targetDateParam || isTeamMode) return;
@@ -1523,29 +1624,34 @@ export default function DashboardPage() {
 
   return (
     <>
-      <AppHeader
-        crumbs={
-          isTeamMode
-            ? [{ label: "My Dashboard", href: "/" }, { label: "Team Dashboard" }]
-            : [{ label: "My Dashboard" }]
-        }
-        right={
-          canAccessTeamDashboard && !isTeamMode ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setIsTeamMode(true);
-                setTeamSearch("");
-                setTeamSearchError(null);
-                setTeamUser(null);
-              }}
-            >
-              Team Dashboard
-            </Button>
-          ) : null
-        }
-      />
+      {/* Dashboard Tabs Navigation */}
+      <div className="border-b border-border bg-background px-4 pt-4 pb-2 flex items-center">
+        <Tabs value={isTeamMode ? "team" : "my"} onValueChange={(val) => {
+          if (val === "my") {
+            setIsTeamMode(false);
+            setTeamUser(null);
+            setTeamSearch("");
+            setTeamSearchError(null);
+            if (typeof window !== "undefined") {
+              const state = window.history.state || {};
+              const { __teamDashboard, ...rest } = state;
+              window.history.replaceState(rest, "");
+            }
+          } else {
+            setIsTeamMode(true);
+            setTeamSearch("");
+            setTeamSearchError(null);
+            setTeamUser(null);
+          }
+        }}>
+          <TabsList className="gap-2">
+            <TabsTrigger value="my">My Dashboard</TabsTrigger>
+            {canAccessTeamDashboard && (
+              <TabsTrigger value="team">Team Dashboard</TabsTrigger>
+            )}
+          </TabsList>
+        </Tabs>
+      </div>
       <PageWrapper>
         <div className="p-4 md:p-6 space-y-5">
           {/* Billing cycle chip */}

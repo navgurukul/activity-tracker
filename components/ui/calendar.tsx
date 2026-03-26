@@ -50,14 +50,14 @@ function Calendar({
         ),
         day: cn(
           buttonVariants({ variant: "noShadow" }),
-          "size-9 p-0 font-base aria-selected:opacity-100"
+          "size-9 p-0 font-base aria-selected:opacity-100 [aria-current=date]:!font-bold"
         ),
         day_range_start:
           "day-range-start aria-selected:bg-black! aria-selected:text-white rounded-base",
         day_range_end:
           "day-range-end aria-selected:bg-black! aria-selected:text-white rounded-base",
         day_selected: "bg-black! text-white! rounded-base",
-        day_today: "bg-secondary-background text-foreground!",
+        day_today: "bg-transparent! text-main-foreground! !font-bold border-2 border-black rounded-base",
         day_outside:
           "day-outside text-main-foreground opacity-50 aria-selected:bg-none",
         day_disabled: "text-main-foreground opacity-50 rounded-base",

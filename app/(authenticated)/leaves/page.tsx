@@ -585,10 +585,10 @@ export default function LeavesPage() {
     const pending = visibleBalances.reduce((sum, b) => sum + b.pendingHours / 8, 0);
     const approved = visibleBalances.reduce((sum, b) => sum + b.bookedHours / 8, 0);
     return {
-      available: Math.round(available),
-      allocated: Math.round(allocated),
-      pending: Math.round(pending),
-      approved: Math.round(approved),
+      available,
+      allocated,
+      pending,
+      approved,
     };
   }, [visibleBalances]);
 
@@ -719,9 +719,18 @@ export default function LeavesPage() {
       });
   }, [teamEmployeeBalances]);
 
+  const formatLeaveDaysValue = (days: number) => {
+    const normalized = Math.round((days + Number.EPSILON) * 100) / 100;
+    return Number.isInteger(normalized)
+      ? String(normalized)
+      : String(normalized)
+          .replace(/\.0+$/, "")
+          .replace(/(\.\d*[1-9])0+$/, "$1");
+  };
+
   const formatDays = (leave: LeaveRequest) => {
     const days = leave.hours / 8;
-    return days <= 0.5 ? "0.5d" : `${Math.round(days)}d`;
+    return `${formatLeaveDaysValue(days)}d`;
   };
 
   const hasFilters = searchQuery || statusFilter !== "all" || filterDateRange;
@@ -868,7 +877,7 @@ export default function LeavesPage() {
                         <div className="h-8 w-16 bg-secondary-background rounded animate-pulse" />
                       ) : (
                         <p className={cn("text-2xl font-bold tabular-nums", card.valueColor)}>
-                          {card.value}
+                          {formatLeaveDaysValue(card.value)}
                           <span className="text-sm font-normal text-muted-foreground ml-1">days</span>
                         </p>
                       )}
@@ -1144,23 +1153,23 @@ export default function LeavesPage() {
                             <div className="flex items-center gap-4 sm:gap-5 text-sm sm:flex-shrink-0">
                               <div className="text-center min-w-[2.5rem]">
                                 <p className={cn("font-semibold tabular-nums", isLow ? "text-amber-600" : "text-emerald-600")}>
-                                  {remaining}
+                                  {formatLeaveDaysValue(remaining)}
                                 </p>
                                 <p className="text-[10px] text-muted-foreground">remaining</p>
                               </div>
                               <div className="text-center min-w-[2.5rem]">
-                                <p className="font-medium text-foreground tabular-nums">{allocated}</p>
+                                <p className="font-medium text-foreground tabular-nums">{formatLeaveDaysValue(allocated)}</p>
                                 <p className="text-[10px] text-muted-foreground">allocated</p>
                               </div>
                               {pending > 0 && (
                                 <div className="text-center min-w-[2.5rem]">
-                                  <p className="font-medium text-amber-600 tabular-nums">{pending}</p>
+                                  <p className="font-medium text-amber-600 tabular-nums">{formatLeaveDaysValue(pending)}</p>
                                   <p className="text-[10px] text-muted-foreground">pending</p>
                                 </div>
                               )}
                               {approved > 0 && (
                                 <div className="text-center min-w-[2.5rem]">
-                                  <p className="font-medium text-muted-foreground tabular-nums">{approved}</p>
+                                  <p className="font-medium text-muted-foreground tabular-nums">{formatLeaveDaysValue(approved)}</p>
                                   <p className="text-[10px] text-muted-foreground">taken</p>
                                 </div>
                               )}
@@ -1366,7 +1375,7 @@ export default function LeavesPage() {
                                       </div>
                                     ) : (
                                       <div className="flex items-center justify-center gap-2">
-                                        <span>{balance.allocatedHours / 8}</span>
+                                        <span>{formatLeaveDaysValue(balance.allocatedHours / 8)}</span>
                                         {canEditTeamPendingRequests && (
                                           <button
                                             onClick={() => {
@@ -1383,13 +1392,13 @@ export default function LeavesPage() {
                                     )}
                                   </td>
                                   <td className="px-4 py-3 text-center tabular-nums">
-                                    {balance.balanceHours / 8}
+                                    {formatLeaveDaysValue(balance.balanceHours / 8)}
                                   </td>
                                   <td className="px-4 py-3 text-center tabular-nums">
-                                    {balance.pendingHours / 8}
+                                    {formatLeaveDaysValue(balance.pendingHours / 8)}
                                   </td>
                                   <td className="px-4 py-3 text-center tabular-nums">
-                                    {balance.bookedHours / 8}
+                                    {formatLeaveDaysValue(balance.bookedHours / 8)}
                                   </td>
                                 </tr>
                               ))

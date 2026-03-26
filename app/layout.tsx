@@ -15,9 +15,9 @@ export const metadata: Metadata = {
   title: "STUB",
   description: "Simple Tracking Until Better",
   icons: {
-    icon: "/stub-logo.svg",
-    shortcut: "/stub-logo.svg",
-    apple: "/stub-logo.svg",
+    icon: "/stub-logo.png",
+    shortcut: "/stub-logo.png",
+    apple: "/stub-logo.png",
   },
 };
 
