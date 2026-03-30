@@ -267,9 +267,15 @@ export default function DashboardPage() {
   const { isLoading: authLoading, user } = useAuth();
   const targetDateParam = searchParams.get("date");
   const [currentMonth, setCurrentMonth] = useState<Date>(() => {
-    const date = new Date();
-    date.setMonth(date.getMonth() - 1);
-    return date;
+    const today = new Date();
+    const cycleStartsOn = 26;
+    let cycleStart = new Date(today);
+    if (today.getDate() < cycleStartsOn) {
+      cycleStart.setMonth(today.getMonth() - 1);
+    }
+    cycleStart.setDate(cycleStartsOn);
+    cycleStart.setHours(0, 0, 0, 0);
+    return cycleStart;
   });
   const [monthlyData, setMonthlyData] =
     useState<MonthlyTimesheetResponse | null>(null);
@@ -830,8 +836,8 @@ export default function DashboardPage() {
             (entry as any).state === "rejected"
               ? "rejected"
               : (entry as any).state === "pending"
-              ? "pending"
-              : "approved";
+                ? "pending"
+                : "approved";
 
           rows.push({
             sno: sno++,
@@ -1103,10 +1109,10 @@ export default function DashboardPage() {
     if (!isTeamMode || !teamUser || !canEditTeamLifeline) return;
     const currentValue = Number(
       (teamUser as any)?.backfill?.limit ??
-        (teamUser as any)?.backfill?.remaining ??
-        (monthlyData as any)?.backfill?.limit ??
-        (monthlyData as any)?.backfill?.remaining ??
-        0
+      (teamUser as any)?.backfill?.remaining ??
+      (monthlyData as any)?.backfill?.limit ??
+      (monthlyData as any)?.backfill?.remaining ??
+      0
     );
     setLifelineDraft(String(Number.isFinite(currentValue) ? currentValue : 0));
     setIsEditingLifeline(true);
@@ -1950,301 +1956,301 @@ export default function DashboardPage() {
                   <p className="text-sm text-muted-foreground">No records found for this period</p>
                 </div>
               ) : viewMode === "grid" ? (
-                  /* Calendar Week View — organized by weeks with day cards */
-                  (() => {
-                    const sortedGridDays = [...(monthlyData?.days ?? [])].sort(
-                      (a, b) =>
-                        new Date(a.date).getTime() - new Date(b.date).getTime()
-                    );
+                /* Calendar Week View — organized by weeks with day cards */
+                (() => {
+                  const sortedGridDays = [...(monthlyData?.days ?? [])].sort(
+                    (a, b) =>
+                      new Date(a.date).getTime() - new Date(b.date).getTime()
+                  );
 
-                    const todayMidnight = new Date();
-                    todayMidnight.setHours(0, 0, 0, 0);
+                  const todayMidnight = new Date();
+                  todayMidnight.setHours(0, 0, 0, 0);
 
-                    // Group days by week
-                    const weeks: (typeof sortedGridDays)[] = [];
-                    let currentWeek: typeof sortedGridDays = [];
-                    let currentWeekNum = 0;
+                  // Group days by week
+                  const weeks: (typeof sortedGridDays)[] = [];
+                  let currentWeek: typeof sortedGridDays = [];
+                  let currentWeekNum = 0;
 
-                    sortedGridDays.forEach((day) => {
-                      const parsedDate = parseISO(day.date);
-                      const dayOfMonth = parsedDate.getDate();
-                      const weekNum = Math.ceil(dayOfMonth / 7);
+                  sortedGridDays.forEach((day) => {
+                    const parsedDate = parseISO(day.date);
+                    const dayOfMonth = parsedDate.getDate();
+                    const weekNum = Math.ceil(dayOfMonth / 7);
 
-                      if (
-                        weekNum !== currentWeekNum &&
-                        currentWeek.length > 0
-                      ) {
-                        weeks.push(currentWeek);
-                        currentWeek = [];
-                      }
-                      currentWeekNum = weekNum;
-                      currentWeek.push(day);
-                    });
-                    if (currentWeek.length > 0) {
+                    if (
+                      weekNum !== currentWeekNum &&
+                      currentWeek.length > 0
+                    ) {
                       weeks.push(currentWeek);
+                      currentWeek = [];
                     }
+                    currentWeekNum = weekNum;
+                    currentWeek.push(day);
+                  });
+                  if (currentWeek.length > 0) {
+                    weeks.push(currentWeek);
+                  }
 
-                    // Helper to get day card data
-                    const getDayCardData = (
-                      day: (typeof sortedGridDays)[0]
-                    ) => {
-                      const parsedDate = parseISO(day.date);
-                      const dayOfWeek = format(parsedDate, "EEEE");
-                      const dayShort = format(parsedDate, "EEE");
-                      const displayDate = format(parsedDate, "dd");
-                      const dayOfMonth = parsedDate.getDate();
-                      const weekOfMonth = Math.ceil(dayOfMonth / 7);
-                      const isSaturday = dayOfWeek === "Saturday";
-                      const is2ndOr4thSaturday =
-                        isSaturday && (weekOfMonth === 2 || weekOfMonth === 4);
-                      const isSunday = dayOfWeek === "Sunday";
-                      const isWeekendOff = is2ndOr4thSaturday || isSunday;
+                  // Helper to get day card data
+                  const getDayCardData = (
+                    day: (typeof sortedGridDays)[0]
+                  ) => {
+                    const parsedDate = parseISO(day.date);
+                    const dayOfWeek = format(parsedDate, "EEEE");
+                    const dayShort = format(parsedDate, "EEE");
+                    const displayDate = format(parsedDate, "dd");
+                    const dayOfMonth = parsedDate.getDate();
+                    const weekOfMonth = Math.ceil(dayOfMonth / 7);
+                    const isSaturday = dayOfWeek === "Saturday";
+                    const is2ndOr4thSaturday =
+                      isSaturday && (weekOfMonth === 2 || weekOfMonth === 4);
+                    const isSunday = dayOfWeek === "Sunday";
+                    const isWeekendOff = is2ndOr4thSaturday || isSunday;
 
-                      const hasTimesheet =
-                        (day.timesheet?.entries?.length ?? 0) > 0;
-                      const hasLeave = (day.leaves?.entries?.length ?? 0) > 0;
-                      const isOff = isWeekendOff || day.isHoliday;
-                      const isUnfilled = !hasTimesheet && !hasLeave && !isOff;
+                    const hasTimesheet =
+                      (day.timesheet?.entries?.length ?? 0) > 0;
+                    const hasLeave = (day.leaves?.entries?.length ?? 0) > 0;
+                    const isOff = isWeekendOff || day.isHoliday;
+                    const isUnfilled = !hasTimesheet && !hasLeave && !isOff;
 
-                      const isToday =
-                        parsedDate.getFullYear() ===
-                          todayMidnight.getFullYear() &&
-                        parsedDate.getMonth() === todayMidnight.getMonth() &&
-                        parsedDate.getDate() === todayMidnight.getDate();
+                    const isToday =
+                      parsedDate.getFullYear() ===
+                      todayMidnight.getFullYear() &&
+                      parsedDate.getMonth() === todayMidnight.getMonth() &&
+                      parsedDate.getDate() === todayMidnight.getDate();
 
-                      const timesheetEntries = day.timesheet?.entries ?? [];
-                      const leaveEntries = day.leaves?.entries ?? [];
-                      const totalHours =
-                        timesheetEntries.reduce((s, e) => s + e.hours, 0) +
-                        leaveEntries.reduce((s, e) => s + e.hours, 0);
+                    const timesheetEntries = day.timesheet?.entries ?? [];
+                    const leaveEntries = day.leaves?.entries ?? [];
+                    const totalHours =
+                      timesheetEntries.reduce((s, e) => s + e.hours, 0) +
+                      leaveEntries.reduce((s, e) => s + e.hours, 0);
 
-                      let status:
-                        | "off"
-                        | "unfilled"
-                        | "filled"
-                        | "rejected"
-                        | "pending" = "filled";
-                      if (isOff) status = "off";
-                      else if (isUnfilled) status = "unfilled";
-                      else if (day.timesheet?.state === "rejected")
-                        status = "rejected";
-                      else if (
-                        leaveEntries.some((e: any) => e.state === "rejected")
-                      )
-                        status = "rejected";
-                      else if (
-                        leaveEntries.some((e: any) => e.state === "pending")
-                      )
-                        status = "pending";
+                    let status:
+                      | "off"
+                      | "unfilled"
+                      | "filled"
+                      | "rejected"
+                      | "pending" = "filled";
+                    if (isOff) status = "off";
+                    else if (isUnfilled) status = "unfilled";
+                    else if (day.timesheet?.state === "rejected")
+                      status = "rejected";
+                    else if (
+                      leaveEntries.some((e: any) => e.state === "rejected")
+                    )
+                      status = "rejected";
+                    else if (
+                      leaveEntries.some((e: any) => e.state === "pending")
+                    )
+                      status = "pending";
 
-                      return {
-                        day,
-                        parsedDate,
-                        dayOfWeek,
-                        dayShort,
-                        displayDate,
-                        isOff,
-                        isUnfilled,
-                        isToday,
-                        totalHours,
-                        status,
-                        timesheetEntries,
-                        leaveEntries,
-                        isHoliday: day.isHoliday,
-                        holidayName: day.holidayName,
-                        is2ndOr4thSaturday,
-                        isSunday,
-                      };
+                    return {
+                      day,
+                      parsedDate,
+                      dayOfWeek,
+                      dayShort,
+                      displayDate,
+                      isOff,
+                      isUnfilled,
+                      isToday,
+                      totalHours,
+                      status,
+                      timesheetEntries,
+                      leaveEntries,
+                      isHoliday: day.isHoliday,
+                      holidayName: day.holidayName,
+                      is2ndOr4thSaturday,
+                      isSunday,
                     };
+                  };
 
-                    return (
-                      <div className="space-y-4">
-                        {weeks.map((weekDays, weekIndex) => {
-                          const weekData = weekDays.map(getDayCardData);
-                          const weekTotalHours = weekData.reduce(
-                            (sum, d) => sum + d.totalHours,
-                            0
-                          );
-                          const unfilledCount = weekData.filter(
-                            (d) => d.isUnfilled
-                          ).length;
+                  return (
+                    <div className="space-y-4">
+                      {weeks.map((weekDays, weekIndex) => {
+                        const weekData = weekDays.map(getDayCardData);
+                        const weekTotalHours = weekData.reduce(
+                          (sum, d) => sum + d.totalHours,
+                          0
+                        );
+                        const unfilledCount = weekData.filter(
+                          (d) => d.isUnfilled
+                        ).length;
 
-                          return (
+                        return (
+                          <div
+                            key={weekIndex}
+                            className="rounded-[4px] border border-border overflow-hidden"
+                            style={{ backgroundColor: "var(--background)" }}
+                          >
+                            {/* Week Header */}
                             <div
-                              key={weekIndex}
-                              className="rounded-[4px] border border-border overflow-hidden"
-                              style={{ backgroundColor: "var(--background)" }}
+                              className="px-3 py-2 border-b border-border flex items-center justify-between"
+                              style={{
+                                backgroundColor:
+                                  "var(--secondary-background)",
+                              }}
                             >
-                              {/* Week Header */}
-                              <div
-                                className="px-3 py-2 border-b border-border flex items-center justify-between"
-                                style={{
-                                  backgroundColor:
-                                    "var(--secondary-background)",
-                                }}
-                              >
-                                <div className="flex items-center gap-2">
-                                  <span
-                                    className="text-xs font-semibold uppercase tracking-wide"
-                                    style={{ color: "var(--foreground)" }}
-                                  >
-                                    Week {weekIndex + 1}
-                                  </span>
-                                  <span
-                                    className="text-xs"
-                                    style={{ color: "var(--muted)" }}
-                                  >
-                                    {format(weekData[0].parsedDate, "MMM dd")} —{" "}
-                                    {format(
-                                      weekData[weekData.length - 1].parsedDate,
-                                      "MMM dd"
-                                    )}
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-3 text-xs">
-                                  {weekTotalHours > 0 && (
-                                    <span style={{ color: "var(--muted)" }}>
-                                      {weekTotalHours}h
-                                    </span>
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className="text-xs font-semibold uppercase tracking-wide"
+                                  style={{ color: "var(--foreground)" }}
+                                >
+                                  Week {weekIndex + 1}
+                                </span>
+                                <span
+                                  className="text-xs"
+                                  style={{ color: "var(--muted)" }}
+                                >
+                                  {format(weekData[0].parsedDate, "MMM dd")} —{" "}
+                                  {format(
+                                    weekData[weekData.length - 1].parsedDate,
+                                    "MMM dd"
                                   )}
-                                  {unfilledCount > 0 && (
-                                    <span
-                                      className="font-medium"
-                                      style={{
-                                        color: "var(--color-orange-text)",
-                                      }}
-                                    >
-                                      {unfilledCount} pending
-                                    </span>
-                                  )}
-                                </div>
+                                </span>
                               </div>
+                              <div className="flex items-center gap-3 text-xs">
+                                {weekTotalHours > 0 && (
+                                  <span style={{ color: "var(--muted)" }}>
+                                    {weekTotalHours}h
+                                  </span>
+                                )}
+                                {unfilledCount > 0 && (
+                                  <span
+                                    className="font-medium"
+                                    style={{
+                                      color: "var(--color-orange-text)",
+                                    }}
+                                  >
+                                    {unfilledCount} pending
+                                  </span>
+                                )}
+                              </div>
+                            </div>
 
-                              {/* Week Days Grid */}
-                              <div
-                                className="grid grid-cols-7 divide-x divide-border"
-                                style={{ borderColor: "var(--border)" }}
-                              >
-                                {weekData.map((dayData) => {
-                                  // Determine cell background
-                                  let cellBg = "var(--background)";
-                                  if (dayData.isHoliday)
-                                    cellBg = "#ddeee6";
-                                  else if (dayData.isSunday || dayData.is2ndOr4thSaturday)
-                                    cellBg = "var(--secondary-background)";
-                                  else if (dayData.isUnfilled)
-                                    cellBg = "#ede4c8";
-                                  else if (dayData.status === "rejected")
-                                    cellBg = "#eddcdc";
-                                  else if (dayData.status === "pending")
-                                    cellBg = "#ece6cc";
+                            {/* Week Days Grid */}
+                            <div
+                              className="grid grid-cols-7 divide-x divide-border"
+                              style={{ borderColor: "var(--border)" }}
+                            >
+                              {weekData.map((dayData) => {
+                                // Determine cell background
+                                let cellBg = "var(--background)";
+                                if (dayData.isHoliday)
+                                  cellBg = "#ddeee6";
+                                else if (dayData.isSunday || dayData.is2ndOr4thSaturday)
+                                  cellBg = "var(--secondary-background)";
+                                else if (dayData.isUnfilled)
+                                  cellBg = "#ede4c8";
+                                else if (dayData.status === "rejected")
+                                  cellBg = "#eddcdc";
+                                else if (dayData.status === "pending")
+                                  cellBg = "#ece6cc";
 
-                                  // Left-border accent via inset shadow (doesn't break divide-x)
-                                  let accentShadow = "";
-                                  if (dayData.isHoliday)
-                                    accentShadow = "inset 3px 0 0 #5a8a6a";
-                                  else if (dayData.isUnfilled)
-                                    accentShadow = "inset 3px 0 0 #b89848";
-                                  else if (dayData.status === "rejected")
-                                    accentShadow = "inset 3px 0 0 #a05858";
-                                  else if (dayData.status === "pending")
-                                    accentShadow = "inset 3px 0 0 #8a7838";
+                                // Left-border accent via inset shadow (doesn't break divide-x)
+                                let accentShadow = "";
+                                if (dayData.isHoliday)
+                                  accentShadow = "inset 3px 0 0 #5a8a6a";
+                                else if (dayData.isUnfilled)
+                                  accentShadow = "inset 3px 0 0 #b89848";
+                                else if (dayData.status === "rejected")
+                                  accentShadow = "inset 3px 0 0 #a05858";
+                                else if (dayData.status === "pending")
+                                  accentShadow = "inset 3px 0 0 #8a7838";
 
-                                  const boxShadow = accentShadow || undefined;
+                                const boxShadow = accentShadow || undefined;
 
-                                  return (
-                                    <div
-                                      key={dayData.day.date}
-                                      className={`min-h-[110px] p-2.5 relative cursor-pointer hover:brightness-[0.97] transition-all rounded-[4px]${dayData.isToday ? " today-cell" : ""}`}
-                                      style={{
-                                        backgroundColor: cellBg,
-                                        borderColor: "var(--border)",
-                                        boxShadow,
-                                      }}
-                                      onClick={() => {
-                                        setSelectedDay(dayData.day);
-                                        setIsDaySheetOpen(true);
-                                      }}
-                                    >
-                                      {/* Day Header */}
-                                      <div className="flex items-start justify-between mb-1.5">
-                                        <div className="flex flex-col">
-                                          <span
-                                            className="text-lg font-semibold leading-none"
-                                            style={{
-                                              color: "var(--foreground)",
-                                            }}
-                                          >
-                                            {dayData.displayDate}
-                                          </span>
-                                          <span
-                                            className="text-xs uppercase mt-0.5"
-                                            style={{ color: "var(--muted)" }}
-                                          >
-                                            {dayData.dayShort}
-                                          </span>
-                                        </div>
-                                        {dayData.totalHours > 0 && (
-                                          <span
-                                            className="text-xs font-semibold px-1.5 py-0.5 rounded-[3px]"
-                                            style={{
-                                              backgroundColor:
-                                                dayData.status === "rejected"
-                                                  ? "#ecdcdc"
-                                                  : dayData.status === "pending"
+                                return (
+                                  <div
+                                    key={dayData.day.date}
+                                    className={`min-h-[110px] p-2.5 relative cursor-pointer hover:brightness-[0.97] transition-all rounded-[4px]${dayData.isToday ? " today-cell" : ""}`}
+                                    style={{
+                                      backgroundColor: cellBg,
+                                      borderColor: "var(--border)",
+                                      boxShadow,
+                                    }}
+                                    onClick={() => {
+                                      setSelectedDay(dayData.day);
+                                      setIsDaySheetOpen(true);
+                                    }}
+                                  >
+                                    {/* Day Header */}
+                                    <div className="flex items-start justify-between mb-1.5">
+                                      <div className="flex flex-col">
+                                        <span
+                                          className="text-lg font-semibold leading-none"
+                                          style={{
+                                            color: "var(--foreground)",
+                                          }}
+                                        >
+                                          {dayData.displayDate}
+                                        </span>
+                                        <span
+                                          className="text-xs uppercase mt-0.5"
+                                          style={{ color: "var(--muted)" }}
+                                        >
+                                          {dayData.dayShort}
+                                        </span>
+                                      </div>
+                                      {dayData.totalHours > 0 && (
+                                        <span
+                                          className="text-xs font-semibold px-1.5 py-0.5 rounded-[3px]"
+                                          style={{
+                                            backgroundColor:
+                                              dayData.status === "rejected"
+                                                ? "#ecdcdc"
+                                                : dayData.status === "pending"
                                                   ? "#ece6cc"
                                                   : dayData.status === "filled"
-                                                  ? "#daeae2"
-                                                  : "var(--secondary-background)",
-                                              color:
-                                                dayData.status === "rejected"
-                                                  ? "#803838"
-                                                  : dayData.status === "pending"
+                                                    ? "#daeae2"
+                                                    : "var(--secondary-background)",
+                                            color:
+                                              dayData.status === "rejected"
+                                                ? "#803838"
+                                                : dayData.status === "pending"
                                                   ? "#786020"
                                                   : dayData.status === "filled"
-                                                  ? "#386050"
-                                                  : "var(--foreground)",
-                                            }}
-                                          >
-                                            {dayData.totalHours}h
-                                          </span>
-                                        )}
-                                      </div>
+                                                    ? "#386050"
+                                                    : "var(--foreground)",
+                                          }}
+                                        >
+                                          {dayData.totalHours}h
+                                        </span>
+                                      )}
+                                    </div>
 
-                                      {/* Day Content */}
-                                      <div className="space-y-0.5">
-                                        {/* Off day indicator */}
-                                        {dayData.isOff && (
-                                          <div
-                                            className="text-xs font-medium"
-                                            style={{
-                                              color: dayData.isHoliday
-                                                ? "#3a6a4a"
-                                                : "var(--muted)",
-                                            }}
-                                          >
-                                            {dayData.isHoliday
-                                              ? "Holiday"
-                                              : dayData.isSunday
+                                    {/* Day Content */}
+                                    <div className="space-y-0.5">
+                                      {/* Off day indicator */}
+                                      {dayData.isOff && (
+                                        <div
+                                          className="text-xs font-medium"
+                                          style={{
+                                            color: dayData.isHoliday
+                                              ? "#3a6a4a"
+                                              : "var(--muted)",
+                                          }}
+                                        >
+                                          {dayData.isHoliday
+                                            ? "Holiday"
+                                            : dayData.isSunday
                                               ? "Sunday"
                                               : "Off"}
+                                        </div>
+                                      )}
+
+                                      {/* Holiday name */}
+                                      {dayData.isHoliday &&
+                                        dayData.holidayName && (
+                                          <div
+                                            className="text-xs truncate"
+                                            style={{ color: "#3a6a4a" }}
+                                          >
+                                            {dayData.holidayName}
                                           </div>
                                         )}
 
-                                        {/* Holiday name */}
-                                        {dayData.isHoliday &&
-                                          dayData.holidayName && (
-                                            <div
-                                              className="text-xs truncate"
-                                              style={{ color: "#3a6a4a" }}
-                                            >
-                                              {dayData.holidayName}
-                                            </div>
-                                          )}
-
-                                        {/* Timesheet entries */}
-                                        {dayData.timesheetEntries.length >
-                                          0 && (
+                                      {/* Timesheet entries */}
+                                      {dayData.timesheetEntries.length >
+                                        0 && (
                                           <div className="space-y-1">
                                             {dayData.timesheetEntries.map(
                                               (entry, i) => (
@@ -2272,49 +2278,49 @@ export default function DashboardPage() {
                                                   </span>
                                                   {dayData.day.timesheet
                                                     ?.state === "rejected" && (
-                                                    <span
-                                                      className="flex-shrink-0"
-                                                      style={{
-                                                        color: "#903030",
-                                                      }}
-                                                    >
-                                                      ×
-                                                    </span>
-                                                  )}
+                                                      <span
+                                                        className="flex-shrink-0"
+                                                        style={{
+                                                          color: "#903030",
+                                                        }}
+                                                      >
+                                                        ×
+                                                      </span>
+                                                    )}
                                                 </div>
                                               )
                                             )}
                                           </div>
                                         )}
 
-                                        {/* Leave entries */}
-                                        {dayData.leaveEntries.length > 0 && (
-                                          <div className="space-y-1">
-                                            {dayData.leaveEntries.map(
-                                              (entry: any, i) => (
-                                                <div
-                                                  key={i}
-                                                  className="text-xs truncate flex items-center gap-1"
+                                      {/* Leave entries */}
+                                      {dayData.leaveEntries.length > 0 && (
+                                        <div className="space-y-1">
+                                          {dayData.leaveEntries.map(
+                                            (entry: any, i) => (
+                                              <div
+                                                key={i}
+                                                className="text-xs truncate flex items-center gap-1"
+                                              >
+                                                <span
+                                                  className="font-medium truncate"
+                                                  style={{
+                                                    color:
+                                                      "var(--foreground)",
+                                                  }}
                                                 >
-                                                  <span
-                                                    className="font-medium truncate"
-                                                    style={{
-                                                      color:
-                                                        "var(--foreground)",
-                                                    }}
-                                                  >
-                                                    {entry.leaveType.name}
-                                                  </span>
-                                                  <span
-                                                    className="font-medium flex-shrink-0"
-                                                    style={{
-                                                      color: "var(--muted)",
-                                                    }}
-                                                  >
-                                                    {entry.hours}h
-                                                  </span>
-                                                  {entry.state ===
-                                                    "pending" && (
+                                                  {entry.leaveType.name}
+                                                </span>
+                                                <span
+                                                  className="font-medium flex-shrink-0"
+                                                  style={{
+                                                    color: "var(--muted)",
+                                                  }}
+                                                >
+                                                  {entry.hours}h
+                                                </span>
+                                                {entry.state ===
+                                                  "pending" && (
                                                     <span
                                                       className="flex-shrink-0"
                                                       style={{
@@ -2324,8 +2330,8 @@ export default function DashboardPage() {
                                                       ○
                                                     </span>
                                                   )}
-                                                  {entry.state ===
-                                                    "rejected" && (
+                                                {entry.state ===
+                                                  "rejected" && (
                                                     <span
                                                       className="flex-shrink-0"
                                                       style={{
@@ -2335,574 +2341,574 @@ export default function DashboardPage() {
                                                       ×
                                                     </span>
                                                   )}
-                                                </div>
-                                              )
-                                            )}
-                                          </div>
-                                        )}
-
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })()
-                ) : (
-                  <>
-                    {/* Desktop Table */}
-                    <div className="hidden md:block">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="whitespace-nowrap w-16">
-                              Sr
-                            </TableHead>
-                            <TableHead className="whitespace-nowrap w-28 text-center">
-                              Date
-                            </TableHead>
-                            <TableHead className="whitespace-nowrap w-28">
-                              Day
-                            </TableHead>
-                            <TableHead className="whitespace-nowrap w-20 text-center">
-                              Total
-                            </TableHead>
-                            <TableHead className="whitespace-nowrap w-32">
-                              Project
-                            </TableHead>
-                            <TableHead className="whitespace-nowrap w-20 text-center">
-                              Hours
-                            </TableHead>
-                            <TableHead>Activities</TableHead>
-                            {isTeamMode && canManageTeamEntries && (
-                              <TableHead className="whitespace-nowrap w-32 text-center">
-                                Actions
-                              </TableHead>
-                            )}
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {timesheetRows.map((row, index) => {
-                            // Check if this row has the same date as the previous/next row
-                            const prevRow =
-                              index > 0 ? timesheetRows[index - 1] : null;
-                            const nextRow =
-                              index < timesheetRows.length - 1
-                                ? timesheetRows[index + 1]
-                                : null;
-                            const isSameDateAsPrev =
-                              prevRow && prevRow.date === row.date;
-                            const isSameDateAsNext =
-                              nextRow && nextRow.date === row.date;
-
-                            let bgColor: string | undefined;
-                            let isColored = false;
-
-                            if (
-                              (row.isLeave && row.leaveStatus === "rejected") ||
-                              row.timesheetState === "rejected"
-                            ) {
-                              bgColor = "#f0c0c0";
-                              isColored = true;
-                            } else if (
-                              row.isLeave &&
-                              row.leaveStatus === "pending"
-                            ) {
-                              bgColor = "#f5eab0";
-                              isColored = true;
-                            } else if (
-                              row.isLeave && row.leaveStatus === "approved"
-                            ) {
-                              bgColor = "#c8e4d4";
-                              isColored = true;
-                            } else if (row.isHoliday) {
-                              bgColor = "#c8e4d4";
-                              isColored = true;
-                            } else if (row.isWeekend) {
-                              bgColor = "var(--secondary-background)";
-                              isColored = true;
-                            } else {
-                              bgColor = "var(--background)";
-                            }
-
-                            const rowKey = getRowKey(row, index);
-                            const canManageEntry =
-                              isTeamMode &&
-                              canManageTeamEntries &&
-                              !row.isLeave &&
-                              Boolean(row.entryId);
-                            const isEditing =
-                              canManageTeamEntries && editingRowKey === rowKey;
-                            const isSaving = savingRowKey === rowKey;
-                            const isDeleting = deletingRowKey === rowKey;
-                            const isConfirmingDelete = confirmDeleteRowKey === rowKey;
-                            const isTargetDateRow =
-                              highlightedDateApi !== null &&
-                              row.dateApi === highlightedDateApi;
-
-                            return (
-                              <TableRow
-                                key={`${row.date}-${index}`}
-                                data-date-api={row.dateApi ?? undefined}
-                                style={{
-                                  backgroundColor: bgColor,
-                                  borderBottom: isSameDateAsNext
-                                    ? "none"
-                                    : undefined,
-                                  borderTop: !isSameDateAsPrev && index > 0
-                                    ? "2px solid var(--border)"
-                                    : undefined,
-                                  boxShadow: isTargetDateRow
-                                    ? "inset 5px 0 0 #2f2f2f, 0 0 0 2px rgba(0, 0, 0, 0.22)"
-                                    : undefined,
-                                }}
-                                className={cn(
-                                  isColored ? "hover:opacity-95" : "",
-                                  isTargetDateRow && "animate-[pulse_1s_ease-in-out_3]"
-                                )}
-                              >
-                                <TableCell className="px-3 py-2.5 text-sm text-muted-foreground whitespace-nowrap">
-                                  {!isSameDateAsPrev
-                                    ? dateSerialMap.get(row.date) ?? ""
-                                    : ""}
-                                </TableCell>
-
-                                <TableCell className="px-3 py-2.5 text-sm text-foreground whitespace-nowrap text-center">
-                                  {isEditing ? (
-                                    <Input
-                                      type="date"
-                                      value={editingForm.date}
-                                      onChange={(e) =>
-                                        setEditingForm((prev) => ({
-                                          ...prev,
-                                          date: e.target.value,
-                                        }))
-                                      }
-                                      className="h-8 w-36"
-                                    />
-                                  ) : !isSameDateAsPrev ? (
-                                    row.date
-                                  ) : (
-                                    ""
-                                  )}
-                                </TableCell>
-                                <TableCell className="px-3 py-2.5 text-sm text-foreground whitespace-nowrap">
-                                  {!isSameDateAsPrev ? row.day : ""}
-                                </TableCell>
-                                <TableCell className="px-3 py-2.5 text-sm text-center whitespace-nowrap font-semibold">
-                                  {!isSameDateAsPrev ? (
-                                    <span style={{ color: "var(--foreground)" }}>
-                                      {dailyTotals.get(row.date) ?? 0}h
-                                    </span>
-                                  ) : ""}
-                                </TableCell>
-                                <TableCell
-                                  className={cn(
-                                    "px-3 py-2.5 text-sm text-foreground whitespace-nowrap",
-                                    isEditing && "align-top min-w-[240px]"
-                                  )}
-                                >
-                                  {isEditing ? (
-                                    <div className="space-y-1.5">
-                                      <select
-                                        value={editingForm.departmentId}
-                                        onChange={(e) => {
-                                          const nextDepartmentId = e.target.value;
-                                          setEditingForm((prev) => ({
-                                            ...prev,
-                                            departmentId: nextDepartmentId,
-                                            projectId: "",
-                                            project: "",
-                                          }));
-                                          if (nextDepartmentId) {
-                                            void fetchTeamLoggerProjectsForDepartment(
-                                              nextDepartmentId
-                                            );
-                                          }
-                                        }}
-                                        className="block h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
-                                      >
-                                        <option value="">Select department</option>
-                                        {editingForm.departmentId &&
-                                          !teamDepartments.some(
-                                            (department) =>
-                                              String(department.id) ===
-                                              editingForm.departmentId
-                                          ) && (
-                                            <option value={editingForm.departmentId}>
-                                              {row.department || "Current department"}
-                                            </option>
+                                              </div>
+                                            )
                                           )}
-                                        {teamDepartments.map((department) => (
-                                          <option
-                                            key={department.id}
-                                            value={String(department.id)}
-                                          >
-                                            {department.name}
-                                          </option>
-                                        ))}
-                                      </select>
-                                      {(() => {
-                                        const selectedDepartmentId =
-                                          editingForm.departmentId;
-                                        const projectOptions = selectedDepartmentId
-                                          ? teamProjectsByDepartment[
-                                              selectedDepartmentId
-                                            ] || []
-                                          : [];
+                                        </div>
+                                      )}
 
-                                        return (
-                                          <select
-                                            value={editingForm.projectId}
-                                            onChange={(e) =>
-                                              setEditingForm((prev) => ({
-                                                ...prev,
-                                                projectId: e.target.value,
-                                                project:
-                                                  projectOptions.find(
-                                                    (p) =>
-                                                      String(p.id) ===
-                                                      e.target.value
-                                                  )?.name ?? prev.project,
-                                              }))
-                                            }
-                                            className="block h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
-                                            disabled={
-                                              !selectedDepartmentId ||
-                                              teamLoggerProjectsLoading
-                                            }
-                                          >
-                                            <option value="">
-                                              {!selectedDepartmentId
-                                                ? "Select department first"
-                                                : teamLoggerProjectsLoading
-                                                ? "Loading projects..."
-                                                : "Select project"}
-                                            </option>
-                                            {editingForm.projectId &&
-                                              !projectOptions.some(
-                                                (project) =>
-                                                  String(project.id) ===
-                                                  editingForm.projectId
-                                              ) && (
-                                                <option value={editingForm.projectId}>
-                                                  {editingForm.project || row.project}
-                                                </option>
-                                              )}
-                                            {projectOptions.map((project) => (
-                                              <option
-                                                key={project.id}
-                                                value={String(project.id)}
-                                              >
-                                                {project.name}
-                                              </option>
-                                            ))}
-                                          </select>
-                                        );
-                                      })()}
                                     </div>
-                                  ) : (
-                                    row.project
-                                  )}
-                                </TableCell>
-                                <TableCell
-                                  className={cn(
-                                    "px-3 py-2.5 text-sm text-foreground text-center font-medium whitespace-nowrap",
-                                    isEditing && "align-top"
-                                  )}
-                                >
-                                  {isEditing ? (
-                                    <Input
-                                      type="text"
-                                      inputMode="decimal"
-                                      value={editingForm.hours}
-                                      onChange={(e) => {
-                                        const val = e.target.value.replace(/[^0-9.]/g, "");
-                                        setEditingForm((prev) => ({
-                                          ...prev,
-                                          hours: val,
-                                        }));
-                                      }}
-                                      className="h-8 w-16 text-center"
-                                    />
-                                  ) : (
-                                    row.hours
-                                  )}
-                                </TableCell>
-                                <TableCell
-                                  className={cn(
-                                    "px-3 py-2.5 text-sm text-foreground",
-                                    isEditing && "align-top"
-                                  )}
-                                >
-                                  {isEditing ? (
-                                    <Input
-                                      type="text"
-                                      value={editingForm.activities}
-                                      onChange={(e) =>
-                                        setEditingForm((prev) => ({
-                                          ...prev,
-                                          activities: e.target.value,
-                                        }))
-                                      }
-                                      className="h-8 min-w-[280px]"
-                                    />
-                                  ) : (
-                                    <>
-                                      {row.activities}
-                                      {row.leaveStatus === "pending" && (
-                                        <span
-                                          className="font-semibold ml-1"
-                                          style={{ color: "#806020" }}
-                                        >
-                                          · Pending approval
-                                        </span>
-                                      )}
-                                      {row.leaveStatus === "rejected" && (
-                                        <span
-                                          className="font-semibold ml-1"
-                                          style={{ color: "#903030" }}
-                                        >
-                                          · Rejected
-                                        </span>
-                                      )}
-                                      {row.leaveStatus === "approved" && (
-                                        <span
-                                          className="font-semibold ml-1"
-                                          style={{ color: "#2d6647" }}
-                                        >
-                                          · Approved
-                                        </span>
-                                      )}
-                                      {!row.isLeave && row.timesheetState === "rejected" && (
-                                        <span
-                                          className="font-semibold ml-1"
-                                          style={{ color: "#903030" }}
-                                        >
-                                          · Rejected
-                                        </span>
-                                      )}
-                                    </>
-                                  )}
-                                </TableCell>
-                                {isTeamMode && canManageTeamEntries && (
-                                  <TableCell className="px-3 py-2.5 text-center">
-                                    {canManageEntry ? (
-                                      <div className="inline-flex items-center gap-1.5">
-                                        {isEditing ? (
-                                          <>
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                handleSaveEdit(row, index)
-                                              }
-                                              disabled={isSaving || isDeleting}
-                                              className="h-7 w-7 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background disabled:opacity-40 disabled:cursor-not-allowed"
-                                              title="Save changes"
-                                            >
-                                              {isSaving ? (
-                                                <Loader2 className="h-3.5 w-3.5 animate-spin text-foreground" />
-                                              ) : (
-                                                <Check className="h-3.5 w-3.5 text-emerald-600" />
-                                              )}
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={handleCancelEdit}
-                                              disabled={isSaving || isDeleting}
-                                              className="h-7 w-7 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background disabled:opacity-40 disabled:cursor-not-allowed"
-                                              title="Cancel editing"
-                                            >
-                                              <X className="h-3.5 w-3.5 text-red-600" />
-                                            </button>
-                                          </>
-                                        ) : isConfirmingDelete ? (
-                                          <div className="inline-flex items-center gap-1.5">
-                                            <span className="text-xs text-muted-foreground whitespace-nowrap">Are you sure you want to delete this entry?</span>
-                                            <button
-                                              type="button"
-                                              onClick={() => {
-                                                setConfirmDeleteRowKey(null);
-                                                handleDeleteEntry(row, index);
-                                              }}
-                                              disabled={isDeleting}
-                                              className="h-7 w-7 rounded-md border border-red-300 bg-red-50 flex items-center justify-center hover:bg-red-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                                              title="Confirm delete"
-                                            >
-                                              {isDeleting ? (
-                                                <Loader2 className="h-3.5 w-3.5 animate-spin text-red-600" />
-                                              ) : (
-                                                <Trash2 className="h-3.5 w-3.5 text-red-600" />
-                                              )}
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={() => setConfirmDeleteRowKey(null)}
-                                              disabled={isDeleting}
-                                              className="h-7 w-7 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background disabled:opacity-40 disabled:cursor-not-allowed"
-                                              title="Cancel delete"
-                                            >
-                                              <X className="h-3.5 w-3.5 text-foreground" />
-                                            </button>
-                                          </div>
-                                        ) : (
-                                          <>
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                handleStartEdit(row, index)
-                                              }
-                                              disabled={isSaving || isDeleting}
-                                              className="h-7 w-7 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background disabled:opacity-40 disabled:cursor-not-allowed"
-                                              title="Edit entry"
-                                            >
-                                              <Pencil className="h-3.5 w-3.5 text-foreground" />
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                setConfirmDeleteRowKey(rowKey)
-                                              }
-                                              disabled={isSaving || isDeleting}
-                                              className="h-7 w-7 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background disabled:opacity-40 disabled:cursor-not-allowed"
-                                              title="Delete entry"
-                                            >
-                                              <Trash2 className="h-3.5 w-3.5 text-red-600" />
-                                            </button>
-                                          </>
-                                        )}
-                                      </div>
-                                    ) : (
-                                      <span className="text-xs text-muted-foreground">-</span>
-                                    )}
-                                  </TableCell>
-                                )}
-                              </TableRow>
-                            );
-                          })}
-                        </TableBody>
-                      </Table>
-                    </div>
-
-                    {/* Mobile Card View */}
-                    <div className="md:hidden space-y-2 max-h-[60vh] overflow-y-auto">
-                      {timesheetRows.map((row, index) => {
-                        // Check if this row has the same date as the previous row
-                        const prevRow =
-                          index > 0 ? timesheetRows[index - 1] : null;
-                        const isSameDateAsPrev =
-                          prevRow && prevRow.date === row.date;
-
-                        let bgColor = undefined;
-
-                        if (
-                          (row.isLeave && row.leaveStatus === "rejected") ||
-                          row.timesheetState === "rejected"
-                        ) {
-                          bgColor = "var(--color-red-bg)";
-                        } else if (
-                          row.isLeave &&
-                          row.leaveStatus === "pending"
-                        ) {
-                          bgColor = "var(--color-yellow-bg)";
-                        } else if (
-                          row.isHoliday ||
-                          row.isWeekend ||
-                          (row.isLeave && row.leaveStatus === "approved")
-                        ) {
-                          bgColor = "var(--color-green-bg)";
-                        } else {
-                          bgColor = "var(--background)";
-                        }
-
-                        return (
-                          <div
-                            key={`${row.date}-${index}`}
-                            data-date-api={row.dateApi ?? undefined}
-                            className={cn(
-                              "border border-border rounded-[4px] p-4 space-y-2",
-                              highlightedDateApi !== null &&
-                                row.dateApi === highlightedDateApi &&
-                                "animate-[pulse_1s_ease-in-out_3]"
-                            )}
-                            style={{
-                              backgroundColor: bgColor,
-                              boxShadow:
-                                highlightedDateApi !== null &&
-                                row.dateApi === highlightedDateApi
-                                  ? "inset 5px 0 0 #2f2f2f, 0 0 0 2px rgba(0, 0, 0, 0.22)"
-                                  : undefined,
-                            }}
-                          >
-                            <div className="flex justify-between items-start">
-                              <div className="space-y-0.5 flex-1">
-                                <p className="text-xs text-muted-foreground">
-                                  {!isSameDateAsPrev
-                                    ? `#${dateSerialMap.get(row.date) ?? ""}`
-                                    : ""}
-                                </p>
-                                {!isSameDateAsPrev && (
-                                  <p className="text-sm font-medium text-foreground">
-                                    {row.date} - {row.day}
-                                  </p>
-                                )}
-                              </div>
-                              <div className="text-right">
-                                <p className="text-xl font-bold text-foreground">
-                                  {row.hours}h
-                                </p>
-                              </div>
-                            </div>
-                            <div className="space-y-0.5">
-                              <p className="text-xs text-muted-foreground">
-                                Project
-                              </p>
-                              <p className="text-sm text-foreground">
-                                {row.project}
-                              </p>
-                            </div>
-                            <div className="space-y-0.5">
-                              <p className="text-xs text-muted-foreground">
-                                Activities
-                              </p>
-                              <p className="text-sm text-foreground">
-                                {row.activities}
-                                {row.leaveStatus === "pending" && (
-                                  <span
-                                    className="font-semibold ml-1"
-                                    style={{ color: "var(--color-yellow-text)" }}
-                                  >
-                                    · Pending approval
-                                  </span>
-                                )}
-                                {row.leaveStatus === "rejected" && (
-                                  <span
-                                    className="font-semibold ml-1"
-                                    style={{ color: "var(--color-red-text)" }}
-                                  >
-                                    · Rejected
-                                  </span>
-                                )}
-                                {row.leaveStatus === "approved" && (
-                                  <span
-                                    className="font-semibold ml-1"
-                                    style={{ color: "var(--color-green-text)" }}
-                                  >
-                                    · Approved
-                                  </span>
-                                )}
-                              </p>
+                                  </div>
+                                );
+                              })}
                             </div>
                           </div>
                         );
                       })}
                     </div>
-                  </>
-                )}
+                  );
+                })()
+              ) : (
+                <>
+                  {/* Desktop Table */}
+                  <div className="hidden md:block">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="whitespace-nowrap w-16">
+                            Sr
+                          </TableHead>
+                          <TableHead className="whitespace-nowrap w-28 text-center">
+                            Date
+                          </TableHead>
+                          <TableHead className="whitespace-nowrap w-28">
+                            Day
+                          </TableHead>
+                          <TableHead className="whitespace-nowrap w-20 text-center">
+                            Total
+                          </TableHead>
+                          <TableHead className="whitespace-nowrap w-32">
+                            Project
+                          </TableHead>
+                          <TableHead className="whitespace-nowrap w-20 text-center">
+                            Hours
+                          </TableHead>
+                          <TableHead>Activities</TableHead>
+                          {isTeamMode && canManageTeamEntries && (
+                            <TableHead className="whitespace-nowrap w-32 text-center">
+                              Actions
+                            </TableHead>
+                          )}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {timesheetRows.map((row, index) => {
+                          // Check if this row has the same date as the previous/next row
+                          const prevRow =
+                            index > 0 ? timesheetRows[index - 1] : null;
+                          const nextRow =
+                            index < timesheetRows.length - 1
+                              ? timesheetRows[index + 1]
+                              : null;
+                          const isSameDateAsPrev =
+                            prevRow && prevRow.date === row.date;
+                          const isSameDateAsNext =
+                            nextRow && nextRow.date === row.date;
+
+                          let bgColor: string | undefined;
+                          let isColored = false;
+
+                          if (
+                            (row.isLeave && row.leaveStatus === "rejected") ||
+                            row.timesheetState === "rejected"
+                          ) {
+                            bgColor = "#f0c0c0";
+                            isColored = true;
+                          } else if (
+                            row.isLeave &&
+                            row.leaveStatus === "pending"
+                          ) {
+                            bgColor = "#f5eab0";
+                            isColored = true;
+                          } else if (
+                            row.isLeave && row.leaveStatus === "approved"
+                          ) {
+                            bgColor = "#c8e4d4";
+                            isColored = true;
+                          } else if (row.isHoliday) {
+                            bgColor = "#c8e4d4";
+                            isColored = true;
+                          } else if (row.isWeekend) {
+                            bgColor = "var(--secondary-background)";
+                            isColored = true;
+                          } else {
+                            bgColor = "var(--background)";
+                          }
+
+                          const rowKey = getRowKey(row, index);
+                          const canManageEntry =
+                            isTeamMode &&
+                            canManageTeamEntries &&
+                            !row.isLeave &&
+                            Boolean(row.entryId);
+                          const isEditing =
+                            canManageTeamEntries && editingRowKey === rowKey;
+                          const isSaving = savingRowKey === rowKey;
+                          const isDeleting = deletingRowKey === rowKey;
+                          const isConfirmingDelete = confirmDeleteRowKey === rowKey;
+                          const isTargetDateRow =
+                            highlightedDateApi !== null &&
+                            row.dateApi === highlightedDateApi;
+
+                          return (
+                            <TableRow
+                              key={`${row.date}-${index}`}
+                              data-date-api={row.dateApi ?? undefined}
+                              style={{
+                                backgroundColor: bgColor,
+                                borderBottom: isSameDateAsNext
+                                  ? "none"
+                                  : undefined,
+                                borderTop: !isSameDateAsPrev && index > 0
+                                  ? "2px solid var(--border)"
+                                  : undefined,
+                                boxShadow: isTargetDateRow
+                                  ? "inset 5px 0 0 #2f2f2f, 0 0 0 2px rgba(0, 0, 0, 0.22)"
+                                  : undefined,
+                              }}
+                              className={cn(
+                                isColored ? "hover:opacity-95" : "",
+                                isTargetDateRow && "animate-[pulse_1s_ease-in-out_3]"
+                              )}
+                            >
+                              <TableCell className="px-3 py-2.5 text-sm text-muted-foreground whitespace-nowrap">
+                                {!isSameDateAsPrev
+                                  ? dateSerialMap.get(row.date) ?? ""
+                                  : ""}
+                              </TableCell>
+
+                              <TableCell className="px-3 py-2.5 text-sm text-foreground whitespace-nowrap text-center">
+                                {isEditing ? (
+                                  <Input
+                                    type="date"
+                                    value={editingForm.date}
+                                    onChange={(e) =>
+                                      setEditingForm((prev) => ({
+                                        ...prev,
+                                        date: e.target.value,
+                                      }))
+                                    }
+                                    className="h-8 w-36"
+                                  />
+                                ) : !isSameDateAsPrev ? (
+                                  row.date
+                                ) : (
+                                  ""
+                                )}
+                              </TableCell>
+                              <TableCell className="px-3 py-2.5 text-sm text-foreground whitespace-nowrap">
+                                {!isSameDateAsPrev ? row.day : ""}
+                              </TableCell>
+                              <TableCell className="px-3 py-2.5 text-sm text-center whitespace-nowrap font-semibold">
+                                {!isSameDateAsPrev ? (
+                                  <span style={{ color: "var(--foreground)" }}>
+                                    {dailyTotals.get(row.date) ?? 0}h
+                                  </span>
+                                ) : ""}
+                              </TableCell>
+                              <TableCell
+                                className={cn(
+                                  "px-3 py-2.5 text-sm text-foreground whitespace-nowrap",
+                                  isEditing && "align-top min-w-[240px]"
+                                )}
+                              >
+                                {isEditing ? (
+                                  <div className="space-y-1.5">
+                                    <select
+                                      value={editingForm.departmentId}
+                                      onChange={(e) => {
+                                        const nextDepartmentId = e.target.value;
+                                        setEditingForm((prev) => ({
+                                          ...prev,
+                                          departmentId: nextDepartmentId,
+                                          projectId: "",
+                                          project: "",
+                                        }));
+                                        if (nextDepartmentId) {
+                                          void fetchTeamLoggerProjectsForDepartment(
+                                            nextDepartmentId
+                                          );
+                                        }
+                                      }}
+                                      className="block h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
+                                    >
+                                      <option value="">Select department</option>
+                                      {editingForm.departmentId &&
+                                        !teamDepartments.some(
+                                          (department) =>
+                                            String(department.id) ===
+                                            editingForm.departmentId
+                                        ) && (
+                                          <option value={editingForm.departmentId}>
+                                            {row.department || "Current department"}
+                                          </option>
+                                        )}
+                                      {teamDepartments.map((department) => (
+                                        <option
+                                          key={department.id}
+                                          value={String(department.id)}
+                                        >
+                                          {department.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    {(() => {
+                                      const selectedDepartmentId =
+                                        editingForm.departmentId;
+                                      const projectOptions = selectedDepartmentId
+                                        ? teamProjectsByDepartment[
+                                        selectedDepartmentId
+                                        ] || []
+                                        : [];
+
+                                      return (
+                                        <select
+                                          value={editingForm.projectId}
+                                          onChange={(e) =>
+                                            setEditingForm((prev) => ({
+                                              ...prev,
+                                              projectId: e.target.value,
+                                              project:
+                                                projectOptions.find(
+                                                  (p) =>
+                                                    String(p.id) ===
+                                                    e.target.value
+                                                )?.name ?? prev.project,
+                                            }))
+                                          }
+                                          className="block h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
+                                          disabled={
+                                            !selectedDepartmentId ||
+                                            teamLoggerProjectsLoading
+                                          }
+                                        >
+                                          <option value="">
+                                            {!selectedDepartmentId
+                                              ? "Select department first"
+                                              : teamLoggerProjectsLoading
+                                                ? "Loading projects..."
+                                                : "Select project"}
+                                          </option>
+                                          {editingForm.projectId &&
+                                            !projectOptions.some(
+                                              (project) =>
+                                                String(project.id) ===
+                                                editingForm.projectId
+                                            ) && (
+                                              <option value={editingForm.projectId}>
+                                                {editingForm.project || row.project}
+                                              </option>
+                                            )}
+                                          {projectOptions.map((project) => (
+                                            <option
+                                              key={project.id}
+                                              value={String(project.id)}
+                                            >
+                                              {project.name}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      );
+                                    })()}
+                                  </div>
+                                ) : (
+                                  row.project
+                                )}
+                              </TableCell>
+                              <TableCell
+                                className={cn(
+                                  "px-3 py-2.5 text-sm text-foreground text-center font-medium whitespace-nowrap",
+                                  isEditing && "align-top"
+                                )}
+                              >
+                                {isEditing ? (
+                                  <Input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={editingForm.hours}
+                                    onChange={(e) => {
+                                      const val = e.target.value.replace(/[^0-9.]/g, "");
+                                      setEditingForm((prev) => ({
+                                        ...prev,
+                                        hours: val,
+                                      }));
+                                    }}
+                                    className="h-8 w-16 text-center"
+                                  />
+                                ) : (
+                                  row.hours
+                                )}
+                              </TableCell>
+                              <TableCell
+                                className={cn(
+                                  "px-3 py-2.5 text-sm text-foreground",
+                                  isEditing && "align-top"
+                                )}
+                              >
+                                {isEditing ? (
+                                  <Input
+                                    type="text"
+                                    value={editingForm.activities}
+                                    onChange={(e) =>
+                                      setEditingForm((prev) => ({
+                                        ...prev,
+                                        activities: e.target.value,
+                                      }))
+                                    }
+                                    className="h-8 min-w-[280px]"
+                                  />
+                                ) : (
+                                  <>
+                                    {row.activities}
+                                    {row.leaveStatus === "pending" && (
+                                      <span
+                                        className="font-semibold ml-1"
+                                        style={{ color: "#806020" }}
+                                      >
+                                        · Pending approval
+                                      </span>
+                                    )}
+                                    {row.leaveStatus === "rejected" && (
+                                      <span
+                                        className="font-semibold ml-1"
+                                        style={{ color: "#903030" }}
+                                      >
+                                        · Rejected
+                                      </span>
+                                    )}
+                                    {row.leaveStatus === "approved" && (
+                                      <span
+                                        className="font-semibold ml-1"
+                                        style={{ color: "#2d6647" }}
+                                      >
+                                        · Approved
+                                      </span>
+                                    )}
+                                    {!row.isLeave && row.timesheetState === "rejected" && (
+                                      <span
+                                        className="font-semibold ml-1"
+                                        style={{ color: "#903030" }}
+                                      >
+                                        · Rejected
+                                      </span>
+                                    )}
+                                  </>
+                                )}
+                              </TableCell>
+                              {isTeamMode && canManageTeamEntries && (
+                                <TableCell className="px-3 py-2.5 text-center">
+                                  {canManageEntry ? (
+                                    <div className="inline-flex items-center gap-1.5">
+                                      {isEditing ? (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              handleSaveEdit(row, index)
+                                            }
+                                            disabled={isSaving || isDeleting}
+                                            className="h-7 w-7 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background disabled:opacity-40 disabled:cursor-not-allowed"
+                                            title="Save changes"
+                                          >
+                                            {isSaving ? (
+                                              <Loader2 className="h-3.5 w-3.5 animate-spin text-foreground" />
+                                            ) : (
+                                              <Check className="h-3.5 w-3.5 text-emerald-600" />
+                                            )}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={handleCancelEdit}
+                                            disabled={isSaving || isDeleting}
+                                            className="h-7 w-7 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background disabled:opacity-40 disabled:cursor-not-allowed"
+                                            title="Cancel editing"
+                                          >
+                                            <X className="h-3.5 w-3.5 text-red-600" />
+                                          </button>
+                                        </>
+                                      ) : isConfirmingDelete ? (
+                                        <div className="inline-flex items-center gap-1.5">
+                                          <span className="text-xs text-muted-foreground whitespace-nowrap">Are you sure you want to delete this entry?</span>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setConfirmDeleteRowKey(null);
+                                              handleDeleteEntry(row, index);
+                                            }}
+                                            disabled={isDeleting}
+                                            className="h-7 w-7 rounded-md border border-red-300 bg-red-50 flex items-center justify-center hover:bg-red-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                                            title="Confirm delete"
+                                          >
+                                            {isDeleting ? (
+                                              <Loader2 className="h-3.5 w-3.5 animate-spin text-red-600" />
+                                            ) : (
+                                              <Trash2 className="h-3.5 w-3.5 text-red-600" />
+                                            )}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setConfirmDeleteRowKey(null)}
+                                            disabled={isDeleting}
+                                            className="h-7 w-7 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background disabled:opacity-40 disabled:cursor-not-allowed"
+                                            title="Cancel delete"
+                                          >
+                                            <X className="h-3.5 w-3.5 text-foreground" />
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              handleStartEdit(row, index)
+                                            }
+                                            disabled={isSaving || isDeleting}
+                                            className="h-7 w-7 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background disabled:opacity-40 disabled:cursor-not-allowed"
+                                            title="Edit entry"
+                                          >
+                                            <Pencil className="h-3.5 w-3.5 text-foreground" />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              setConfirmDeleteRowKey(rowKey)
+                                            }
+                                            disabled={isSaving || isDeleting}
+                                            className="h-7 w-7 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background disabled:opacity-40 disabled:cursor-not-allowed"
+                                            title="Delete entry"
+                                          >
+                                            <Trash2 className="h-3.5 w-3.5 text-red-600" />
+                                          </button>
+                                        </>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="text-xs text-muted-foreground">-</span>
+                                  )}
+                                </TableCell>
+                              )}
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  {/* Mobile Card View */}
+                  <div className="md:hidden space-y-2 max-h-[60vh] overflow-y-auto">
+                    {timesheetRows.map((row, index) => {
+                      // Check if this row has the same date as the previous row
+                      const prevRow =
+                        index > 0 ? timesheetRows[index - 1] : null;
+                      const isSameDateAsPrev =
+                        prevRow && prevRow.date === row.date;
+
+                      let bgColor = undefined;
+
+                      if (
+                        (row.isLeave && row.leaveStatus === "rejected") ||
+                        row.timesheetState === "rejected"
+                      ) {
+                        bgColor = "var(--color-red-bg)";
+                      } else if (
+                        row.isLeave &&
+                        row.leaveStatus === "pending"
+                      ) {
+                        bgColor = "var(--color-yellow-bg)";
+                      } else if (
+                        row.isHoliday ||
+                        row.isWeekend ||
+                        (row.isLeave && row.leaveStatus === "approved")
+                      ) {
+                        bgColor = "var(--color-green-bg)";
+                      } else {
+                        bgColor = "var(--background)";
+                      }
+
+                      return (
+                        <div
+                          key={`${row.date}-${index}`}
+                          data-date-api={row.dateApi ?? undefined}
+                          className={cn(
+                            "border border-border rounded-[4px] p-4 space-y-2",
+                            highlightedDateApi !== null &&
+                            row.dateApi === highlightedDateApi &&
+                            "animate-[pulse_1s_ease-in-out_3]"
+                          )}
+                          style={{
+                            backgroundColor: bgColor,
+                            boxShadow:
+                              highlightedDateApi !== null &&
+                                row.dateApi === highlightedDateApi
+                                ? "inset 5px 0 0 #2f2f2f, 0 0 0 2px rgba(0, 0, 0, 0.22)"
+                                : undefined,
+                          }}
+                        >
+                          <div className="flex justify-between items-start">
+                            <div className="space-y-0.5 flex-1">
+                              <p className="text-xs text-muted-foreground">
+                                {!isSameDateAsPrev
+                                  ? `#${dateSerialMap.get(row.date) ?? ""}`
+                                  : ""}
+                              </p>
+                              {!isSameDateAsPrev && (
+                                <p className="text-sm font-medium text-foreground">
+                                  {row.date} - {row.day}
+                                </p>
+                              )}
+                            </div>
+                            <div className="text-right">
+                              <p className="text-xl font-bold text-foreground">
+                                {row.hours}h
+                              </p>
+                            </div>
+                          </div>
+                          <div className="space-y-0.5">
+                            <p className="text-xs text-muted-foreground">
+                              Project
+                            </p>
+                            <p className="text-sm text-foreground">
+                              {row.project}
+                            </p>
+                          </div>
+                          <div className="space-y-0.5">
+                            <p className="text-xs text-muted-foreground">
+                              Activities
+                            </p>
+                            <p className="text-sm text-foreground">
+                              {row.activities}
+                              {row.leaveStatus === "pending" && (
+                                <span
+                                  className="font-semibold ml-1"
+                                  style={{ color: "var(--color-yellow-text)" }}
+                                >
+                                  · Pending approval
+                                </span>
+                              )}
+                              {row.leaveStatus === "rejected" && (
+                                <span
+                                  className="font-semibold ml-1"
+                                  style={{ color: "var(--color-red-text)" }}
+                                >
+                                  · Rejected
+                                </span>
+                              )}
+                              {row.leaveStatus === "approved" && (
+                                <span
+                                  className="font-semibold ml-1"
+                                  style={{ color: "var(--color-green-text)" }}
+                                >
+                                  · Approved
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -2918,146 +2924,146 @@ export default function DashboardPage() {
                 </SheetDescription>
               </SheetHeader>
 
-                <form onSubmit={handleSubmitTeamLogger} className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">Team Member</Label>
-                    <p className="text-sm font-medium text-foreground break-all">
-                      {teamUser?.email ||
-                        teamUser?.workEmail ||
-                        teamUser?.officialEmail ||
-                        teamUser?.user?.email ||
-                        teamUser?.searchedEmail ||
-                        (teamSearch ? teamSearch.trim() : "") ||
-                        "Email not available"}
-                    </p>
-                  </div>
+              <form onSubmit={handleSubmitTeamLogger} className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Team Member</Label>
+                  <p className="text-sm font-medium text-foreground break-all">
+                    {teamUser?.email ||
+                      teamUser?.workEmail ||
+                      teamUser?.officialEmail ||
+                      teamUser?.user?.email ||
+                      teamUser?.searchedEmail ||
+                      (teamSearch ? teamSearch.trim() : "") ||
+                      "Email not available"}
+                  </p>
+                </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-2.5">
-                      <Label htmlFor="team-activity-date">Work Date</Label>
-                      <Input
-                        id="team-activity-date"
-                        type="date"
-                        value={teamLoggerForm.workDate}
-                        onChange={(e) =>
-                          setTeamLoggerForm((prev) => ({
-                            ...prev,
-                            workDate: e.target.value,
-                          }))
-                        }
-                        required
-                      />
-                    </div>
-
-                    <div className="space-y-2.5">
-                      <Label htmlFor="team-activity-hours">Hours</Label>
-                      <Input
-                        id="team-activity-hours"
-                        type="text"
-                        inputMode="decimal"
-                        placeholder="0.0"
-                        value={teamLoggerForm.hours}
-                        onChange={(e) => {
-                          const val = e.target.value.replace(/[^0-9.]/g, "");
-                          setTeamLoggerForm((prev) => ({
-                            ...prev,
-                            hours: val,
-                          }));
-                        }}
-                        required
-                      />
-                    </div>
-                  </div>
-
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2.5">
-                    <Label htmlFor="team-activity-department">
-                      Current Working Department
-                    </Label>
-                    <Select
-                      value={teamLoggerForm.departmentId}
-                      onValueChange={(nextDepartmentId) => {
-                        setTeamLoggerForm((prev) => ({
-                          ...prev,
-                          departmentId: nextDepartmentId,
-                          projectId: "",
-                        }));
-                        if (nextDepartmentId) {
-                          fetchTeamLoggerProjectsForDepartment(nextDepartmentId);
-                        }
-                      }}
-                    >
-                      <SelectTrigger id="team-activity-department">
-                        <SelectValue placeholder="Select department" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {teamDepartments.map((department) => (
-                          <SelectItem
-                            key={department.id}
-                            value={String(department.id)}
-                          >
-                            {department.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2.5">
-                    <Label htmlFor="team-activity-project">Project</Label>
-                    <Select
-                      value={teamLoggerForm.projectId}
-                      onValueChange={(value) =>
-                        setTeamLoggerForm((prev) => ({
-                          ...prev,
-                          projectId: value,
-                        }))
-                      }
-                      disabled={
-                        !teamLoggerForm.departmentId || teamLoggerProjectsLoading
-                      }
-                    >
-                      <SelectTrigger id="team-activity-project">
-                        <SelectValue
-                          placeholder={
-                            !teamLoggerForm.departmentId
-                              ? "Select department first"
-                              : teamLoggerProjectsLoading
-                              ? "Loading projects..."
-                              : "Select project"
-                          }
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {(teamProjectsByDepartment[teamLoggerForm.departmentId] || []).map(
-                          (project) => (
-                            <SelectItem
-                              key={project.id}
-                              value={String(project.id)}
-                            >
-                              {project.name}
-                            </SelectItem>
-                          )
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2.5">
-                    <Label htmlFor="team-activity-description">Activities</Label>
-                    <Textarea
-                      id="team-activity-description"
-                      placeholder="Describe the work done"
-                      value={teamLoggerForm.activities}
+                    <Label htmlFor="team-activity-date">Work Date</Label>
+                    <Input
+                      id="team-activity-date"
+                      type="date"
+                      value={teamLoggerForm.workDate}
                       onChange={(e) =>
                         setTeamLoggerForm((prev) => ({
                           ...prev,
-                          activities: e.target.value,
+                          workDate: e.target.value,
                         }))
                       }
-                      minLength={VALIDATION.MIN_TASK_DESCRIPTION_LENGTH}
                       required
                     />
                   </div>
+
+                  <div className="space-y-2.5">
+                    <Label htmlFor="team-activity-hours">Hours</Label>
+                    <Input
+                      id="team-activity-hours"
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="0.0"
+                      value={teamLoggerForm.hours}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/[^0-9.]/g, "");
+                        setTeamLoggerForm((prev) => ({
+                          ...prev,
+                          hours: val,
+                        }));
+                      }}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2.5">
+                  <Label htmlFor="team-activity-department">
+                    Current Working Department
+                  </Label>
+                  <Select
+                    value={teamLoggerForm.departmentId}
+                    onValueChange={(nextDepartmentId) => {
+                      setTeamLoggerForm((prev) => ({
+                        ...prev,
+                        departmentId: nextDepartmentId,
+                        projectId: "",
+                      }));
+                      if (nextDepartmentId) {
+                        fetchTeamLoggerProjectsForDepartment(nextDepartmentId);
+                      }
+                    }}
+                  >
+                    <SelectTrigger id="team-activity-department">
+                      <SelectValue placeholder="Select department" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {teamDepartments.map((department) => (
+                        <SelectItem
+                          key={department.id}
+                          value={String(department.id)}
+                        >
+                          {department.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2.5">
+                  <Label htmlFor="team-activity-project">Project</Label>
+                  <Select
+                    value={teamLoggerForm.projectId}
+                    onValueChange={(value) =>
+                      setTeamLoggerForm((prev) => ({
+                        ...prev,
+                        projectId: value,
+                      }))
+                    }
+                    disabled={
+                      !teamLoggerForm.departmentId || teamLoggerProjectsLoading
+                    }
+                  >
+                    <SelectTrigger id="team-activity-project">
+                      <SelectValue
+                        placeholder={
+                          !teamLoggerForm.departmentId
+                            ? "Select department first"
+                            : teamLoggerProjectsLoading
+                              ? "Loading projects..."
+                              : "Select project"
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(teamProjectsByDepartment[teamLoggerForm.departmentId] || []).map(
+                        (project) => (
+                          <SelectItem
+                            key={project.id}
+                            value={String(project.id)}
+                          >
+                            {project.name}
+                          </SelectItem>
+                        )
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2.5">
+                  <Label htmlFor="team-activity-description">Activities</Label>
+                  <Textarea
+                    id="team-activity-description"
+                    placeholder="Describe the work done"
+                    value={teamLoggerForm.activities}
+                    onChange={(e) =>
+                      setTeamLoggerForm((prev) => ({
+                        ...prev,
+                        activities: e.target.value,
+                      }))
+                    }
+                    minLength={VALIDATION.MIN_TASK_DESCRIPTION_LENGTH}
+                    required
+                  />
+                </div>
 
                 <div className="pt-3 flex items-center gap-2.5">
                   <Button
@@ -3119,10 +3125,10 @@ export default function DashboardPage() {
                     {selectedDay.isHoliday
                       ? selectedDay.holidayName
                       : selectedDay.isWeekend
-                      ? "Weekend"
-                      : selectedDay.isWorkingDay
-                      ? "Working Day"
-                      : "Non-working Day"}
+                        ? "Weekend"
+                        : selectedDay.isWorkingDay
+                          ? "Working Day"
+                          : "Non-working Day"}
                   </p>
                 </div>
 

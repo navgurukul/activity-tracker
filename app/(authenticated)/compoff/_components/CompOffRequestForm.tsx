@@ -56,20 +56,9 @@ import {
 
 const formSchema = z.object({
   userId: z.number().int().positive("Please select a valid employee."),
-  workDate: z
-    .date({
-      message: "Work date is required.",
-    })
-    .refine(
-      (date) => {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        return date <= today;
-      },
-      {
-        message: "Comp-Off cannot be requested for future dates.",
-      }
-    ),
+  workDate: z.date({
+    message: "Work date is required.",
+  }),
   duration: z.enum(["half_day", "full_day"], {
     message: "Please select a duration type.",
   }),
@@ -111,13 +100,15 @@ export function CompOffRequestForm() {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Date matching function: Only allow non-working days and holidays, disable future dates
+  // Date matching function: Only allow non-working days and holidays
+  // For Admin/Super Admin/Manager: allow future off-days
+  // For regular employees: disable future dates
   const disableInvalidDates = (date: Date) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Rule 3: Prevent selection of future dates
-    if (date > today) return true;
+    // Only restrict future dates for regular employees
+    if (!isAdminOrSuper && !isManager && date > today) return true;
 
     // Rule 1: Check if it's a non-working day (Sunday or 2nd/4th Saturday)
     const isNonWorking = isNonWorkingDay(date);
@@ -321,21 +312,15 @@ export function CompOffRequestForm() {
       const response = await apiClient.post(API_PATHS.COMPOFF_REQUEST, payload);
 
       if (response.status === 200 || response.status === 201) {
-        toast.success("Comp-Off request submitted successfully!", {
-          description:
-            "Your compensatory time off request has been sent for approval.",
-        });
-
+        toast.success("Comp-Off request submitted successfully!", {});
         form.reset();
       }
     } catch (error: any) {
       console.error("Error submitting comp-off request:", error);
-
       const errorMessage =
         error.response?.data?.message ||
         error.message ||
         "Failed to submit comp-off request. Please try again.";
-
       toast.error("Submission failed", {
         description: errorMessage,
       });
