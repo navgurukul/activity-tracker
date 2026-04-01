@@ -58,7 +58,7 @@ import {
   VALIDATION,
   WORK_DAYS_NEEDED,
 } from "@/lib/constants";
-import { cn } from "@/lib/utils";
+import { cn, getISTBusinessDate } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import {
   checkTimesheetConflictWithLeave,
@@ -112,28 +112,33 @@ export default function TrackerPage() {
   }, [isLoading, user?.orgId]);
 
   const disableInvalidDates = (date: Date) => {
-    const now = new Date();
-    const cutoffHour = 7;
+    const istToday = getISTBusinessDate();
+    const cutoffDay = 26;
 
-    let effectiveToday = new Date(now);
-    effectiveToday.setHours(0, 0, 0, 0);
-
-    if (now.getHours() < cutoffHour) {
-      effectiveToday.setDate(effectiveToday.getDate() - 1);
-    }
-
+    // Convert input date to IST 00:00:00
     const d = new Date(date);
     d.setHours(0, 0, 0, 0);
 
-    if (d.getTime() > effectiveToday.getTime()) return true;
+    // Use getISTBusinessDate for IST time
+    const istNow = getISTBusinessDate();
+    const isAfterCutoff =
+      (istNow.getDate() > cutoffDay) ||
+      (istNow.getDate() === cutoffDay && istNow.getHours() >= 7);
+    if (isAfterCutoff) {
+      const cycleStart = new Date(istNow.getFullYear(), istNow.getMonth(), cutoffDay);
+      cycleStart.setHours(0, 0, 0, 0);
+      if (d < cycleStart) return true;
+    }
+
+    if (d.getTime() > istToday.getTime()) return true;
 
     const backfillRemaining = user?.backfill?.remaining ?? 0;
     if (backfillRemaining === 0) {
-      return d.getTime() !== effectiveToday.getTime();
+      return d.getTime() !== istToday.getTime();
     }
 
     const workDaysNeeded = WORK_DAYS_NEEDED;
-    const cursor = new Date(effectiveToday);
+    const cursor = new Date(istToday);
     cursor.setDate(cursor.getDate() - 1);
 
     let found = 0;
@@ -203,20 +208,11 @@ export default function TrackerPage() {
       .date()
       .refine(
         (date) => {
-          const now = new Date();
-          const cutoffHour = 7;
-
-          let effectiveToday = new Date(now);
-          effectiveToday.setHours(0, 0, 0, 0);
-          if (now.getHours() < cutoffHour) {
-            effectiveToday.setDate(effectiveToday.getDate() - 1);
-          }
-
-          // Check if date is in the future (relative to effective today)
+          const istToday = getISTBusinessDate();
+          // Check if date is in the future (relative to IST business date)
           const d = new Date(date);
           d.setHours(0, 0, 0, 0);
-          if (d.getTime() > effectiveToday.getTime()) return false;
-
+          if (d.getTime() > istToday.getTime()) return false;
           return true;
         },
         {
@@ -225,28 +221,19 @@ export default function TrackerPage() {
       )
       .refine(
         (date) => {
-          const now = new Date();
-          const cutoffHour = 7;
-
-          let effectiveToday = new Date(now);
-          effectiveToday.setHours(0, 0, 0, 0);
-
-          if (now.getHours() < cutoffHour) {
-            effectiveToday.setDate(effectiveToday.getDate() - 1);
-          }
-
+          const istToday = getISTBusinessDate();
           const selectedDate = new Date(date);
           selectedDate.setHours(0, 0, 0, 0);
 
-          // If backfill remaining is zero, only allow effective today
+          // If backfill remaining is zero, only allow IST business date
           const backfillRemaining = user?.backfill?.remaining ?? 0;
           if (backfillRemaining === 0) {
-            return selectedDate.getTime() === effectiveToday.getTime();
+            return selectedDate.getTime() === istToday.getTime();
           }
 
           // Find past 3 working days (excluding today)
           const workDaysNeeded = WORK_DAYS_NEEDED;
-          const cursor = new Date(effectiveToday);
+          const cursor = new Date(istToday);
           cursor.setDate(cursor.getDate() - 1);
 
           let found = 0;
@@ -264,11 +251,11 @@ export default function TrackerPage() {
 
           const d = new Date(date);
           d.setHours(0, 0, 0, 0);
-          const dayBeforeToday = new Date(effectiveToday);
+          const dayBeforeToday = new Date(istToday);
           dayBeforeToday.setDate(dayBeforeToday.getDate() - 1);
-          const isEffectiveToday = d.getTime() === effectiveToday.getTime();
+          const isISTToday = d.getTime() === istToday.getTime();
 
-          if (isEffectiveToday) return true;
+          if (isISTToday) return true;
           return (
             d.getTime() >= earliestAllowed.getTime() &&
             d.getTime() <= dayBeforeToday.getTime()
@@ -321,7 +308,7 @@ export default function TrackerPage() {
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      activityDate: new Date(),
+      activityDate: getISTBusinessDate(),
       projectEntries: [
         {
           currentWorkingDepartment: "",
@@ -413,7 +400,17 @@ export default function TrackerPage() {
         await refreshUser();
 
         // Reset form to default values
-        form.reset();
+        form.reset({
+          activityDate: getISTBusinessDate(),
+          projectEntries: [
+            {
+              currentWorkingDepartment: "",
+              hoursSpent: 0,
+              projectId: "",
+              taskDescription: "",
+            },
+          ],
+        });
         // Redirect to dashboard with date parameter (ISO) so dashboard can open & scroll to the exact day
         const dateParam = format(values.activityDate, "yyyy-MM-dd");
         router.push(`/?date=${dateParam}`);
