@@ -106,6 +106,7 @@ export function LeaveApplicationForm({
   const [leaveTypes, setLeaveTypes] = useState<LeaveTypeResponse[]>([]);
   const [selectedDurationType, setSelectedDurationType] = useState<string>("");
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
+  const [dateRangeOpen, setDateRangeOpen] = useState(false);
 
   // Calendar disabled matcher: only block extremely old dates (optional).
   // Removed non-working-day logic so users can pick any date.
@@ -452,7 +453,7 @@ export function LeaveApplicationForm({
                 render={({ field }) => (
                   <FormItem className="flex flex-col">
                     <FormLabel>Leave Date Range</FormLabel>
-                    <Popover>
+                    <Popover open={dateRangeOpen} onOpenChange={setDateRangeOpen}>
                       <PopoverTrigger asChild>
                         <FormControl>
                           <Button
@@ -488,6 +489,9 @@ export function LeaveApplicationForm({
                           selected={dateRange}
                           onSelect={(range) => {
                             setDateRange(range);
+                            if (range?.from && range?.to) {
+                              setDateRangeOpen(false);
+                            }
                           }}
                           numberOfMonths={2}
                           disabled={disabledDates}

@@ -21,7 +21,7 @@ import {
   Trash2,
   Loader2,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, getISTBusinessDate } from "@/lib/utils";
 
 import { AppHeader } from "@/app/_components/AppHeader";
 import { PageWrapper } from "@/app/_components/wrapper";
@@ -53,6 +53,11 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
+import {
+  SearchCombobox,
+  SearchComboboxOption,
+} from "@/components/ui/search-combobox";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import apiClient from "@/lib/api-client";
 import { API_PATHS, DATE_FORMATS, VALIDATION } from "@/lib/constants";
 import { useAuth } from "@/hooks/use-auth";
@@ -63,6 +68,7 @@ interface TimesheetEntry {
   id?: number | string;
   entryId?: number | string;
   projectId?: number;
+  departmentId?: number;
   departmentName: string;
   projectName?: string;
   taskDescription: string;
@@ -120,6 +126,8 @@ interface MonthlyTimesheetResponse {
 // Flattened row for table display
 interface TimesheetRow {
   sno: number;
+  department?: string;
+  departmentId?: number;
   project: string;
   activities: string;
   date: string;
@@ -259,9 +267,15 @@ export default function DashboardPage() {
   const { isLoading: authLoading, user } = useAuth();
   const targetDateParam = searchParams.get("date");
   const [currentMonth, setCurrentMonth] = useState<Date>(() => {
-    const date = new Date();
-    date.setMonth(date.getMonth() - 1);
-    return date;
+    const today = new Date();
+    const cycleStartsOn = 26;
+    let cycleStart = new Date(today);
+    if (today.getDate() < cycleStartsOn) {
+      cycleStart.setMonth(today.getMonth() - 1);
+    }
+    cycleStart.setDate(cycleStartsOn);
+    cycleStart.setHours(0, 0, 0, 0);
+    return cycleStart;
   });
   const [monthlyData, setMonthlyData] =
     useState<MonthlyTimesheetResponse | null>(null);
@@ -273,11 +287,27 @@ export default function DashboardPage() {
   const [isExporting, setIsExporting] = useState(false);
   const [viewMode, setViewMode] = useState<"table" | "grid">(() => {
     if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("timesheet-view-mode");
+      const userRaw = localStorage.getItem("current-user-id");
+      const userId = userRaw || undefined;
+      const key = userId ? `timesheet-view-mode-${userId}` : "timesheet-view-mode";
+      const saved = localStorage.getItem(key);
       if (saved === "table" || saved === "grid") return saved;
     }
     return "table";
   });
+
+  // When user changes (login/logout), update viewMode from user-specific key
+  useEffect(() => {
+    if (typeof window !== "undefined" && user?.id) {
+      const key = `timesheet-view-mode-${user.id}`;
+      const saved = localStorage.getItem(key);
+      if (saved === "table" || saved === "grid") {
+        setViewMode(saved);
+      } else {
+        setViewMode("table");
+      }
+    }
+  }, [user?.id]);
   const [selectedDay, setSelectedDay] = useState<DayData | null>(null);
   const [isDaySheetOpen, setIsDaySheetOpen] = useState(false);
   const [highlightedDateApi, setHighlightedDateApi] = useState<string | null>(
@@ -291,9 +321,28 @@ export default function DashboardPage() {
   const [teamSearchLoading, setTeamSearchLoading] = useState(false);
   const [teamSearchError, setTeamSearchError] = useState<string | null>(null);
   const [teamUser, setTeamUser] = useState<any | null>(null);
+
+  // Restore from browser history on mount
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const state = window.history.state || {};
+    if (state.__teamDashboard) {
+      setIsTeamMode(!!state.__teamDashboard.isTeamMode);
+      setTeamSearch(state.__teamDashboard.teamSearch || "");
+      setTeamUser(state.__teamDashboard.teamUser || null);
+    }
+  }, []);
+
+  // Store current user id in localStorage for preference keying
+  useEffect(() => {
+    if (typeof window !== "undefined" && user?.id) {
+      localStorage.setItem("current-user-id", String(user.id));
+    }
+  }, [user?.id]);
   const [refreshTick, setRefreshTick] = useState(0);
   const [editingRowKey, setEditingRowKey] = useState<string | null>(null);
   const [editingForm, setEditingForm] = useState({
+    departmentId: "",
     project: "",
     projectId: "",
     date: "",
@@ -392,10 +441,196 @@ export default function DashboardPage() {
 
   const canManageTeamEntries = canEditTeamLifeline;
 
+  const fetchTeamMemberOptions = async (
+    query: string
+  ): Promise<SearchComboboxOption[]> => {
+    if (!user?.orgId) return [];
+
+    try {
+      const res = await apiClient.get(API_PATHS.EMPLOYEES, {
+        params: { orgId: user.orgId, q: query, page: 1, limit: 8 },
+      });
+
+      const responseData = Array.isArray(res.data)
+        ? res.data
+        : res.data?.data || [];
+      const items = Array.isArray(responseData)
+        ? responseData
+        : responseData.data || [];
+
+      return items
+        .map((item: any) => ({
+          value: String(item?.email ?? "").trim(),
+          label: String(item?.name ?? item?.email ?? "").trim(),
+          description: String(item?.email ?? "").trim(),
+        }))
+        .filter((item: SearchComboboxOption) => Boolean(item.value));
+    } catch (err: unknown) {
+      console.error("Failed to fetch team member suggestions:", err);
+      return [];
+    }
+  };
+
+  const searchTeamMemberByEmail = async (rawValue: string, persist = true) => {
+    const normalizedValue = rawValue.trim();
+    if (!normalizedValue) return;
+
+    setTeamSearch(normalizedValue);
+    // Persist in browser history
+    if (persist && typeof window !== "undefined") {
+      const state = window.history.state || {};
+      window.history.replaceState({
+        ...state,
+        __teamDashboard: {
+          ...state.__teamDashboard,
+          isTeamMode: true,
+          teamSearch: normalizedValue,
+        },
+      }, "");
+    }
+    setTeamSearchLoading(true);
+    setTeamSearchError(null);
+
+    try {
+      const res = await apiClient.get(API_PATHS.EMPLOYEE_SEARCH, {
+        params: { email: normalizedValue },
+        headers: {
+          "Cache-Control": "no-cache",
+          Pragma: "no-cache",
+        },
+      });
+      const data = res.data;
+      const searchedUser = data?.user ?? data;
+
+      if (isSelfAsTeamMember(searchedUser)) {
+        setTeamUser(null);
+        setMonthlyData(null);
+        setTeamSearchError("You cannot select yourself.");
+        toast.error("You cannot select yourself.");
+        if (persist && typeof window !== "undefined") {
+          const state = window.history.state || {};
+          window.history.replaceState({
+            ...state,
+            __teamDashboard: {
+              ...state.__teamDashboard,
+              teamUser: null,
+            },
+          }, "");
+        }
+        return;
+      }
+
+      const fallbackEmail = normalizedValue;
+
+      let normalizedTeamUser = null;
+      if (data && data.days && data.user) {
+        normalizedTeamUser = {
+          ...data.user,
+          searchedEmail: fallbackEmail,
+          backfill:
+            (data.user as any)?.backfill ?? (data as any)?.backfill ?? null,
+        };
+        setMonthlyData(data as MonthlyTimesheetResponse);
+        setTeamUser(normalizedTeamUser);
+        setTeamSearchError(null);
+        toast.success("Team member data loaded");
+      } else if (data?.user) {
+        normalizedTeamUser = {
+          ...data.user,
+          searchedEmail: fallbackEmail,
+          backfill:
+            (data.user as any)?.backfill ?? (data as any)?.backfill ?? null,
+        };
+        setTeamUser(normalizedTeamUser);
+        setTeamSearchError(null);
+        toast.success("Team member selected");
+      } else {
+        normalizedTeamUser = {
+          ...(data || {}),
+          searchedEmail: fallbackEmail,
+        };
+        setTeamUser(normalizedTeamUser);
+        setTeamSearchError(null);
+        toast.success("Team member selected");
+      }
+      if (persist && typeof window !== "undefined" && normalizedTeamUser) {
+        const state = window.history.state || {};
+        window.history.replaceState({
+          ...state,
+          __teamDashboard: {
+            ...state.__teamDashboard,
+            teamUser: normalizedTeamUser,
+            isTeamMode: true,
+          },
+        }, "");
+      }
+    } catch (err: unknown) {
+      console.error("Team search error:", err);
+      setTeamSearchError("No user found");
+      toast.error("Team search failed");
+    } finally {
+      setTeamSearchLoading(false);
+    }
+  };
+  // Restore from browser history on mount and fetch data if needed
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const state = window.history.state || {};
+    if (state.__teamDashboard) {
+      setIsTeamMode(!!state.__teamDashboard.isTeamMode);
+      setTeamSearch(state.__teamDashboard.teamSearch || "");
+      setTeamUser(state.__teamDashboard.teamUser || null);
+      if (state.__teamDashboard.isTeamMode && state.__teamDashboard.teamSearch) {
+        searchTeamMemberByEmail(state.__teamDashboard.teamSearch, false);
+      }
+    }
+  }, []);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const state = window.history.state || {};
+    if (isTeamMode) {
+      window.history.replaceState({
+        ...state,
+        __teamDashboard: {
+          ...state.__teamDashboard,
+          isTeamMode: true,
+          teamUser,
+          teamSearch,
+        },
+      }, "");
+    } else {
+      const { __teamDashboard, ...rest } = state;
+      window.history.replaceState(rest, "");
+    }
+  }, [isTeamMode, teamUser, teamSearch]);
+
   useEffect(() => {
     setIsEditingLifeline(false);
     setLifelineDraft("");
+    // Persist team mode and user on change
+    if (typeof window !== "undefined") {
+      localStorage.setItem("team-dashboard-mode", String(isTeamMode));
+      if (!isTeamMode) {
+        localStorage.removeItem("team-dashboard-user");
+        localStorage.removeItem("team-dashboard-search");
+      }
+    }
   }, [isTeamMode, teamUser?.id]);
+  // Restore persisted team dashboard state on mount
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const persistedMode = localStorage.getItem("team-dashboard-mode") === "true";
+    const persistedUserRaw = localStorage.getItem("team-dashboard-user");
+    const persistedSearch = localStorage.getItem("team-dashboard-search");
+    if (persistedMode && persistedUserRaw) {
+      try {
+        const persistedUser = JSON.parse(persistedUserRaw);
+        setIsTeamMode(true);
+        setTeamUser(persistedUser);
+        if (persistedSearch) setTeamSearch(persistedSearch);
+      } catch {}
+    }
+  }, []);
 
   useEffect(() => {
     if (!targetDateParam || isTeamMode) return;
@@ -599,6 +834,8 @@ export default function DashboardPage() {
         timesheetEntries.forEach((entry) => {
           rows.push({
             sno: sno++,
+            department: entry.departmentName || "-",
+            departmentId: (entry as any).departmentId,
             project: entry.projectName || "-",
             activities: entry.taskDescription || "-",
             date: format(parsedDate, "dd/MM/yyyy"),
@@ -622,8 +859,8 @@ export default function DashboardPage() {
             (entry as any).state === "rejected"
               ? "rejected"
               : (entry as any).state === "pending"
-              ? "pending"
-              : "approved";
+                ? "pending"
+                : "approved";
 
           rows.push({
             sno: sno++,
@@ -895,10 +1132,10 @@ export default function DashboardPage() {
     if (!isTeamMode || !teamUser || !canEditTeamLifeline) return;
     const currentValue = Number(
       (teamUser as any)?.backfill?.limit ??
-        (teamUser as any)?.backfill?.remaining ??
-        (monthlyData as any)?.backfill?.limit ??
-        (monthlyData as any)?.backfill?.remaining ??
-        0
+      (teamUser as any)?.backfill?.remaining ??
+      (monthlyData as any)?.backfill?.limit ??
+      (monthlyData as any)?.backfill?.remaining ??
+      0
     );
     setLifelineDraft(String(Number.isFinite(currentValue) ? currentValue : 0));
     setIsEditingLifeline(true);
@@ -1104,14 +1341,34 @@ export default function DashboardPage() {
 
   const handleStartEdit = (row: TimesheetRow, index: number) => {
     const rowKey = getRowKey(row, index);
+    const mappedDepartmentId =
+      row.departmentId ??
+      teamDepartments.find(
+        (d) =>
+          row.department &&
+          d.name.toLowerCase() === row.department.toLowerCase()
+      )?.id;
+    const departmentKey = mappedDepartmentId ? String(mappedDepartmentId) : "";
+
+    if (departmentKey) {
+      void fetchTeamLoggerProjectsForDepartment(departmentKey);
+    }
+
+    const departmentProjects = departmentKey
+      ? teamProjectsByDepartment[departmentKey] || []
+      : [];
     const mappedProjectId =
       row.projectId ??
+      departmentProjects.find(
+        (p) => p.name.toLowerCase() === row.project.toLowerCase()
+      )?.id ??
       teamProjects.find(
         (p) => p.name.toLowerCase() === row.project.toLowerCase()
       )?.id;
 
     setEditingRowKey(rowKey);
     setEditingForm({
+      departmentId: departmentKey,
       project: row.project,
       projectId: mappedProjectId ? String(mappedProjectId) : "",
       date: row.dateApi ?? "",
@@ -1124,6 +1381,7 @@ export default function DashboardPage() {
     setEditingRowKey(null);
     setConfirmDeleteRowKey(null);
     setEditingForm({
+      departmentId: "",
       project: "",
       projectId: "",
       date: "",
@@ -1155,6 +1413,9 @@ export default function DashboardPage() {
     const selectedDate = editingForm.date;
     const hours = Number(editingForm.hours);
     const taskDescription = editingForm.activities.trim();
+    const selectedDepartmentId = Number(
+      editingForm.departmentId || row.departmentId
+    );
     const selectedProjectId = Number(editingForm.projectId || row.projectId);
     if (
       !Number.isFinite(hours) ||
@@ -1170,6 +1431,11 @@ export default function DashboardPage() {
       toast.error("Invalid activity", {
         description: `Activity should be at least ${VALIDATION.MIN_TASK_DESCRIPTION_LENGTH} characters`,
       });
+      return;
+    }
+
+    if (!Number.isFinite(selectedDepartmentId) || selectedDepartmentId <= 0) {
+      toast.error("Please select a valid department");
       return;
     }
 
@@ -1190,7 +1456,14 @@ export default function DashboardPage() {
       row.entryId
     );
 
-    const payload = {
+    const payloadWithDepartment = {
+      projectId: selectedProjectId,
+      departmentId: selectedDepartmentId,
+      date: selectedDate,
+      hours,
+      activities: taskDescription,
+    };
+    const payloadWithoutDepartment = {
       projectId: selectedProjectId,
       date: selectedDate,
       hours,
@@ -1199,7 +1472,14 @@ export default function DashboardPage() {
 
     setSavingRowKey(rowKey);
     try {
-      await apiClient.patch(path, payload);
+      try {
+        await apiClient.patch(path, payloadWithDepartment);
+      } catch (err: unknown) {
+        if (!isUnknownProperty400(err)) {
+          throw err;
+        }
+        await apiClient.patch(path, payloadWithoutDepartment);
+      }
       toast.success("Entry updated successfully");
       setEditingRowKey(null);
       setRefreshTick((prev) => prev + 1);
@@ -1373,29 +1653,34 @@ export default function DashboardPage() {
 
   return (
     <>
-      <AppHeader
-        crumbs={
-          isTeamMode
-            ? [{ label: "My Dashboard", href: "/" }, { label: "Team Dashboard" }]
-            : [{ label: "My Dashboard" }]
-        }
-        right={
-          canAccessTeamDashboard && !isTeamMode ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setIsTeamMode(true);
-                setTeamSearch("");
-                setTeamSearchError(null);
-                setTeamUser(null);
-              }}
-            >
-              Team Dashboard
-            </Button>
-          ) : null
-        }
-      />
+      {/* Dashboard Tabs Navigation */}
+      <div className="border-b border-border bg-background px-4 pt-4 pb-2 flex items-center">
+        <Tabs value={isTeamMode ? "team" : "my"} onValueChange={(val) => {
+          if (val === "my") {
+            setIsTeamMode(false);
+            setTeamUser(null);
+            setTeamSearch("");
+            setTeamSearchError(null);
+            if (typeof window !== "undefined") {
+              const state = window.history.state || {};
+              const { __teamDashboard, ...rest } = state;
+              window.history.replaceState(rest, "");
+            }
+          } else {
+            setIsTeamMode(true);
+            setTeamSearch("");
+            setTeamSearchError(null);
+            setTeamUser(null);
+          }
+        }}>
+          <TabsList className="gap-2">
+            <TabsTrigger value="my">My Dashboard</TabsTrigger>
+            {canAccessTeamDashboard && (
+              <TabsTrigger value="team">Team Dashboard</TabsTrigger>
+            )}
+          </TabsList>
+        </Tabs>
+      </div>
       <PageWrapper>
         <div className="p-4 md:p-6 space-y-5">
           {/* Billing cycle chip */}
@@ -1413,7 +1698,6 @@ export default function DashboardPage() {
                 label: "Hours Logged",
                 display: String(monthlyData?.totals.timesheetHours || 0),
                 unit: "hrs",
-                sub: "this cycle",
                 icon: Clock,
                 accent: "border-l-[#74808e]",
                 iconBg: "bg-[#e5edf5]",
@@ -1423,7 +1707,6 @@ export default function DashboardPage() {
                 label: "Leave Days",
                 display: String(leaveDaysDisplay),
                 unit: "days",
-                sub: "this cycle",
                 icon: TreePalm,
                 accent: "border-l-amber-400",
                 iconBg: "bg-amber-50",
@@ -1431,9 +1714,21 @@ export default function DashboardPage() {
               },
               {
                 label: "Lifelines",
-                display: String(resolvedBackfill?.remaining ?? 0),
+                display: (() => {
+                  const todayIST = getISTBusinessDate();
+                  const period = monthlyData?.period;
+                  let isCurrentCycle = false;
+                  if (period) {
+                    const start = new Date(period.start);
+                    const end = new Date(period.end);
+                    isCurrentCycle = todayIST >= start && todayIST <= end;
+                  }
+                  const limit = resolvedBackfill?.limit ?? 0;
+                  const remaining = isCurrentCycle ? (resolvedBackfill?.remaining ?? 0) : 0;
+                  return `${remaining}/${limit}`;
+                })(),
                 unit: "",
-                sub: `of ${resolvedBackfill?.limit ?? 0} available`,
+                sub: "",
                 icon: AlertCircle,
                 accent: (resolvedBackfill?.remaining ?? 0) > 0 ? "border-l-emerald-400" : "border-l-amber-400",
                 iconBg: (resolvedBackfill?.remaining ?? 0) > 0 ? "bg-emerald-50" : "bg-amber-50",
@@ -1443,7 +1738,6 @@ export default function DashboardPage() {
                 label: "Payable Days",
                 display: `${payableDays}/${totalCycleDays}`,
                 unit: "",
-                sub: "this cycle",
                 icon: Briefcase,
                 accent: "border-l-[#8a6f5e]",
                 iconBg: "bg-[#f0ebe3]",
@@ -1472,22 +1766,10 @@ export default function DashboardPage() {
                       </span>
                     </div>
                   </div>
-                  {isLoading ? (
-                    <div className="h-8 w-16 bg-secondary-background rounded animate-pulse" />
-                  ) : (
-                    <>
-                      <p className="text-2xl font-bold text-foreground tabular-nums leading-none">
-                        {card.display}
-                        {card.unit && (
-                          <span className="text-sm font-normal text-muted-foreground ml-1">{card.unit}</span>
-                        )}
-                      </p>
-                    </>
-                  )}
                   {isLifelineCard && canShowLifelineEditor ? (
                     isEditingLifeline ? (
-                      <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-                        <span>of</span>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground mt-2">
+                        <p className="text-2xl font-bold text-foreground tabular-nums leading-none mr-2">{card.display}</p>
                         <Input
                           type="text"
                           inputMode="numeric"
@@ -1510,7 +1792,6 @@ export default function DashboardPage() {
                           disabled={isSavingLifeline}
                           className="h-7 w-20"
                         />
-                        <span>available</span>
                         <button
                           type="button"
                           onClick={handleSaveLifeline}
@@ -1535,8 +1816,8 @@ export default function DashboardPage() {
                         </button>
                       </div>
                     ) : (
-                      <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-                        <p>{card.sub}</p>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground mt-2">
+                        <p className="text-2xl font-bold text-foreground tabular-nums leading-none mr-2">{card.display}</p>
                         <button
                           type="button"
                           onClick={handleStartLifelineEdit}
@@ -1548,7 +1829,16 @@ export default function DashboardPage() {
                       </div>
                     )
                   ) : (
-                    <p className="text-xs text-muted-foreground mt-2">{card.sub}</p>
+                    isLoading ? (
+                      <div className="h-8 w-16 bg-secondary-background rounded animate-pulse" />
+                    ) : (
+                      <p className="text-2xl font-bold text-foreground tabular-nums leading-none">
+                        {card.display}
+                        {card.unit && (
+                          <span className="text-sm font-normal text-muted-foreground ml-1">{card.unit}</span>
+                        )}
+                      </p>
+                    )
                   )}
                 </div>
               );
@@ -1587,90 +1877,22 @@ export default function DashboardPage() {
                             Add Activity Log
                           </Button>
                         )}
-                        <Input
+                        <SearchCombobox
                           value={teamSearch}
-                          onChange={(e) => {
-                            setTeamSearch(e.target.value);
+                          onValueChange={(nextValue) => {
+                            setTeamSearch(nextValue);
                             if (teamSearchError) setTeamSearchError(null);
                           }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            (async () => {
-                              if (!teamSearch) return;
-                              setTeamSearchLoading(true);
-                              setTeamSearchError(null);
-                              try {
-                                const res = await apiClient.get(
-                                  API_PATHS.EMPLOYEE_SEARCH,
-                                  {
-                                    params: { email: teamSearch },
-                                    headers: {
-                                      "Cache-Control": "no-cache",
-                                      Pragma: "no-cache",
-                                    },
-                                  }
-                                );
-                                const data = res.data;
-                                const searchedUser = data?.user ?? data;
-
-                                if (isSelfAsTeamMember(searchedUser)) {
-                                  setTeamUser(null);
-                                  setMonthlyData(null);
-                                  setTeamSearchError(
-                                    "You cannot select yourself."
-                                  );
-                                  toast.error(
-                                    "You cannot select yourself."
-                                  );
-                                  return;
-                                }
-
-                                const fallbackEmail = teamSearch.trim();
-
-                                if (data && data.days && data.user) {
-                                  const normalizedTeamUser = {
-                                    ...data.user,
-                                    searchedEmail: fallbackEmail,
-                                    backfill:
-                                      (data.user as any)?.backfill ??
-                                      (data as any)?.backfill ??
-                                      null,
-                                  };
-                                  setMonthlyData(data as MonthlyTimesheetResponse);
-                                  setTeamUser(normalizedTeamUser);
-                                  setTeamSearchError(null);
-                                  toast.success("Team member data loaded");
-                                } else if (data?.user) {
-                                  const normalizedTeamUser = {
-                                    ...data.user,
-                                    searchedEmail: fallbackEmail,
-                                    backfill:
-                                      (data.user as any)?.backfill ??
-                                      (data as any)?.backfill ??
-                                      null,
-                                  };
-                                  setTeamUser(normalizedTeamUser);
-                                  setTeamSearchError(null);
-                                  toast.success("Team member selected");
-                                } else {
-                                  setTeamUser({
-                                    ...(data || {}),
-                                    searchedEmail: fallbackEmail,
-                                  });
-                                  setTeamSearchError(null);
-                                  toast.success("Team member selected");
-                                }
-                              } catch (err: unknown) {
-                                console.error("Team search error:", err);
-                                setTeamSearchError("No user found");
-                                toast.error("Team search failed");
-                              } finally {
-                                setTeamSearchLoading(false);
-                              }
-                            })();
-                          }
-                        }}
-                          placeholder="Search by email and press Enter"
+                          onSelect={(option) => {
+                            void searchTeamMemberByEmail(option.value);
+                          }}
+                          onSubmitValue={(nextValue) => {
+                            void searchTeamMemberByEmail(nextValue);
+                          }}
+                          fetchOptions={fetchTeamMemberOptions}
+                          placeholder="Search by name or email"
+                          searchPlaceholder="Type name or email..."
+                          emptyMessage="No team member found."
                           className="w-[260px]"
                         />
                       </div>
@@ -1684,7 +1906,11 @@ export default function DashboardPage() {
                     <button
                       onClick={() => {
                         setViewMode("table");
-                        localStorage.setItem("timesheet-view-mode", "table");
+                        if (user?.id) {
+                          localStorage.setItem(`timesheet-view-mode-${user.id}`, "table");
+                        } else {
+                          localStorage.setItem("timesheet-view-mode", "table");
+                        }
                       }}
                       title="List view"
                       className={cn(
@@ -1699,7 +1925,11 @@ export default function DashboardPage() {
                     <button
                       onClick={() => {
                         setViewMode("grid");
-                        localStorage.setItem("timesheet-view-mode", "grid");
+                        if (user?.id) {
+                          localStorage.setItem(`timesheet-view-mode-${user.id}`, "grid");
+                        } else {
+                          localStorage.setItem("timesheet-view-mode", "grid");
+                        }
                       }}
                       title="Grid view"
                       className={cn(
@@ -1762,301 +1992,301 @@ export default function DashboardPage() {
                   <p className="text-sm text-muted-foreground">No records found for this period</p>
                 </div>
               ) : viewMode === "grid" ? (
-                  /* Calendar Week View — organized by weeks with day cards */
-                  (() => {
-                    const sortedGridDays = [...(monthlyData?.days ?? [])].sort(
-                      (a, b) =>
-                        new Date(a.date).getTime() - new Date(b.date).getTime()
-                    );
+                /* Calendar Week View — organized by weeks with day cards */
+                (() => {
+                  const sortedGridDays = [...(monthlyData?.days ?? [])].sort(
+                    (a, b) =>
+                      new Date(a.date).getTime() - new Date(b.date).getTime()
+                  );
 
-                    const todayMidnight = new Date();
-                    todayMidnight.setHours(0, 0, 0, 0);
+                  const todayMidnight = new Date();
+                  todayMidnight.setHours(0, 0, 0, 0);
 
-                    // Group days by week
-                    const weeks: (typeof sortedGridDays)[] = [];
-                    let currentWeek: typeof sortedGridDays = [];
-                    let currentWeekNum = 0;
+                  // Group days by week
+                  const weeks: (typeof sortedGridDays)[] = [];
+                  let currentWeek: typeof sortedGridDays = [];
+                  let currentWeekNum = 0;
 
-                    sortedGridDays.forEach((day) => {
-                      const parsedDate = parseISO(day.date);
-                      const dayOfMonth = parsedDate.getDate();
-                      const weekNum = Math.ceil(dayOfMonth / 7);
+                  sortedGridDays.forEach((day) => {
+                    const parsedDate = parseISO(day.date);
+                    const dayOfMonth = parsedDate.getDate();
+                    const weekNum = Math.ceil(dayOfMonth / 7);
 
-                      if (
-                        weekNum !== currentWeekNum &&
-                        currentWeek.length > 0
-                      ) {
-                        weeks.push(currentWeek);
-                        currentWeek = [];
-                      }
-                      currentWeekNum = weekNum;
-                      currentWeek.push(day);
-                    });
-                    if (currentWeek.length > 0) {
+                    if (
+                      weekNum !== currentWeekNum &&
+                      currentWeek.length > 0
+                    ) {
                       weeks.push(currentWeek);
+                      currentWeek = [];
                     }
+                    currentWeekNum = weekNum;
+                    currentWeek.push(day);
+                  });
+                  if (currentWeek.length > 0) {
+                    weeks.push(currentWeek);
+                  }
 
-                    // Helper to get day card data
-                    const getDayCardData = (
-                      day: (typeof sortedGridDays)[0]
-                    ) => {
-                      const parsedDate = parseISO(day.date);
-                      const dayOfWeek = format(parsedDate, "EEEE");
-                      const dayShort = format(parsedDate, "EEE");
-                      const displayDate = format(parsedDate, "dd");
-                      const dayOfMonth = parsedDate.getDate();
-                      const weekOfMonth = Math.ceil(dayOfMonth / 7);
-                      const isSaturday = dayOfWeek === "Saturday";
-                      const is2ndOr4thSaturday =
-                        isSaturday && (weekOfMonth === 2 || weekOfMonth === 4);
-                      const isSunday = dayOfWeek === "Sunday";
-                      const isWeekendOff = is2ndOr4thSaturday || isSunday;
+                  // Helper to get day card data
+                  const getDayCardData = (
+                    day: (typeof sortedGridDays)[0]
+                  ) => {
+                    const parsedDate = parseISO(day.date);
+                    const dayOfWeek = format(parsedDate, "EEEE");
+                    const dayShort = format(parsedDate, "EEE");
+                    const displayDate = format(parsedDate, "dd");
+                    const dayOfMonth = parsedDate.getDate();
+                    const weekOfMonth = Math.ceil(dayOfMonth / 7);
+                    const isSaturday = dayOfWeek === "Saturday";
+                    const is2ndOr4thSaturday =
+                      isSaturday && (weekOfMonth === 2 || weekOfMonth === 4);
+                    const isSunday = dayOfWeek === "Sunday";
+                    const isWeekendOff = is2ndOr4thSaturday || isSunday;
 
-                      const hasTimesheet =
-                        (day.timesheet?.entries?.length ?? 0) > 0;
-                      const hasLeave = (day.leaves?.entries?.length ?? 0) > 0;
-                      const isOff = isWeekendOff || day.isHoliday;
-                      const isUnfilled = !hasTimesheet && !hasLeave && !isOff;
+                    const hasTimesheet =
+                      (day.timesheet?.entries?.length ?? 0) > 0;
+                    const hasLeave = (day.leaves?.entries?.length ?? 0) > 0;
+                    const isOff = isWeekendOff || day.isHoliday;
+                    const isUnfilled = !hasTimesheet && !hasLeave && !isOff;
 
-                      const isToday =
-                        parsedDate.getFullYear() ===
-                          todayMidnight.getFullYear() &&
-                        parsedDate.getMonth() === todayMidnight.getMonth() &&
-                        parsedDate.getDate() === todayMidnight.getDate();
+                    const isToday =
+                      parsedDate.getFullYear() ===
+                      todayMidnight.getFullYear() &&
+                      parsedDate.getMonth() === todayMidnight.getMonth() &&
+                      parsedDate.getDate() === todayMidnight.getDate();
 
-                      const timesheetEntries = day.timesheet?.entries ?? [];
-                      const leaveEntries = day.leaves?.entries ?? [];
-                      const totalHours =
-                        timesheetEntries.reduce((s, e) => s + e.hours, 0) +
-                        leaveEntries.reduce((s, e) => s + e.hours, 0);
+                    const timesheetEntries = day.timesheet?.entries ?? [];
+                    const leaveEntries = day.leaves?.entries ?? [];
+                    const totalHours =
+                      timesheetEntries.reduce((s, e) => s + e.hours, 0) +
+                      leaveEntries.reduce((s, e) => s + e.hours, 0);
 
-                      let status:
-                        | "off"
-                        | "unfilled"
-                        | "filled"
-                        | "rejected"
-                        | "pending" = "filled";
-                      if (isOff) status = "off";
-                      else if (isUnfilled) status = "unfilled";
-                      else if (day.timesheet?.state === "rejected")
-                        status = "rejected";
-                      else if (
-                        leaveEntries.some((e: any) => e.state === "rejected")
-                      )
-                        status = "rejected";
-                      else if (
-                        leaveEntries.some((e: any) => e.state === "pending")
-                      )
-                        status = "pending";
+                    let status:
+                      | "off"
+                      | "unfilled"
+                      | "filled"
+                      | "rejected"
+                      | "pending" = "filled";
+                    if (isOff) status = "off";
+                    else if (isUnfilled) status = "unfilled";
+                    else if (day.timesheet?.state === "rejected")
+                      status = "rejected";
+                    else if (
+                      leaveEntries.some((e: any) => e.state === "rejected")
+                    )
+                      status = "rejected";
+                    else if (
+                      leaveEntries.some((e: any) => e.state === "pending")
+                    )
+                      status = "pending";
 
-                      return {
-                        day,
-                        parsedDate,
-                        dayOfWeek,
-                        dayShort,
-                        displayDate,
-                        isOff,
-                        isUnfilled,
-                        isToday,
-                        totalHours,
-                        status,
-                        timesheetEntries,
-                        leaveEntries,
-                        isHoliday: day.isHoliday,
-                        holidayName: day.holidayName,
-                        is2ndOr4thSaturday,
-                        isSunday,
-                      };
+                    return {
+                      day,
+                      parsedDate,
+                      dayOfWeek,
+                      dayShort,
+                      displayDate,
+                      isOff,
+                      isUnfilled,
+                      isToday,
+                      totalHours,
+                      status,
+                      timesheetEntries,
+                      leaveEntries,
+                      isHoliday: day.isHoliday,
+                      holidayName: day.holidayName,
+                      is2ndOr4thSaturday,
+                      isSunday,
                     };
+                  };
 
-                    return (
-                      <div className="space-y-4">
-                        {weeks.map((weekDays, weekIndex) => {
-                          const weekData = weekDays.map(getDayCardData);
-                          const weekTotalHours = weekData.reduce(
-                            (sum, d) => sum + d.totalHours,
-                            0
-                          );
-                          const unfilledCount = weekData.filter(
-                            (d) => d.isUnfilled
-                          ).length;
+                  return (
+                    <div className="space-y-4">
+                      {weeks.map((weekDays, weekIndex) => {
+                        const weekData = weekDays.map(getDayCardData);
+                        const weekTotalHours = weekData.reduce(
+                          (sum, d) => sum + d.totalHours,
+                          0
+                        );
+                        const unfilledCount = weekData.filter(
+                          (d) => d.isUnfilled
+                        ).length;
 
-                          return (
+                        return (
+                          <div
+                            key={weekIndex}
+                            className="rounded-[4px] border border-border overflow-hidden"
+                            style={{ backgroundColor: "var(--background)" }}
+                          >
+                            {/* Week Header */}
                             <div
-                              key={weekIndex}
-                              className="rounded-[4px] border border-border overflow-hidden"
-                              style={{ backgroundColor: "var(--background)" }}
+                              className="px-3 py-2 border-b border-border flex items-center justify-between"
+                              style={{
+                                backgroundColor:
+                                  "var(--secondary-background)",
+                              }}
                             >
-                              {/* Week Header */}
-                              <div
-                                className="px-3 py-2 border-b border-border flex items-center justify-between"
-                                style={{
-                                  backgroundColor:
-                                    "var(--secondary-background)",
-                                }}
-                              >
-                                <div className="flex items-center gap-2">
-                                  <span
-                                    className="text-xs font-semibold uppercase tracking-wide"
-                                    style={{ color: "var(--foreground)" }}
-                                  >
-                                    Week {weekIndex + 1}
-                                  </span>
-                                  <span
-                                    className="text-xs"
-                                    style={{ color: "var(--muted)" }}
-                                  >
-                                    {format(weekData[0].parsedDate, "MMM dd")} —{" "}
-                                    {format(
-                                      weekData[weekData.length - 1].parsedDate,
-                                      "MMM dd"
-                                    )}
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-3 text-xs">
-                                  {weekTotalHours > 0 && (
-                                    <span style={{ color: "var(--muted)" }}>
-                                      {weekTotalHours}h
-                                    </span>
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className="text-xs font-semibold uppercase tracking-wide"
+                                  style={{ color: "var(--foreground)" }}
+                                >
+                                  Week {weekIndex + 1}
+                                </span>
+                                <span
+                                  className="text-xs"
+                                  style={{ color: "var(--muted)" }}
+                                >
+                                  {format(weekData[0].parsedDate, "MMM dd")} —{" "}
+                                  {format(
+                                    weekData[weekData.length - 1].parsedDate,
+                                    "MMM dd"
                                   )}
-                                  {unfilledCount > 0 && (
-                                    <span
-                                      className="font-medium"
-                                      style={{
-                                        color: "var(--color-orange-text)",
-                                      }}
-                                    >
-                                      {unfilledCount} pending
-                                    </span>
-                                  )}
-                                </div>
+                                </span>
                               </div>
+                              <div className="flex items-center gap-3 text-xs">
+                                {weekTotalHours > 0 && (
+                                  <span style={{ color: "var(--muted)" }}>
+                                    {weekTotalHours}h
+                                  </span>
+                                )}
+                                {unfilledCount > 0 && (
+                                  <span
+                                    className="font-medium"
+                                    style={{
+                                      color: "var(--color-orange-text)",
+                                    }}
+                                  >
+                                    {unfilledCount} pending
+                                  </span>
+                                )}
+                              </div>
+                            </div>
 
-                              {/* Week Days Grid */}
-                              <div
-                                className="grid grid-cols-7 divide-x divide-border"
-                                style={{ borderColor: "var(--border)" }}
-                              >
-                                {weekData.map((dayData) => {
-                                  // Determine cell background
-                                  let cellBg = "var(--background)";
-                                  if (dayData.isHoliday)
-                                    cellBg = "#ddeee6";
-                                  else if (dayData.isSunday || dayData.is2ndOr4thSaturday)
-                                    cellBg = "var(--secondary-background)";
-                                  else if (dayData.isUnfilled)
-                                    cellBg = "#ede4c8";
-                                  else if (dayData.status === "rejected")
-                                    cellBg = "#eddcdc";
-                                  else if (dayData.status === "pending")
-                                    cellBg = "#ece6cc";
+                            {/* Week Days Grid */}
+                            <div
+                              className="grid grid-cols-7 divide-x divide-border"
+                              style={{ borderColor: "var(--border)" }}
+                            >
+                              {weekData.map((dayData) => {
+                                // Determine cell background
+                                let cellBg = "var(--background)";
+                                if (dayData.isHoliday)
+                                  cellBg = "#ddeee6";
+                                else if (dayData.isSunday || dayData.is2ndOr4thSaturday)
+                                  cellBg = "var(--secondary-background)";
+                                else if (dayData.isUnfilled)
+                                  cellBg = "#ede4c8";
+                                else if (dayData.status === "rejected")
+                                  cellBg = "#eddcdc";
+                                else if (dayData.status === "pending")
+                                  cellBg = "#ece6cc";
 
-                                  // Left-border accent via inset shadow (doesn't break divide-x)
-                                  let accentShadow = "";
-                                  if (dayData.isHoliday)
-                                    accentShadow = "inset 3px 0 0 #5a8a6a";
-                                  else if (dayData.isUnfilled)
-                                    accentShadow = "inset 3px 0 0 #b89848";
-                                  else if (dayData.status === "rejected")
-                                    accentShadow = "inset 3px 0 0 #a05858";
-                                  else if (dayData.status === "pending")
-                                    accentShadow = "inset 3px 0 0 #8a7838";
+                                // Left-border accent via inset shadow (doesn't break divide-x)
+                                let accentShadow = "";
+                                if (dayData.isHoliday)
+                                  accentShadow = "inset 3px 0 0 #5a8a6a";
+                                else if (dayData.isUnfilled)
+                                  accentShadow = "inset 3px 0 0 #b89848";
+                                else if (dayData.status === "rejected")
+                                  accentShadow = "inset 3px 0 0 #a05858";
+                                else if (dayData.status === "pending")
+                                  accentShadow = "inset 3px 0 0 #8a7838";
 
-                                  const boxShadow = accentShadow || undefined;
+                                const boxShadow = accentShadow || undefined;
 
-                                  return (
-                                    <div
-                                      key={dayData.day.date}
-                                      className={`min-h-[110px] p-2.5 relative cursor-pointer hover:brightness-[0.97] transition-all rounded-[4px]${dayData.isToday ? " today-cell" : ""}`}
-                                      style={{
-                                        backgroundColor: cellBg,
-                                        borderColor: "var(--border)",
-                                        boxShadow,
-                                      }}
-                                      onClick={() => {
-                                        setSelectedDay(dayData.day);
-                                        setIsDaySheetOpen(true);
-                                      }}
-                                    >
-                                      {/* Day Header */}
-                                      <div className="flex items-start justify-between mb-1.5">
-                                        <div className="flex flex-col">
-                                          <span
-                                            className="text-lg font-semibold leading-none"
-                                            style={{
-                                              color: "var(--foreground)",
-                                            }}
-                                          >
-                                            {dayData.displayDate}
-                                          </span>
-                                          <span
-                                            className="text-xs uppercase mt-0.5"
-                                            style={{ color: "var(--muted)" }}
-                                          >
-                                            {dayData.dayShort}
-                                          </span>
-                                        </div>
-                                        {dayData.totalHours > 0 && (
-                                          <span
-                                            className="text-xs font-semibold px-1.5 py-0.5 rounded-[3px]"
-                                            style={{
-                                              backgroundColor:
-                                                dayData.status === "rejected"
-                                                  ? "#ecdcdc"
-                                                  : dayData.status === "pending"
+                                return (
+                                  <div
+                                    key={dayData.day.date}
+                                    className={`min-h-[110px] p-2.5 relative cursor-pointer hover:brightness-[0.97] transition-all rounded-[4px]${dayData.isToday ? " today-cell" : ""}`}
+                                    style={{
+                                      backgroundColor: cellBg,
+                                      borderColor: "var(--border)",
+                                      boxShadow,
+                                    }}
+                                    onClick={() => {
+                                      setSelectedDay(dayData.day);
+                                      setIsDaySheetOpen(true);
+                                    }}
+                                  >
+                                    {/* Day Header */}
+                                    <div className="flex items-start justify-between mb-1.5">
+                                      <div className="flex flex-col">
+                                        <span
+                                          className="text-lg font-semibold leading-none"
+                                          style={{
+                                            color: "var(--foreground)",
+                                          }}
+                                        >
+                                          {dayData.displayDate}
+                                        </span>
+                                        <span
+                                          className="text-xs uppercase mt-0.5"
+                                          style={{ color: "var(--muted)" }}
+                                        >
+                                          {dayData.dayShort}
+                                        </span>
+                                      </div>
+                                      {dayData.totalHours > 0 && (
+                                        <span
+                                          className="text-xs font-semibold px-1.5 py-0.5 rounded-[3px]"
+                                          style={{
+                                            backgroundColor:
+                                              dayData.status === "rejected"
+                                                ? "#ecdcdc"
+                                                : dayData.status === "pending"
                                                   ? "#ece6cc"
                                                   : dayData.status === "filled"
-                                                  ? "#daeae2"
-                                                  : "var(--secondary-background)",
-                                              color:
-                                                dayData.status === "rejected"
-                                                  ? "#803838"
-                                                  : dayData.status === "pending"
+                                                    ? "#daeae2"
+                                                    : "var(--secondary-background)",
+                                            color:
+                                              dayData.status === "rejected"
+                                                ? "#803838"
+                                                : dayData.status === "pending"
                                                   ? "#786020"
                                                   : dayData.status === "filled"
-                                                  ? "#386050"
-                                                  : "var(--foreground)",
-                                            }}
-                                          >
-                                            {dayData.totalHours}h
-                                          </span>
-                                        )}
-                                      </div>
+                                                    ? "#386050"
+                                                    : "var(--foreground)",
+                                          }}
+                                        >
+                                          {dayData.totalHours}h
+                                        </span>
+                                      )}
+                                    </div>
 
-                                      {/* Day Content */}
-                                      <div className="space-y-0.5">
-                                        {/* Off day indicator */}
-                                        {dayData.isOff && (
-                                          <div
-                                            className="text-xs font-medium"
-                                            style={{
-                                              color: dayData.isHoliday
-                                                ? "#3a6a4a"
-                                                : "var(--muted)",
-                                            }}
-                                          >
-                                            {dayData.isHoliday
-                                              ? "Holiday"
-                                              : dayData.isSunday
+                                    {/* Day Content */}
+                                    <div className="space-y-0.5">
+                                      {/* Off day indicator */}
+                                      {dayData.isOff && (
+                                        <div
+                                          className="text-xs font-medium"
+                                          style={{
+                                            color: dayData.isHoliday
+                                              ? "#3a6a4a"
+                                              : "var(--muted)",
+                                          }}
+                                        >
+                                          {dayData.isHoliday
+                                            ? "Holiday"
+                                            : dayData.isSunday
                                               ? "Sunday"
                                               : "Off"}
+                                        </div>
+                                      )}
+
+                                      {/* Holiday name */}
+                                      {dayData.isHoliday &&
+                                        dayData.holidayName && (
+                                          <div
+                                            className="text-xs truncate"
+                                            style={{ color: "#3a6a4a" }}
+                                          >
+                                            {dayData.holidayName}
                                           </div>
                                         )}
 
-                                        {/* Holiday name */}
-                                        {dayData.isHoliday &&
-                                          dayData.holidayName && (
-                                            <div
-                                              className="text-xs truncate"
-                                              style={{ color: "#3a6a4a" }}
-                                            >
-                                              {dayData.holidayName}
-                                            </div>
-                                          )}
-
-                                        {/* Timesheet entries */}
-                                        {dayData.timesheetEntries.length >
-                                          0 && (
+                                      {/* Timesheet entries */}
+                                      {dayData.timesheetEntries.length >
+                                        0 && (
                                           <div className="space-y-1">
                                             {dayData.timesheetEntries.map(
                                               (entry, i) => (
@@ -2084,49 +2314,49 @@ export default function DashboardPage() {
                                                   </span>
                                                   {dayData.day.timesheet
                                                     ?.state === "rejected" && (
-                                                    <span
-                                                      className="flex-shrink-0"
-                                                      style={{
-                                                        color: "#903030",
-                                                      }}
-                                                    >
-                                                      ×
-                                                    </span>
-                                                  )}
+                                                      <span
+                                                        className="flex-shrink-0"
+                                                        style={{
+                                                          color: "#903030",
+                                                        }}
+                                                      >
+                                                        ×
+                                                      </span>
+                                                    )}
                                                 </div>
                                               )
                                             )}
                                           </div>
                                         )}
 
-                                        {/* Leave entries */}
-                                        {dayData.leaveEntries.length > 0 && (
-                                          <div className="space-y-1">
-                                            {dayData.leaveEntries.map(
-                                              (entry: any, i) => (
-                                                <div
-                                                  key={i}
-                                                  className="text-xs truncate flex items-center gap-1"
+                                      {/* Leave entries */}
+                                      {dayData.leaveEntries.length > 0 && (
+                                        <div className="space-y-1">
+                                          {dayData.leaveEntries.map(
+                                            (entry: any, i) => (
+                                              <div
+                                                key={i}
+                                                className="text-xs truncate flex items-center gap-1"
+                                              >
+                                                <span
+                                                  className="font-medium truncate"
+                                                  style={{
+                                                    color:
+                                                      "var(--foreground)",
+                                                  }}
                                                 >
-                                                  <span
-                                                    className="font-medium truncate"
-                                                    style={{
-                                                      color:
-                                                        "var(--foreground)",
-                                                    }}
-                                                  >
-                                                    {entry.leaveType.name}
-                                                  </span>
-                                                  <span
-                                                    className="font-medium flex-shrink-0"
-                                                    style={{
-                                                      color: "var(--muted)",
-                                                    }}
-                                                  >
-                                                    {entry.hours}h
-                                                  </span>
-                                                  {entry.state ===
-                                                    "pending" && (
+                                                  {entry.leaveType.name}
+                                                </span>
+                                                <span
+                                                  className="font-medium flex-shrink-0"
+                                                  style={{
+                                                    color: "var(--muted)",
+                                                  }}
+                                                >
+                                                  {entry.hours}h
+                                                </span>
+                                                {entry.state ===
+                                                  "pending" && (
                                                     <span
                                                       className="flex-shrink-0"
                                                       style={{
@@ -2136,8 +2366,8 @@ export default function DashboardPage() {
                                                       ○
                                                     </span>
                                                   )}
-                                                  {entry.state ===
-                                                    "rejected" && (
+                                                {entry.state ===
+                                                  "rejected" && (
                                                     <span
                                                       className="flex-shrink-0"
                                                       style={{
@@ -2147,491 +2377,574 @@ export default function DashboardPage() {
                                                       ×
                                                     </span>
                                                   )}
-                                                </div>
-                                              )
-                                            )}
-                                          </div>
-                                        )}
+                                              </div>
+                                            )
+                                          )}
+                                        </div>
+                                      )}
 
-                                      </div>
                                     </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })()
-                ) : (
-                  <>
-                    {/* Desktop Table */}
-                    <div className="hidden md:block">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="whitespace-nowrap w-16">
-                              Sr
-                            </TableHead>
-                            <TableHead className="whitespace-nowrap w-28 text-center">
-                              Date
-                            </TableHead>
-                            <TableHead className="whitespace-nowrap w-28">
-                              Day
-                            </TableHead>
-                            <TableHead className="whitespace-nowrap w-20 text-center">
-                              Total
-                            </TableHead>
-                            <TableHead className="whitespace-nowrap w-32">
-                              Project
-                            </TableHead>
-                            <TableHead className="whitespace-nowrap w-20 text-center">
-                              Hours
-                            </TableHead>
-                            <TableHead>Activities</TableHead>
-                            {isTeamMode && canManageTeamEntries && (
-                              <TableHead className="whitespace-nowrap w-32 text-center">
-                                Actions
-                              </TableHead>
-                            )}
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {timesheetRows.map((row, index) => {
-                            // Check if this row has the same date as the previous/next row
-                            const prevRow =
-                              index > 0 ? timesheetRows[index - 1] : null;
-                            const nextRow =
-                              index < timesheetRows.length - 1
-                                ? timesheetRows[index + 1]
-                                : null;
-                            const isSameDateAsPrev =
-                              prevRow && prevRow.date === row.date;
-                            const isSameDateAsNext =
-                              nextRow && nextRow.date === row.date;
-
-                            let bgColor: string | undefined;
-                            let isColored = false;
-
-                            if (
-                              (row.isLeave && row.leaveStatus === "rejected") ||
-                              row.timesheetState === "rejected"
-                            ) {
-                              bgColor = "#f0c0c0";
-                              isColored = true;
-                            } else if (
-                              row.isLeave &&
-                              row.leaveStatus === "pending"
-                            ) {
-                              bgColor = "#f5eab0";
-                              isColored = true;
-                            } else if (
-                              row.isLeave && row.leaveStatus === "approved"
-                            ) {
-                              bgColor = "#c8e4d4";
-                              isColored = true;
-                            } else if (row.isHoliday) {
-                              bgColor = "#c8e4d4";
-                              isColored = true;
-                            } else if (row.isWeekend) {
-                              bgColor = "var(--secondary-background)";
-                              isColored = true;
-                            } else {
-                              bgColor = "var(--background)";
-                            }
-
-                            const rowKey = getRowKey(row, index);
-                            const canManageEntry =
-                              isTeamMode &&
-                              canManageTeamEntries &&
-                              !row.isLeave &&
-                              Boolean(row.entryId);
-                            const isEditing =
-                              canManageTeamEntries && editingRowKey === rowKey;
-                            const isSaving = savingRowKey === rowKey;
-                            const isDeleting = deletingRowKey === rowKey;
-                            const isConfirmingDelete = confirmDeleteRowKey === rowKey;
-                            const isTargetDateRow =
-                              highlightedDateApi !== null &&
-                              row.dateApi === highlightedDateApi;
-
-                            return (
-                              <TableRow
-                                key={`${row.date}-${index}`}
-                                data-date-api={row.dateApi ?? undefined}
-                                style={{
-                                  backgroundColor: bgColor,
-                                  borderBottom: isSameDateAsNext
-                                    ? "none"
-                                    : undefined,
-                                  borderTop: !isSameDateAsPrev && index > 0
-                                    ? "2px solid var(--border)"
-                                    : undefined,
-                                  boxShadow: isTargetDateRow
-                                    ? "inset 5px 0 0 #2f2f2f, 0 0 0 2px rgba(0, 0, 0, 0.22)"
-                                    : undefined,
-                                }}
-                                className={cn(
-                                  isColored ? "hover:opacity-95" : "",
-                                  isTargetDateRow && "animate-[pulse_1s_ease-in-out_3]"
-                                )}
-                              >
-                                <TableCell className="px-3 py-2.5 text-sm text-muted-foreground whitespace-nowrap">
-                                  {!isSameDateAsPrev
-                                    ? dateSerialMap.get(row.date) ?? ""
-                                    : ""}
-                                </TableCell>
-
-                                <TableCell className="px-3 py-2.5 text-sm text-foreground whitespace-nowrap text-center">
-                                  {isEditing ? (
-                                    <Input
-                                      type="date"
-                                      value={editingForm.date}
-                                      onChange={(e) =>
-                                        setEditingForm((prev) => ({
-                                          ...prev,
-                                          date: e.target.value,
-                                        }))
-                                      }
-                                      className="h-8 w-36"
-                                    />
-                                  ) : !isSameDateAsPrev ? (
-                                    row.date
-                                  ) : (
-                                    ""
-                                  )}
-                                </TableCell>
-                                <TableCell className="px-3 py-2.5 text-sm text-foreground whitespace-nowrap">
-                                  {!isSameDateAsPrev ? row.day : ""}
-                                </TableCell>
-                                <TableCell className="px-3 py-2.5 text-sm text-center whitespace-nowrap font-semibold">
-                                  {!isSameDateAsPrev ? (
-                                    <span style={{ color: "var(--foreground)" }}>
-                                      {dailyTotals.get(row.date) ?? 0}h
-                                    </span>
-                                  ) : ""}
-                                </TableCell>
-                                <TableCell className="px-3 py-2.5 text-sm text-foreground whitespace-nowrap">
-                                  {isEditing ? (
-                                    <select
-                                      value={editingForm.projectId}
-                                      onChange={(e) =>
-                                        setEditingForm((prev) => ({
-                                          ...prev,
-                                          projectId: e.target.value,
-                                          project:
-                                            teamProjects.find(
-                                              (p) =>
-                                                String(p.id) === e.target.value
-                                            )?.name ?? prev.project,
-                                        }))
-                                      }
-                                      className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
-                                      disabled={projectsLoading}
-                                    >
-                                      <option value="">
-                                        {projectsLoading
-                                          ? "Loading projects..."
-                                          : "Select project"}
-                                      </option>
-                                      {teamProjects.map((project) => (
-                                        <option
-                                          key={project.id}
-                                          value={String(project.id)}
-                                        >
-                                          {project.name}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  ) : (
-                                    row.project
-                                  )}
-                                </TableCell>
-                                <TableCell className="px-3 py-2.5 text-sm text-foreground text-center font-medium whitespace-nowrap">
-                                  {isEditing ? (
-                                    <Input
-                                      type="text"
-                                      inputMode="decimal"
-                                      value={editingForm.hours}
-                                      onChange={(e) => {
-                                        const val = e.target.value.replace(/[^0-9.]/g, "");
-                                        setEditingForm((prev) => ({
-                                          ...prev,
-                                          hours: val,
-                                        }));
-                                      }}
-                                      className="h-8 w-16 text-center"
-                                    />
-                                  ) : (
-                                    row.hours
-                                  )}
-                                </TableCell>
-                                <TableCell className="px-3 py-2.5 text-sm text-foreground">
-                                  {isEditing ? (
-                                    <Input
-                                      type="text"
-                                      value={editingForm.activities}
-                                      onChange={(e) =>
-                                        setEditingForm((prev) => ({
-                                          ...prev,
-                                          activities: e.target.value,
-                                        }))
-                                      }
-                                      className="h-8"
-                                    />
-                                  ) : (
-                                    <>
-                                      {row.activities}
-                                      {row.leaveStatus === "pending" && (
-                                        <span
-                                          className="font-semibold ml-1"
-                                          style={{ color: "#806020" }}
-                                        >
-                                          · Pending approval
-                                        </span>
-                                      )}
-                                      {row.leaveStatus === "rejected" && (
-                                        <span
-                                          className="font-semibold ml-1"
-                                          style={{ color: "#903030" }}
-                                        >
-                                          · Rejected
-                                        </span>
-                                      )}
-                                      {row.leaveStatus === "approved" && (
-                                        <span
-                                          className="font-semibold ml-1"
-                                          style={{ color: "#2d6647" }}
-                                        >
-                                          · Approved
-                                        </span>
-                                      )}
-                                      {!row.isLeave && row.timesheetState === "rejected" && (
-                                        <span
-                                          className="font-semibold ml-1"
-                                          style={{ color: "#903030" }}
-                                        >
-                                          · Rejected
-                                        </span>
-                                      )}
-                                    </>
-                                  )}
-                                </TableCell>
-                                {isTeamMode && canManageTeamEntries && (
-                                  <TableCell className="px-3 py-2.5 text-center">
-                                    {canManageEntry ? (
-                                      <div className="inline-flex items-center gap-1.5">
-                                        {isEditing ? (
-                                          <>
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                handleSaveEdit(row, index)
-                                              }
-                                              disabled={isSaving || isDeleting}
-                                              className="h-7 w-7 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background disabled:opacity-40 disabled:cursor-not-allowed"
-                                              title="Save changes"
-                                            >
-                                              {isSaving ? (
-                                                <Loader2 className="h-3.5 w-3.5 animate-spin text-foreground" />
-                                              ) : (
-                                                <Check className="h-3.5 w-3.5 text-emerald-600" />
-                                              )}
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={handleCancelEdit}
-                                              disabled={isSaving || isDeleting}
-                                              className="h-7 w-7 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background disabled:opacity-40 disabled:cursor-not-allowed"
-                                              title="Cancel editing"
-                                            >
-                                              <X className="h-3.5 w-3.5 text-red-600" />
-                                            </button>
-                                          </>
-                                        ) : isConfirmingDelete ? (
-                                          <div className="inline-flex items-center gap-1.5">
-                                            <span className="text-xs text-muted-foreground whitespace-nowrap">Are you sure you want to delete this entry?</span>
-                                            <button
-                                              type="button"
-                                              onClick={() => {
-                                                setConfirmDeleteRowKey(null);
-                                                handleDeleteEntry(row, index);
-                                              }}
-                                              disabled={isDeleting}
-                                              className="h-7 w-7 rounded-md border border-red-300 bg-red-50 flex items-center justify-center hover:bg-red-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                                              title="Confirm delete"
-                                            >
-                                              {isDeleting ? (
-                                                <Loader2 className="h-3.5 w-3.5 animate-spin text-red-600" />
-                                              ) : (
-                                                <Trash2 className="h-3.5 w-3.5 text-red-600" />
-                                              )}
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={() => setConfirmDeleteRowKey(null)}
-                                              disabled={isDeleting}
-                                              className="h-7 w-7 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background disabled:opacity-40 disabled:cursor-not-allowed"
-                                              title="Cancel delete"
-                                            >
-                                              <X className="h-3.5 w-3.5 text-foreground" />
-                                            </button>
-                                          </div>
-                                        ) : (
-                                          <>
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                handleStartEdit(row, index)
-                                              }
-                                              disabled={isSaving || isDeleting}
-                                              className="h-7 w-7 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background disabled:opacity-40 disabled:cursor-not-allowed"
-                                              title="Edit entry"
-                                            >
-                                              <Pencil className="h-3.5 w-3.5 text-foreground" />
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                setConfirmDeleteRowKey(rowKey)
-                                              }
-                                              disabled={isSaving || isDeleting}
-                                              className="h-7 w-7 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background disabled:opacity-40 disabled:cursor-not-allowed"
-                                              title="Delete entry"
-                                            >
-                                              <Trash2 className="h-3.5 w-3.5 text-red-600" />
-                                            </button>
-                                          </>
-                                        )}
-                                      </div>
-                                    ) : (
-                                      <span className="text-xs text-muted-foreground">-</span>
-                                    )}
-                                  </TableCell>
-                                )}
-                              </TableRow>
-                            );
-                          })}
-                        </TableBody>
-                      </Table>
-                    </div>
-
-                    {/* Mobile Card View */}
-                    <div className="md:hidden space-y-2 max-h-[60vh] overflow-y-auto">
-                      {timesheetRows.map((row, index) => {
-                        // Check if this row has the same date as the previous row
-                        const prevRow =
-                          index > 0 ? timesheetRows[index - 1] : null;
-                        const isSameDateAsPrev =
-                          prevRow && prevRow.date === row.date;
-
-                        let bgColor = undefined;
-
-                        if (
-                          (row.isLeave && row.leaveStatus === "rejected") ||
-                          row.timesheetState === "rejected"
-                        ) {
-                          bgColor = "var(--color-red-bg)";
-                        } else if (
-                          row.isLeave &&
-                          row.leaveStatus === "pending"
-                        ) {
-                          bgColor = "var(--color-yellow-bg)";
-                        } else if (
-                          row.isHoliday ||
-                          row.isWeekend ||
-                          (row.isLeave && row.leaveStatus === "approved")
-                        ) {
-                          bgColor = "var(--color-green-bg)";
-                        } else {
-                          bgColor = "var(--background)";
-                        }
-
-                        return (
-                          <div
-                            key={`${row.date}-${index}`}
-                            data-date-api={row.dateApi ?? undefined}
-                            className={cn(
-                              "border border-border rounded-[4px] p-4 space-y-2",
-                              highlightedDateApi !== null &&
-                                row.dateApi === highlightedDateApi &&
-                                "animate-[pulse_1s_ease-in-out_3]"
-                            )}
-                            style={{
-                              backgroundColor: bgColor,
-                              boxShadow:
-                                highlightedDateApi !== null &&
-                                row.dateApi === highlightedDateApi
-                                  ? "inset 5px 0 0 #2f2f2f, 0 0 0 2px rgba(0, 0, 0, 0.22)"
-                                  : undefined,
-                            }}
-                          >
-                            <div className="flex justify-between items-start">
-                              <div className="space-y-0.5 flex-1">
-                                <p className="text-xs text-muted-foreground">
-                                  {!isSameDateAsPrev
-                                    ? `#${dateSerialMap.get(row.date) ?? ""}`
-                                    : ""}
-                                </p>
-                                {!isSameDateAsPrev && (
-                                  <p className="text-sm font-medium text-foreground">
-                                    {row.date} - {row.day}
-                                  </p>
-                                )}
-                              </div>
-                              <div className="text-right">
-                                <p className="text-xl font-bold text-foreground">
-                                  {row.hours}h
-                                </p>
-                              </div>
-                            </div>
-                            <div className="space-y-0.5">
-                              <p className="text-xs text-muted-foreground">
-                                Project
-                              </p>
-                              <p className="text-sm text-foreground">
-                                {row.project}
-                              </p>
-                            </div>
-                            <div className="space-y-0.5">
-                              <p className="text-xs text-muted-foreground">
-                                Activities
-                              </p>
-                              <p className="text-sm text-foreground">
-                                {row.activities}
-                                {row.leaveStatus === "pending" && (
-                                  <span
-                                    className="font-semibold ml-1"
-                                    style={{ color: "var(--color-yellow-text)" }}
-                                  >
-                                    · Pending approval
-                                  </span>
-                                )}
-                                {row.leaveStatus === "rejected" && (
-                                  <span
-                                    className="font-semibold ml-1"
-                                    style={{ color: "var(--color-red-text)" }}
-                                  >
-                                    · Rejected
-                                  </span>
-                                )}
-                                {row.leaveStatus === "approved" && (
-                                  <span
-                                    className="font-semibold ml-1"
-                                    style={{ color: "var(--color-green-text)" }}
-                                  >
-                                    · Approved
-                                  </span>
-                                )}
-                              </p>
+                                  </div>
+                                );
+                              })}
                             </div>
                           </div>
                         );
                       })}
                     </div>
-                  </>
-                )}
+                  );
+                })()
+              ) : (
+                <>
+                  {/* Desktop Table */}
+                  <div className="hidden md:block">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="whitespace-nowrap w-16">
+                            Sr
+                          </TableHead>
+                          <TableHead className="whitespace-nowrap w-28 text-center">
+                            Date
+                          </TableHead>
+                          <TableHead className="whitespace-nowrap w-28">
+                            Day
+                          </TableHead>
+                          <TableHead className="whitespace-nowrap w-20 text-center">
+                            Total
+                          </TableHead>
+                          <TableHead className="whitespace-nowrap w-32">
+                            Project
+                          </TableHead>
+                          <TableHead className="whitespace-nowrap w-20 text-center">
+                            Hours
+                          </TableHead>
+                          <TableHead>Activities</TableHead>
+                          {isTeamMode && canManageTeamEntries && (
+                            <TableHead className="whitespace-nowrap w-32 text-center">
+                              Actions
+                            </TableHead>
+                          )}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {timesheetRows.map((row, index) => {
+                          // Check if this row has the same date as the previous/next row
+                          const prevRow =
+                            index > 0 ? timesheetRows[index - 1] : null;
+                          const nextRow =
+                            index < timesheetRows.length - 1
+                              ? timesheetRows[index + 1]
+                              : null;
+                          const isSameDateAsPrev =
+                            prevRow && prevRow.date === row.date;
+                          const isSameDateAsNext =
+                            nextRow && nextRow.date === row.date;
+
+                          let bgColor: string | undefined;
+                          let isColored = false;
+
+                          if (
+                            (row.isLeave && row.leaveStatus === "rejected") ||
+                            row.timesheetState === "rejected"
+                          ) {
+                            bgColor = "#f0c0c0";
+                            isColored = true;
+                          } else if (
+                            row.isLeave &&
+                            row.leaveStatus === "pending"
+                          ) {
+                            bgColor = "#f5eab0";
+                            isColored = true;
+                          } else if (
+                            row.isLeave && row.leaveStatus === "approved"
+                          ) {
+                            bgColor = "#c8e4d4";
+                            isColored = true;
+                          } else if (row.isHoliday) {
+                            bgColor = "#c8e4d4";
+                            isColored = true;
+                          } else if (row.isWeekend) {
+                            bgColor = "var(--secondary-background)";
+                            isColored = true;
+                          } else {
+                            bgColor = "var(--background)";
+                          }
+
+                          const rowKey = getRowKey(row, index);
+                          const canManageEntry =
+                            isTeamMode &&
+                            canManageTeamEntries &&
+                            !row.isLeave &&
+                            Boolean(row.entryId);
+                          const isEditing =
+                            canManageTeamEntries && editingRowKey === rowKey;
+                          const isSaving = savingRowKey === rowKey;
+                          const isDeleting = deletingRowKey === rowKey;
+                          const isConfirmingDelete = confirmDeleteRowKey === rowKey;
+                          const isTargetDateRow =
+                            highlightedDateApi !== null &&
+                            row.dateApi === highlightedDateApi;
+
+                          return (
+                            <TableRow
+                              key={`${row.date}-${index}`}
+                              data-date-api={row.dateApi ?? undefined}
+                              style={{
+                                backgroundColor: bgColor,
+                                borderBottom: isSameDateAsNext
+                                  ? "none"
+                                  : undefined,
+                                borderTop: !isSameDateAsPrev && index > 0
+                                  ? "2px solid var(--border)"
+                                  : undefined,
+                                boxShadow: isTargetDateRow
+                                  ? "inset 5px 0 0 #2f2f2f, 0 0 0 2px rgba(0, 0, 0, 0.22)"
+                                  : undefined,
+                              }}
+                              className={cn(
+                                isColored ? "hover:opacity-95" : "",
+                                isTargetDateRow && "animate-[pulse_1s_ease-in-out_3]"
+                              )}
+                            >
+                              <TableCell className="px-3 py-2.5 text-sm text-muted-foreground whitespace-nowrap">
+                                {!isSameDateAsPrev
+                                  ? dateSerialMap.get(row.date) ?? ""
+                                  : ""}
+                              </TableCell>
+
+                              <TableCell className="px-3 py-2.5 text-sm text-foreground whitespace-nowrap text-center">
+                                {isEditing ? (
+                                  <Input
+                                    type="date"
+                                    value={editingForm.date}
+                                    onChange={(e) =>
+                                      setEditingForm((prev) => ({
+                                        ...prev,
+                                        date: e.target.value,
+                                      }))
+                                    }
+                                    className="h-8 w-36"
+                                  />
+                                ) : !isSameDateAsPrev ? (
+                                  row.date
+                                ) : (
+                                  ""
+                                )}
+                              </TableCell>
+                              <TableCell className="px-3 py-2.5 text-sm text-foreground whitespace-nowrap">
+                                {!isSameDateAsPrev ? row.day : ""}
+                              </TableCell>
+                              <TableCell className="px-3 py-2.5 text-sm text-center whitespace-nowrap font-semibold">
+                                {!isSameDateAsPrev ? (
+                                  <span style={{ color: "var(--foreground)" }}>
+                                    {dailyTotals.get(row.date) ?? 0}h
+                                  </span>
+                                ) : ""}
+                              </TableCell>
+                              <TableCell
+                                className={cn(
+                                  "px-3 py-2.5 text-sm text-foreground whitespace-nowrap",
+                                  isEditing && "align-top min-w-[240px]"
+                                )}
+                              >
+                                {isEditing ? (
+                                  <div className="space-y-1.5">
+                                    <select
+                                      value={editingForm.departmentId}
+                                      onChange={(e) => {
+                                        const nextDepartmentId = e.target.value;
+                                        setEditingForm((prev) => ({
+                                          ...prev,
+                                          departmentId: nextDepartmentId,
+                                          projectId: "",
+                                          project: "",
+                                        }));
+                                        if (nextDepartmentId) {
+                                          void fetchTeamLoggerProjectsForDepartment(
+                                            nextDepartmentId
+                                          );
+                                        }
+                                      }}
+                                      className="block h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
+                                    >
+                                      <option value="">Select department</option>
+                                      {editingForm.departmentId &&
+                                        !teamDepartments.some(
+                                          (department) =>
+                                            String(department.id) ===
+                                            editingForm.departmentId
+                                        ) && (
+                                          <option value={editingForm.departmentId}>
+                                            {row.department || "Current department"}
+                                          </option>
+                                        )}
+                                      {teamDepartments.map((department) => (
+                                        <option
+                                          key={department.id}
+                                          value={String(department.id)}
+                                        >
+                                          {department.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    {(() => {
+                                      const selectedDepartmentId =
+                                        editingForm.departmentId;
+                                      const projectOptions = selectedDepartmentId
+                                        ? teamProjectsByDepartment[
+                                        selectedDepartmentId
+                                        ] || []
+                                        : [];
+
+                                      return (
+                                        <select
+                                          value={editingForm.projectId}
+                                          onChange={(e) =>
+                                            setEditingForm((prev) => ({
+                                              ...prev,
+                                              projectId: e.target.value,
+                                              project:
+                                                projectOptions.find(
+                                                  (p) =>
+                                                    String(p.id) ===
+                                                    e.target.value
+                                                )?.name ?? prev.project,
+                                            }))
+                                          }
+                                          className="block h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
+                                          disabled={
+                                            !selectedDepartmentId ||
+                                            teamLoggerProjectsLoading
+                                          }
+                                        >
+                                          <option value="">
+                                            {!selectedDepartmentId
+                                              ? "Select department first"
+                                              : teamLoggerProjectsLoading
+                                                ? "Loading projects..."
+                                                : "Select project"}
+                                          </option>
+                                          {editingForm.projectId &&
+                                            !projectOptions.some(
+                                              (project) =>
+                                                String(project.id) ===
+                                                editingForm.projectId
+                                            ) && (
+                                              <option value={editingForm.projectId}>
+                                                {editingForm.project || row.project}
+                                              </option>
+                                            )}
+                                          {projectOptions.map((project) => (
+                                            <option
+                                              key={project.id}
+                                              value={String(project.id)}
+                                            >
+                                              {project.name}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      );
+                                    })()}
+                                  </div>
+                                ) : (
+                                  row.project
+                                )}
+                              </TableCell>
+                              <TableCell
+                                className={cn(
+                                  "px-3 py-2.5 text-sm text-foreground text-center font-medium whitespace-nowrap",
+                                  isEditing && "align-top"
+                                )}
+                              >
+                                {isEditing ? (
+                                  <Input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={editingForm.hours}
+                                    onChange={(e) => {
+                                      const val = e.target.value.replace(/[^0-9.]/g, "");
+                                      setEditingForm((prev) => ({
+                                        ...prev,
+                                        hours: val,
+                                      }));
+                                    }}
+                                    className="h-8 w-16 text-center"
+                                  />
+                                ) : (
+                                  row.hours
+                                )}
+                              </TableCell>
+                              <TableCell
+                                className={cn(
+                                  "px-3 py-2.5 text-sm text-foreground",
+                                  isEditing && "align-top"
+                                )}
+                              >
+                                {isEditing ? (
+                                  <Input
+                                    type="text"
+                                    value={editingForm.activities}
+                                    onChange={(e) =>
+                                      setEditingForm((prev) => ({
+                                        ...prev,
+                                        activities: e.target.value,
+                                      }))
+                                    }
+                                    className="h-8 min-w-[280px]"
+                                  />
+                                ) : (
+                                  <>
+                                    {row.activities}
+                                    {row.leaveStatus === "pending" && (
+                                      <span
+                                        className="font-semibold ml-1"
+                                        style={{ color: "#806020" }}
+                                      >
+                                        · Pending approval
+                                      </span>
+                                    )}
+                                    {row.leaveStatus === "rejected" && (
+                                      <span
+                                        className="font-semibold ml-1"
+                                        style={{ color: "#903030" }}
+                                      >
+                                        · Rejected
+                                      </span>
+                                    )}
+                                    {row.leaveStatus === "approved" && (
+                                      <span
+                                        className="font-semibold ml-1"
+                                        style={{ color: "#2d6647" }}
+                                      >
+                                        · Approved
+                                      </span>
+                                    )}
+                                    {!row.isLeave && row.timesheetState === "rejected" && (
+                                      <span
+                                        className="font-semibold ml-1"
+                                        style={{ color: "#903030" }}
+                                      >
+                                        · Rejected
+                                      </span>
+                                    )}
+                                  </>
+                                )}
+                              </TableCell>
+                              {isTeamMode && canManageTeamEntries && (
+                                <TableCell className="px-3 py-2.5 text-center">
+                                  {canManageEntry ? (
+                                    <div className="inline-flex items-center gap-1.5">
+                                      {isEditing ? (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              handleSaveEdit(row, index)
+                                            }
+                                            disabled={isSaving || isDeleting}
+                                            className="h-7 w-7 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background disabled:opacity-40 disabled:cursor-not-allowed"
+                                            title="Save changes"
+                                          >
+                                            {isSaving ? (
+                                              <Loader2 className="h-3.5 w-3.5 animate-spin text-foreground" />
+                                            ) : (
+                                              <Check className="h-3.5 w-3.5 text-emerald-600" />
+                                            )}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={handleCancelEdit}
+                                            disabled={isSaving || isDeleting}
+                                            className="h-7 w-7 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background disabled:opacity-40 disabled:cursor-not-allowed"
+                                            title="Cancel editing"
+                                          >
+                                            <X className="h-3.5 w-3.5 text-red-600" />
+                                          </button>
+                                        </>
+                                      ) : isConfirmingDelete ? (
+                                        <div className="inline-flex items-center gap-1.5">
+                                          <span className="text-xs text-muted-foreground whitespace-nowrap">Are you sure you want to delete this entry?</span>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setConfirmDeleteRowKey(null);
+                                              handleDeleteEntry(row, index);
+                                            }}
+                                            disabled={isDeleting}
+                                            className="h-7 w-7 rounded-md border border-red-300 bg-red-50 flex items-center justify-center hover:bg-red-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                                            title="Confirm delete"
+                                          >
+                                            {isDeleting ? (
+                                              <Loader2 className="h-3.5 w-3.5 animate-spin text-red-600" />
+                                            ) : (
+                                              <Trash2 className="h-3.5 w-3.5 text-red-600" />
+                                            )}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setConfirmDeleteRowKey(null)}
+                                            disabled={isDeleting}
+                                            className="h-7 w-7 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background disabled:opacity-40 disabled:cursor-not-allowed"
+                                            title="Cancel delete"
+                                          >
+                                            <X className="h-3.5 w-3.5 text-foreground" />
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              handleStartEdit(row, index)
+                                            }
+                                            disabled={isSaving || isDeleting}
+                                            className="h-7 w-7 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background disabled:opacity-40 disabled:cursor-not-allowed"
+                                            title="Edit entry"
+                                          >
+                                            <Pencil className="h-3.5 w-3.5 text-foreground" />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              setConfirmDeleteRowKey(rowKey)
+                                            }
+                                            disabled={isSaving || isDeleting}
+                                            className="h-7 w-7 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background disabled:opacity-40 disabled:cursor-not-allowed"
+                                            title="Delete entry"
+                                          >
+                                            <Trash2 className="h-3.5 w-3.5 text-red-600" />
+                                          </button>
+                                        </>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="text-xs text-muted-foreground">-</span>
+                                  )}
+                                </TableCell>
+                              )}
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  {/* Mobile Card View */}
+                  <div className="md:hidden space-y-2 max-h-[60vh] overflow-y-auto">
+                    {timesheetRows.map((row, index) => {
+                      // Check if this row has the same date as the previous row
+                      const prevRow =
+                        index > 0 ? timesheetRows[index - 1] : null;
+                      const isSameDateAsPrev =
+                        prevRow && prevRow.date === row.date;
+
+                      let bgColor = undefined;
+
+                      if (
+                        (row.isLeave && row.leaveStatus === "rejected") ||
+                        row.timesheetState === "rejected"
+                      ) {
+                        bgColor = "var(--color-red-bg)";
+                      } else if (
+                        row.isLeave &&
+                        row.leaveStatus === "pending"
+                      ) {
+                        bgColor = "var(--color-yellow-bg)";
+                      } else if (
+                        row.isHoliday ||
+                        row.isWeekend ||
+                        (row.isLeave && row.leaveStatus === "approved")
+                      ) {
+                        bgColor = "var(--color-green-bg)";
+                      } else {
+                        bgColor = "var(--background)";
+                      }
+
+                      return (
+                        <div
+                          key={`${row.date}-${index}`}
+                          data-date-api={row.dateApi ?? undefined}
+                          className={cn(
+                            "border border-border rounded-[4px] p-4 space-y-2",
+                            highlightedDateApi !== null &&
+                            row.dateApi === highlightedDateApi &&
+                            "animate-[pulse_1s_ease-in-out_3]"
+                          )}
+                          style={{
+                            backgroundColor: bgColor,
+                            boxShadow:
+                              highlightedDateApi !== null &&
+                                row.dateApi === highlightedDateApi
+                                ? "inset 5px 0 0 #2f2f2f, 0 0 0 2px rgba(0, 0, 0, 0.22)"
+                                : undefined,
+                          }}
+                        >
+                          <div className="flex justify-between items-start">
+                            <div className="space-y-0.5 flex-1">
+                              <p className="text-xs text-muted-foreground">
+                                {!isSameDateAsPrev
+                                  ? `#${dateSerialMap.get(row.date) ?? ""}`
+                                  : ""}
+                              </p>
+                              {!isSameDateAsPrev && (
+                                <p className="text-sm font-medium text-foreground">
+                                  {row.date} - {row.day}
+                                </p>
+                              )}
+                            </div>
+                            <div className="text-right">
+                              <p className="text-xl font-bold text-foreground">
+                                {row.hours}h
+                              </p>
+                            </div>
+                          </div>
+                          <div className="space-y-0.5">
+                            <p className="text-xs text-muted-foreground">
+                              Project
+                            </p>
+                            <p className="text-sm text-foreground">
+                              {row.project}
+                            </p>
+                          </div>
+                          <div className="space-y-0.5">
+                            <p className="text-xs text-muted-foreground">
+                              Activities
+                            </p>
+                            <p className="text-sm text-foreground">
+                              {row.activities}
+                              {row.leaveStatus === "pending" && (
+                                <span
+                                  className="font-semibold ml-1"
+                                  style={{ color: "var(--color-yellow-text)" }}
+                                >
+                                  · Pending approval
+                                </span>
+                              )}
+                              {row.leaveStatus === "rejected" && (
+                                <span
+                                  className="font-semibold ml-1"
+                                  style={{ color: "var(--color-red-text)" }}
+                                >
+                                  · Rejected
+                                </span>
+                              )}
+                              {row.leaveStatus === "approved" && (
+                                <span
+                                  className="font-semibold ml-1"
+                                  style={{ color: "var(--color-green-text)" }}
+                                >
+                                  · Approved
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -2647,146 +2960,146 @@ export default function DashboardPage() {
                 </SheetDescription>
               </SheetHeader>
 
-                <form onSubmit={handleSubmitTeamLogger} className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">Team Member</Label>
-                    <p className="text-sm font-medium text-foreground break-all">
-                      {teamUser?.email ||
-                        teamUser?.workEmail ||
-                        teamUser?.officialEmail ||
-                        teamUser?.user?.email ||
-                        teamUser?.searchedEmail ||
-                        (teamSearch ? teamSearch.trim() : "") ||
-                        "Email not available"}
-                    </p>
-                  </div>
+              <form onSubmit={handleSubmitTeamLogger} className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Team Member</Label>
+                  <p className="text-sm font-medium text-foreground break-all">
+                    {teamUser?.email ||
+                      teamUser?.workEmail ||
+                      teamUser?.officialEmail ||
+                      teamUser?.user?.email ||
+                      teamUser?.searchedEmail ||
+                      (teamSearch ? teamSearch.trim() : "") ||
+                      "Email not available"}
+                  </p>
+                </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-2.5">
-                      <Label htmlFor="team-activity-date">Work Date</Label>
-                      <Input
-                        id="team-activity-date"
-                        type="date"
-                        value={teamLoggerForm.workDate}
-                        onChange={(e) =>
-                          setTeamLoggerForm((prev) => ({
-                            ...prev,
-                            workDate: e.target.value,
-                          }))
-                        }
-                        required
-                      />
-                    </div>
-
-                    <div className="space-y-2.5">
-                      <Label htmlFor="team-activity-hours">Hours</Label>
-                      <Input
-                        id="team-activity-hours"
-                        type="text"
-                        inputMode="decimal"
-                        placeholder="0.0"
-                        value={teamLoggerForm.hours}
-                        onChange={(e) => {
-                          const val = e.target.value.replace(/[^0-9.]/g, "");
-                          setTeamLoggerForm((prev) => ({
-                            ...prev,
-                            hours: val,
-                          }));
-                        }}
-                        required
-                      />
-                    </div>
-                  </div>
-
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2.5">
-                    <Label htmlFor="team-activity-department">
-                      Current Working Department
-                    </Label>
-                    <Select
-                      value={teamLoggerForm.departmentId}
-                      onValueChange={(nextDepartmentId) => {
-                        setTeamLoggerForm((prev) => ({
-                          ...prev,
-                          departmentId: nextDepartmentId,
-                          projectId: "",
-                        }));
-                        if (nextDepartmentId) {
-                          fetchTeamLoggerProjectsForDepartment(nextDepartmentId);
-                        }
-                      }}
-                    >
-                      <SelectTrigger id="team-activity-department">
-                        <SelectValue placeholder="Select department" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {teamDepartments.map((department) => (
-                          <SelectItem
-                            key={department.id}
-                            value={String(department.id)}
-                          >
-                            {department.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2.5">
-                    <Label htmlFor="team-activity-project">Project</Label>
-                    <Select
-                      value={teamLoggerForm.projectId}
-                      onValueChange={(value) =>
-                        setTeamLoggerForm((prev) => ({
-                          ...prev,
-                          projectId: value,
-                        }))
-                      }
-                      disabled={
-                        !teamLoggerForm.departmentId || teamLoggerProjectsLoading
-                      }
-                    >
-                      <SelectTrigger id="team-activity-project">
-                        <SelectValue
-                          placeholder={
-                            !teamLoggerForm.departmentId
-                              ? "Select department first"
-                              : teamLoggerProjectsLoading
-                              ? "Loading projects..."
-                              : "Select project"
-                          }
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {(teamProjectsByDepartment[teamLoggerForm.departmentId] || []).map(
-                          (project) => (
-                            <SelectItem
-                              key={project.id}
-                              value={String(project.id)}
-                            >
-                              {project.name}
-                            </SelectItem>
-                          )
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2.5">
-                    <Label htmlFor="team-activity-description">Activities</Label>
-                    <Textarea
-                      id="team-activity-description"
-                      placeholder="Describe the work done"
-                      value={teamLoggerForm.activities}
+                    <Label htmlFor="team-activity-date">Work Date</Label>
+                    <Input
+                      id="team-activity-date"
+                      type="date"
+                      value={teamLoggerForm.workDate}
                       onChange={(e) =>
                         setTeamLoggerForm((prev) => ({
                           ...prev,
-                          activities: e.target.value,
+                          workDate: e.target.value,
                         }))
                       }
-                      minLength={VALIDATION.MIN_TASK_DESCRIPTION_LENGTH}
                       required
                     />
                   </div>
+
+                  <div className="space-y-2.5">
+                    <Label htmlFor="team-activity-hours">Hours</Label>
+                    <Input
+                      id="team-activity-hours"
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="0.0"
+                      value={teamLoggerForm.hours}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/[^0-9.]/g, "");
+                        setTeamLoggerForm((prev) => ({
+                          ...prev,
+                          hours: val,
+                        }));
+                      }}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2.5">
+                  <Label htmlFor="team-activity-department">
+                    Current Working Department
+                  </Label>
+                  <Select
+                    value={teamLoggerForm.departmentId}
+                    onValueChange={(nextDepartmentId) => {
+                      setTeamLoggerForm((prev) => ({
+                        ...prev,
+                        departmentId: nextDepartmentId,
+                        projectId: "",
+                      }));
+                      if (nextDepartmentId) {
+                        fetchTeamLoggerProjectsForDepartment(nextDepartmentId);
+                      }
+                    }}
+                  >
+                    <SelectTrigger id="team-activity-department">
+                      <SelectValue placeholder="Select department" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {teamDepartments.map((department) => (
+                        <SelectItem
+                          key={department.id}
+                          value={String(department.id)}
+                        >
+                          {department.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2.5">
+                  <Label htmlFor="team-activity-project">Project</Label>
+                  <Select
+                    value={teamLoggerForm.projectId}
+                    onValueChange={(value) =>
+                      setTeamLoggerForm((prev) => ({
+                        ...prev,
+                        projectId: value,
+                      }))
+                    }
+                    disabled={
+                      !teamLoggerForm.departmentId || teamLoggerProjectsLoading
+                    }
+                  >
+                    <SelectTrigger id="team-activity-project">
+                      <SelectValue
+                        placeholder={
+                          !teamLoggerForm.departmentId
+                            ? "Select department first"
+                            : teamLoggerProjectsLoading
+                              ? "Loading projects..."
+                              : "Select project"
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(teamProjectsByDepartment[teamLoggerForm.departmentId] || []).map(
+                        (project) => (
+                          <SelectItem
+                            key={project.id}
+                            value={String(project.id)}
+                          >
+                            {project.name}
+                          </SelectItem>
+                        )
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2.5">
+                  <Label htmlFor="team-activity-description">Activities</Label>
+                  <Textarea
+                    id="team-activity-description"
+                    placeholder="Describe the work done"
+                    value={teamLoggerForm.activities}
+                    onChange={(e) =>
+                      setTeamLoggerForm((prev) => ({
+                        ...prev,
+                        activities: e.target.value,
+                      }))
+                    }
+                    minLength={VALIDATION.MIN_TASK_DESCRIPTION_LENGTH}
+                    required
+                  />
+                </div>
 
                 <div className="pt-3 flex items-center gap-2.5">
                   <Button
@@ -2848,10 +3161,10 @@ export default function DashboardPage() {
                     {selectedDay.isHoliday
                       ? selectedDay.holidayName
                       : selectedDay.isWeekend
-                      ? "Weekend"
-                      : selectedDay.isWorkingDay
-                      ? "Working Day"
-                      : "Non-working Day"}
+                        ? "Weekend"
+                        : selectedDay.isWorkingDay
+                          ? "Working Day"
+                          : "Non-working Day"}
                   </p>
                 </div>
 

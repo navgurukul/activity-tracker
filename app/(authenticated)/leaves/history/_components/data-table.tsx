@@ -37,12 +37,14 @@ interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
   data: TData[];
   onUpdate?: () => void;
+  canEditPendingRequests?: boolean;
 }
 
 export function DataTable<TData, TValue>({
   columns,
   data,
   onUpdate,
+  canEditPendingRequests = false,
 }: DataTableProps<TData, TValue>) {
   const [columnVisibility, setColumnVisibility] =
     React.useState<VisibilityState>({});
@@ -69,6 +71,7 @@ export function DataTable<TData, TValue>({
     meta: {
       onUpdate,
       isBulkOperationInProgress: isBulkLoading,
+      canEditPendingRequests,
     },
   });
 
