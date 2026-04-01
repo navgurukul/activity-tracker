@@ -59,8 +59,8 @@ function Calendar({
         day_selected: "bg-black! text-white! rounded-base",
         day_today: "bg-transparent! text-main-foreground! !font-bold border-2 border-black rounded-base !font-heading !font-sans ![font-family:'Inter',Arial,sans-serif]",
         day_outside:
-          "day-outside text-main-foreground opacity-50 aria-selected:bg-none",
-        day_disabled: "text-main-foreground opacity-50 rounded-base",
+          "day-outside text-main-foreground opacity-90 aria-selected:bg-none",
+        day_disabled: "text-main-foreground opacity-45 rounded-base",
         day_range_middle: "aria-selected:bg-black/50! aria-selected:text-white",
         day_hidden: "invisible",
         ...classNames,

@@ -21,7 +21,7 @@ import {
   Trash2,
   Loader2,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, getISTBusinessDate } from "@/lib/utils";
 
 import { AppHeader } from "@/app/_components/AppHeader";
 import { PageWrapper } from "@/app/_components/wrapper";
@@ -287,11 +287,27 @@ export default function DashboardPage() {
   const [isExporting, setIsExporting] = useState(false);
   const [viewMode, setViewMode] = useState<"table" | "grid">(() => {
     if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("timesheet-view-mode");
+      const userRaw = localStorage.getItem("current-user-id");
+      const userId = userRaw || undefined;
+      const key = userId ? `timesheet-view-mode-${userId}` : "timesheet-view-mode";
+      const saved = localStorage.getItem(key);
       if (saved === "table" || saved === "grid") return saved;
     }
     return "table";
   });
+
+  // When user changes (login/logout), update viewMode from user-specific key
+  useEffect(() => {
+    if (typeof window !== "undefined" && user?.id) {
+      const key = `timesheet-view-mode-${user.id}`;
+      const saved = localStorage.getItem(key);
+      if (saved === "table" || saved === "grid") {
+        setViewMode(saved);
+      } else {
+        setViewMode("table");
+      }
+    }
+  }, [user?.id]);
   const [selectedDay, setSelectedDay] = useState<DayData | null>(null);
   const [isDaySheetOpen, setIsDaySheetOpen] = useState(false);
   const [highlightedDateApi, setHighlightedDateApi] = useState<string | null>(
@@ -316,6 +332,13 @@ export default function DashboardPage() {
       setTeamUser(state.__teamDashboard.teamUser || null);
     }
   }, []);
+
+  // Store current user id in localStorage for preference keying
+  useEffect(() => {
+    if (typeof window !== "undefined" && user?.id) {
+      localStorage.setItem("current-user-id", String(user.id));
+    }
+  }, [user?.id]);
   const [refreshTick, setRefreshTick] = useState(0);
   const [editingRowKey, setEditingRowKey] = useState<string | null>(null);
   const [editingForm, setEditingForm] = useState({
@@ -1675,7 +1698,6 @@ export default function DashboardPage() {
                 label: "Hours Logged",
                 display: String(monthlyData?.totals.timesheetHours || 0),
                 unit: "hrs",
-                sub: "this cycle",
                 icon: Clock,
                 accent: "border-l-[#74808e]",
                 iconBg: "bg-[#e5edf5]",
@@ -1685,7 +1707,6 @@ export default function DashboardPage() {
                 label: "Leave Days",
                 display: String(leaveDaysDisplay),
                 unit: "days",
-                sub: "this cycle",
                 icon: TreePalm,
                 accent: "border-l-amber-400",
                 iconBg: "bg-amber-50",
@@ -1693,9 +1714,21 @@ export default function DashboardPage() {
               },
               {
                 label: "Lifelines",
-                display: String(resolvedBackfill?.remaining ?? 0),
+                display: (() => {
+                  const todayIST = getISTBusinessDate();
+                  const period = monthlyData?.period;
+                  let isCurrentCycle = false;
+                  if (period) {
+                    const start = new Date(period.start);
+                    const end = new Date(period.end);
+                    isCurrentCycle = todayIST >= start && todayIST <= end;
+                  }
+                  const limit = resolvedBackfill?.limit ?? 0;
+                  const remaining = isCurrentCycle ? (resolvedBackfill?.remaining ?? 0) : 0;
+                  return `${remaining}/${limit}`;
+                })(),
                 unit: "",
-                sub: `of ${resolvedBackfill?.limit ?? 0} available`,
+                sub: "",
                 icon: AlertCircle,
                 accent: (resolvedBackfill?.remaining ?? 0) > 0 ? "border-l-emerald-400" : "border-l-amber-400",
                 iconBg: (resolvedBackfill?.remaining ?? 0) > 0 ? "bg-emerald-50" : "bg-amber-50",
@@ -1705,7 +1738,6 @@ export default function DashboardPage() {
                 label: "Payable Days",
                 display: `${payableDays}/${totalCycleDays}`,
                 unit: "",
-                sub: "this cycle",
                 icon: Briefcase,
                 accent: "border-l-[#8a6f5e]",
                 iconBg: "bg-[#f0ebe3]",
@@ -1734,22 +1766,10 @@ export default function DashboardPage() {
                       </span>
                     </div>
                   </div>
-                  {isLoading ? (
-                    <div className="h-8 w-16 bg-secondary-background rounded animate-pulse" />
-                  ) : (
-                    <>
-                      <p className="text-2xl font-bold text-foreground tabular-nums leading-none">
-                        {card.display}
-                        {card.unit && (
-                          <span className="text-sm font-normal text-muted-foreground ml-1">{card.unit}</span>
-                        )}
-                      </p>
-                    </>
-                  )}
                   {isLifelineCard && canShowLifelineEditor ? (
                     isEditingLifeline ? (
-                      <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-                        <span>of</span>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground mt-2">
+                        <p className="text-2xl font-bold text-foreground tabular-nums leading-none mr-2">{card.display}</p>
                         <Input
                           type="text"
                           inputMode="numeric"
@@ -1772,7 +1792,6 @@ export default function DashboardPage() {
                           disabled={isSavingLifeline}
                           className="h-7 w-20"
                         />
-                        <span>available</span>
                         <button
                           type="button"
                           onClick={handleSaveLifeline}
@@ -1797,8 +1816,8 @@ export default function DashboardPage() {
                         </button>
                       </div>
                     ) : (
-                      <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-                        <p>{card.sub}</p>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground mt-2">
+                        <p className="text-2xl font-bold text-foreground tabular-nums leading-none mr-2">{card.display}</p>
                         <button
                           type="button"
                           onClick={handleStartLifelineEdit}
@@ -1810,7 +1829,16 @@ export default function DashboardPage() {
                       </div>
                     )
                   ) : (
-                    <p className="text-xs text-muted-foreground mt-2">{card.sub}</p>
+                    isLoading ? (
+                      <div className="h-8 w-16 bg-secondary-background rounded animate-pulse" />
+                    ) : (
+                      <p className="text-2xl font-bold text-foreground tabular-nums leading-none">
+                        {card.display}
+                        {card.unit && (
+                          <span className="text-sm font-normal text-muted-foreground ml-1">{card.unit}</span>
+                        )}
+                      </p>
+                    )
                   )}
                 </div>
               );
@@ -1878,7 +1906,11 @@ export default function DashboardPage() {
                     <button
                       onClick={() => {
                         setViewMode("table");
-                        localStorage.setItem("timesheet-view-mode", "table");
+                        if (user?.id) {
+                          localStorage.setItem(`timesheet-view-mode-${user.id}`, "table");
+                        } else {
+                          localStorage.setItem("timesheet-view-mode", "table");
+                        }
                       }}
                       title="List view"
                       className={cn(
@@ -1893,7 +1925,11 @@ export default function DashboardPage() {
                     <button
                       onClick={() => {
                         setViewMode("grid");
-                        localStorage.setItem("timesheet-view-mode", "grid");
+                        if (user?.id) {
+                          localStorage.setItem(`timesheet-view-mode-${user.id}`, "grid");
+                        } else {
+                          localStorage.setItem("timesheet-view-mode", "grid");
+                        }
                       }}
                       title="Grid view"
                       className={cn(
