@@ -111,6 +111,33 @@ interface PersistedLeavesState {
 export default function LeavesPage() {
   const { user } = useAuth();
   const canEditTeamPendingRequests = useRole([ROLES.ADMIN, ROLES.SUPER_ADMIN]);
+  const canUseLeaveSearch = useRole([
+    ROLES.ADMIN,
+    ROLES.SUPER_ADMIN,
+    ROLES.MANAGER,
+  ]);
+
+  const normalizedRoleSet = useMemo(() => {
+    const rawRoles = (user as any)?.roles;
+    if (Array.isArray(rawRoles)) {
+      return new Set(
+        rawRoles
+          .map((role) => String(role).toLowerCase().replace(/[_\s-]/g, ""))
+          .filter(Boolean)
+      );
+    }
+    if (typeof rawRoles === "string") {
+      return new Set([rawRoles.toLowerCase().replace(/[_\s-]/g, "")]);
+    }
+    return new Set<string>();
+  }, [user]);
+
+  const isReportingManagerOnly = useMemo(() => {
+    const hasManagerRole = normalizedRoleSet.has("manager");
+    const hasElevatedRole =
+      normalizedRoleSet.has("admin") || normalizedRoleSet.has("superadmin");
+    return hasManagerRole && !hasElevatedRole;
+  }, [normalizedRoleSet]);
   const [activeMainTab, setActiveMainTab] = useState<LeavesMainTab>("leaves");
 
   const [leaveHistory, setLeaveHistory] = useState<LeaveRequest[]>([]);
@@ -213,6 +240,12 @@ export default function LeavesPage() {
   }, []);
 
   const fetchTeamLeaves = useCallback(async () => {
+    if (!canUseLeaveSearch) {
+      setTeamLeaveHistory([]);
+      setIsTeamLoading(false);
+      return;
+    }
+
     setIsTeamLoading(true);
     try {
       const res = await apiClient.get(API_PATHS.LEAVES_TEAM_REQUESTS_GET);
@@ -224,15 +257,26 @@ export default function LeavesPage() {
     } finally {
       setIsTeamLoading(false);
     }
-  }, []);
+  }, [canUseLeaveSearch]);
 
   const fetchEmployeeEmailSuggestions = useCallback(
     async (query: string): Promise<SearchComboboxOption[]> => {
-      if (!user?.orgId) return [];
+      if (!user?.orgId || !canUseLeaveSearch) return [];
 
       try {
+        const params: Record<string, any> = {
+          orgId: user.orgId,
+          q: query,
+          page: 1,
+          limit: 8,
+        };
+
+        if (isReportingManagerOnly && user?.id) {
+          params.managerId = user.id;
+        }
+
         const res = await apiClient.get(API_PATHS.EMPLOYEES, {
-          params: { orgId: user.orgId, q: query, page: 1, limit: 8 },
+          params,
         });
 
         const responseData = Array.isArray(res.data)
@@ -243,6 +287,12 @@ export default function LeavesPage() {
           : responseData.data || [];
 
         return items
+          .filter((item: any) => {
+            if (isReportingManagerOnly) {
+              return Number(item?.managerId) === Number(user?.id);
+            }
+            return true;
+          })
           .map((item: any) => ({
             value: String(item?.email ?? "").trim(),
             label: String(item?.name ?? item?.email ?? "").trim(),
@@ -253,7 +303,42 @@ export default function LeavesPage() {
         return [];
       }
     },
-    [user?.orgId]
+    [canUseLeaveSearch, isReportingManagerOnly, user?.id, user?.orgId]
+  );
+
+  const validateManagerHierarchyAccess = useCallback(
+    async (rawEmail: string) => {
+      if (!isReportingManagerOnly || !user?.orgId || !user?.id) {
+        return true;
+      }
+
+      const email = rawEmail.trim().toLowerCase();
+      if (!email) return false;
+
+      const res = await apiClient.get(API_PATHS.EMPLOYEES, {
+        params: {
+          orgId: user.orgId,
+          q: email,
+          managerId: user.id,
+          page: 1,
+          limit: 20,
+        },
+      });
+
+      const responseData = Array.isArray(res.data)
+        ? res.data
+        : res.data?.data || [];
+      const items = Array.isArray(responseData)
+        ? responseData
+        : responseData.data || [];
+
+      return items.some(
+        (item: any) =>
+          String(item?.email ?? "").trim().toLowerCase() === email &&
+          Number(item?.managerId) === Number(user.id)
+      );
+    },
+    [isReportingManagerOnly, user?.id, user?.orgId]
   );
 
   useEffect(() => {
@@ -422,10 +507,32 @@ export default function LeavesPage() {
       return false;
     }
 
+    if (!canUseLeaveSearch) {
+      toast.error("You are not allowed to search employee balances");
+      return false;
+    }
+
     setIsTeamEmployeeBalanceLoading(true);
     try {
+      const hasHierarchyAccess = await validateManagerHierarchyAccess(
+        trimmedEmail
+      );
+
+      if (!hasHierarchyAccess) {
+        setTeamEmployeeBalances([]);
+        setSelectedTeamEmployeeEmail("");
+        setSelectedTeamEmployeeUserId(null);
+        toast.error("You can view balances only for your direct reportees.");
+        return false;
+      }
+
+      const params: Record<string, unknown> = { email: trimmedEmail };
+      if (isReportingManagerOnly && user?.id) {
+        params.managerId = user.id;
+      }
+
       const response = await apiClient.get(API_PATHS.LEAVES_BALANCES_EMPLOYEE, {
-        params: { email: trimmedEmail },
+        params,
       });
 
       const parsedBalances = Array.isArray(response.data?.balances)
@@ -450,7 +557,12 @@ export default function LeavesPage() {
     } finally {
       setIsTeamEmployeeBalanceLoading(false);
     }
-  }, []);
+  }, [
+    canUseLeaveSearch,
+    isReportingManagerOnly,
+    user?.id,
+    validateManagerHierarchyAccess,
+  ]);
 
   // Restore team balance state from browser history on refresh
   useEffect(() => {
@@ -460,27 +572,45 @@ export default function LeavesPage() {
     const leavesState =
       (currentState.__leavesState as PersistedLeavesState | undefined) ?? {};
 
-    if (leavesState.activeMainTab) {
+    if (leavesState.activeMainTab && (leavesState.activeMainTab !== "team" || canUseLeaveSearch)) {
       setActiveMainTab(leavesState.activeMainTab);
     }
 
-    if (leavesState.isTeamEmployeeBalanceView) {
+    if (canUseLeaveSearch && leavesState.isTeamEmployeeBalanceView) {
       setIsTeamEmployeeBalanceView(true);
       setShowTeamEmployeeBalanceSearch(true);
       setActiveMainTab("team");
     }
 
-    if (leavesState.teamEmployeeEmail) {
+    if (canUseLeaveSearch && leavesState.teamEmployeeEmail) {
       setTeamEmployeeBalanceEmail(leavesState.teamEmployeeEmail);
       void fetchEmployeeLeaveBalance(leavesState.teamEmployeeEmail);
     }
-  }, [fetchEmployeeLeaveBalance]);
+  }, [canUseLeaveSearch, fetchEmployeeLeaveBalance]);
+
+  useEffect(() => {
+    if (canUseLeaveSearch) return;
+
+    if (activeMainTab === "team") {
+      setActiveMainTab("leaves");
+    }
+
+    if (isTeamEmployeeBalanceView) {
+      setIsTeamEmployeeBalanceView(false);
+      setShowTeamEmployeeBalanceSearch(false);
+    }
+  }, [activeMainTab, canUseLeaveSearch, isTeamEmployeeBalanceView]);
 
   useEffect(() => {
     persistLeavesState({ activeMainTab });
   }, [activeMainTab, persistLeavesState]);
 
   const searchTeamEmployeeBalanceByEmail = useCallback(async (rawEmail: string) => {
+    if (!canUseLeaveSearch) {
+      toast.error("You are not allowed to search employee balances");
+      return;
+    }
+
     const email = rawEmail.trim();
     if (!email) {
       toast.error("Please enter employee email");
@@ -498,7 +628,7 @@ export default function LeavesPage() {
         teamEmployeeEmail: email,
       });
     }
-  }, [fetchEmployeeLeaveBalance, persistLeavesState]);
+  }, [canUseLeaveSearch, fetchEmployeeLeaveBalance, persistLeavesState]);
 
   const handleSearchTeamEmployeeBalance = useCallback(async () => {
     await searchTeamEmployeeBalanceByEmail(teamEmployeeBalanceEmail);
@@ -827,7 +957,13 @@ export default function LeavesPage() {
 
           <Tabs
             value={activeMainTab}
-            onValueChange={(value) => setActiveMainTab(value as LeavesMainTab)}
+            onValueChange={(value) => {
+              if (value === "team" && !canUseLeaveSearch) {
+                setActiveMainTab("leaves");
+                return;
+              }
+              setActiveMainTab(value as LeavesMainTab);
+            }}
             className="w-full"
           >
             {/* Tab navigation — segmented pill style */}
@@ -835,7 +971,9 @@ export default function LeavesPage() {
               {[
                 { value: "leaves", label: "My Leaves" },
                 { value: "balance", label: "My Leave Balance" },
-                { value: "team", label: "Team" },
+                ...(canUseLeaveSearch
+                  ? ([{ value: "team", label: "Team" }] as const)
+                  : []),
               ].map((tab) => (
                 <TabsTrigger
                   key={tab.value}
@@ -891,15 +1029,17 @@ export default function LeavesPage() {
 
               {/* Filters row */}
               <div className="flex flex-wrap items-center gap-2">
-                <div className="relative flex-1 min-w-[200px] max-w-sm">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                  <Input
-                    placeholder="Search leave type or reason..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-9 h-9 bg-background text-sm font-base"
-                  />
-                </div>
+                {canUseLeaveSearch && (
+                  <div className="relative flex-1 min-w-[200px] max-w-sm">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                    <Input
+                      placeholder="Search leave type or reason..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-9 h-9 bg-background text-sm font-base"
+                    />
+                  </div>
+                )}
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button
@@ -1186,6 +1326,7 @@ export default function LeavesPage() {
             </TabsContent>
 
             {/* ── TEAM MANAGEMENT TAB ── */}
+            {canUseLeaveSearch && (
             <TabsContent value="team" className="mt-0">
               <Tabs defaultValue="pending" className="w-full">
                 {/* Inner tab bar for team sub-tabs */}
@@ -1228,7 +1369,7 @@ export default function LeavesPage() {
                   {/* Right-side search for team name / email */}
                   <div className="ml-4">
                     <div className="flex items-center gap-2">
-                      {!isTeamEmployeeBalanceView && (
+                      {canUseLeaveSearch && !isTeamEmployeeBalanceView && (
                         <div className="relative">
                           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                           <Input
@@ -1239,46 +1380,54 @@ export default function LeavesPage() {
                           />
                         </div>
                       )}
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          if (isTeamEmployeeBalanceView) {
-                            backToTeamLeaves();
-                            return;
-                          }
-                          setActiveMainTab("team");
-                          setIsTeamEmployeeBalanceView(true);
-                          setShowTeamEmployeeBalanceSearch(true);
-                          persistLeavesState({
-                            activeMainTab: "team",
-                            isTeamEmployeeBalanceView: true,
-                            teamEmployeeEmail: teamEmployeeBalanceEmail.trim(),
-                          });
-                        }}
-                      >
-                        {isTeamEmployeeBalanceView
-                          ? "Back to Team Leaves"
-                          : "Employee Leave Balance"}
-                      </Button>
+                      {canUseLeaveSearch && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            if (isTeamEmployeeBalanceView) {
+                              backToTeamLeaves();
+                              return;
+                            }
+                            setActiveMainTab("team");
+                            setIsTeamEmployeeBalanceView(true);
+                            setShowTeamEmployeeBalanceSearch(true);
+                            persistLeavesState({
+                              activeMainTab: "team",
+                              isTeamEmployeeBalanceView: true,
+                              teamEmployeeEmail: teamEmployeeBalanceEmail.trim(),
+                            });
+                          }}
+                        >
+                          {isTeamEmployeeBalanceView
+                            ? "Back to Team Leaves"
+                            : "Employee Leave Balance"}
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </div>
 
-                {isTeamEmployeeBalanceView && showTeamEmployeeBalanceSearch && (
+                {canUseLeaveSearch && isTeamEmployeeBalanceView && showTeamEmployeeBalanceSearch && (
                   <div className="mb-4 rounded-lg border border-border bg-background p-4">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
                       <SearchCombobox
                         value={teamEmployeeBalanceEmail}
-                        onValueChange={setTeamEmployeeBalanceEmail}
+                        onValueChange={(nextValue) => {
+                          setTeamEmployeeBalanceEmail(nextValue);
+                        }}
                         onSelect={(option) => {
-                          setTeamEmployeeBalanceEmail(option.value);
+                          void searchTeamEmployeeBalanceByEmail(option.value);
+                        }}
+                        onSubmitValue={(nextValue) => {
+                          void searchTeamEmployeeBalanceByEmail(nextValue);
                         }}
                         fetchOptions={fetchEmployeeEmailSuggestions}
-                        placeholder="Enter employee email"
-                        searchPlaceholder="Type employee email..."
+                        placeholder="Select employee"
+                        searchPlaceholder="Search employee..."
                         emptyMessage="No employee found."
-                        className="h-9 w-full sm:min-w-[320px] sm:max-w-[460px]"
+                        minQueryLength={0}
+                        className="w-[260px]"
                       />
                       <Button
                         size="sm"
@@ -1467,6 +1616,7 @@ export default function LeavesPage() {
                 )}
               </Tabs>
             </TabsContent>
+            )}
           </Tabs>
         </div>
 

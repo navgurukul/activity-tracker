@@ -504,7 +504,7 @@ export default function TrackerPage() {
                       className={cn(
                         "p-1.5 rounded-md",
                         (user?.backfill?.remaining ?? 0) > 0
-                          ? "bg-[#e5eeea]"
+                          ? "bg-emerald-50"
                           : "bg-amber-50"
                       )}
                     >
@@ -519,10 +519,7 @@ export default function TrackerPage() {
                     </span>
                   </div>
                   <p className="text-2xl font-bold text-foreground tabular-nums leading-none">
-                    {user?.backfill?.remaining ?? 0}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    of {user?.backfill?.limit ?? 0} available
+                    {(user?.backfill?.remaining ?? 0)}/{user?.backfill?.limit ?? 0}
                   </p>
                 </div>
               </div>

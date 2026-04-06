@@ -454,16 +454,13 @@ export function CompOffRequestForm() {
                         <FormControl>
                           <Button
                             variant="noShadow"
-                            className={cn(
-                              "w-full justify-start text-left font-normal",
-                              !field.value && "text-muted-foreground"
-                            )}
+                            className="w-full justify-start text-left font-normal text-main-foreground"
                           >
                             <CalendarIcon className="mr-2 h-4 w-4" />
                             {field.value ? (
                               format(field.value, DATE_FORMATS.DISPLAY)
                             ) : (
-                              <span>Pick a date</span>
+                              <span>Select date</span>
                             )}
                           </Button>
                         </FormControl>
