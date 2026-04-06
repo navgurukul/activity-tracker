@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { format, parseISO } from "date-fns";
 import { toast } from "sonner";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -441,14 +441,82 @@ export default function DashboardPage() {
 
   const canManageTeamEntries = canEditTeamLifeline;
 
+  const normalizedRoleSet = useMemo(() => {
+    const rawRoles = (user as any)?.roles;
+    if (Array.isArray(rawRoles)) {
+      return new Set(
+        rawRoles
+          .map((role) => String(role).toLowerCase().replace(/[_\s-]/g, ""))
+          .filter(Boolean)
+      );
+    }
+    if (typeof rawRoles === "string") {
+      return new Set([rawRoles.toLowerCase().replace(/[_\s-]/g, "")]);
+    }
+    return new Set<string>();
+  }, [user]);
+
+  const isReportingManagerOnly = useMemo(() => {
+    const hasManagerRole = normalizedRoleSet.has("manager");
+    const hasElevatedRole =
+      normalizedRoleSet.has("admin") || normalizedRoleSet.has("superadmin");
+    return hasManagerRole && !hasElevatedRole;
+  }, [normalizedRoleSet]);
+
+  const canAccessTeamMemberByHierarchy = useCallback(
+    async (rawValue: string) => {
+      const normalizedValue = rawValue.trim().toLowerCase();
+      if (!normalizedValue || !user?.orgId) return false;
+
+      const params: Record<string, any> = {
+        orgId: user.orgId,
+        q: normalizedValue,
+        page: 1,
+        limit: 20,
+      };
+
+      if (isReportingManagerOnly && user?.id) {
+        params.managerId = user.id;
+      }
+
+      const res = await apiClient.get(API_PATHS.EMPLOYEES, { params });
+      const responseData = Array.isArray(res.data)
+        ? res.data
+        : res.data?.data || [];
+      const items = Array.isArray(responseData)
+        ? responseData
+        : responseData.data || [];
+
+      return items.some((item: any) => {
+        const email = String(item?.email ?? "").trim().toLowerCase();
+        const id = Number(item?.id);
+        const isNotSelf = !Number.isFinite(id) || id !== Number(user?.id);
+        return email === normalizedValue && isNotSelf;
+      });
+    },
+    [isReportingManagerOnly, user?.id, user?.orgId]
+  );
+
   const fetchTeamMemberOptions = async (
     query: string
   ): Promise<SearchComboboxOption[]> => {
     if (!user?.orgId) return [];
 
     try {
+      const params: Record<string, any> = {
+        orgId: user.orgId,
+        q: query,
+        page: 1,
+        limit: 8,
+      };
+
+      // Reporting Managers must only see direct reportees.
+      if (isReportingManagerOnly && user?.id) {
+        params.managerId = user.id;
+      }
+
       const res = await apiClient.get(API_PATHS.EMPLOYEES, {
-        params: { orgId: user.orgId, q: query, page: 1, limit: 8 },
+        params,
       });
 
       const responseData = Array.isArray(res.data)
@@ -459,6 +527,20 @@ export default function DashboardPage() {
         : responseData.data || [];
 
       return items
+        .filter((item: any) => {
+          const itemId = Number(item?.id);
+          const managerId = Number(item?.managerId);
+
+          if (Number.isFinite(itemId) && Number(itemId) === Number(user?.id)) {
+            return false;
+          }
+
+          if (isReportingManagerOnly && Number.isFinite(Number(user?.id))) {
+            return Number.isFinite(managerId) && managerId === Number(user?.id);
+          }
+
+          return true;
+        })
         .map((item: any) => ({
           value: String(item?.email ?? "").trim(),
           label: String(item?.name ?? item?.email ?? "").trim(),
@@ -492,6 +574,19 @@ export default function DashboardPage() {
     setTeamSearchError(null);
 
     try {
+      if (isReportingManagerOnly) {
+        const hasAccess = await canAccessTeamMemberByHierarchy(normalizedValue);
+        if (!hasAccess) {
+          setTeamUser(null);
+          setMonthlyData(null);
+          setTeamSearchError("You can search only your direct reportees.");
+          toast.error("Access denied", {
+            description: "You can search only your direct reportees.",
+          });
+          return;
+        }
+      }
+
       const res = await apiClient.get(API_PATHS.EMPLOYEE_SEARCH, {
         params: { email: normalizedValue },
         headers: {
@@ -1863,7 +1958,7 @@ export default function DashboardPage() {
                 <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
                   {/* Team search (visible after clicking Team Dashboard) */}
                   {canAccessTeamDashboard && isTeamMode && (
-                    <div className="mr-2">
+                    <div className="mr-2 space-y-1">
                       <div className="flex items-center gap-2">
                         {canManageTeamEntries && (
                           <Button
@@ -1890,10 +1985,12 @@ export default function DashboardPage() {
                             void searchTeamMemberByEmail(nextValue);
                           }}
                           fetchOptions={fetchTeamMemberOptions}
-                          placeholder="Search by name or email"
-                          searchPlaceholder="Type name or email..."
+                          placeholder="Select employee"
+                          searchPlaceholder="Search employee..."
                           emptyMessage="No team member found."
+                          minQueryLength={0}
                           className="w-[260px]"
+                          disabled={teamSearchLoading}
                         />
                       </div>
                       {teamSearchError && (

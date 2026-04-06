@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import {
   Collapsible,
   CollapsibleContent,
@@ -112,6 +113,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { user, logout } = useAuth();
 
   const userInitials = getUserInitials(user?.name);
+  const userRoleLabel = getUserPrimaryRoleLabel(user?.roles);
 
   const filteredNavLinks = useMemo(() => {
     if (process.env.NODE_ENV === "development" && user) {
@@ -305,10 +307,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <SidebarMenuButton
-                  className="rounded-[4px] h-9 px-2 hover:bg-secondary-background w-full"
+                  className="rounded-[4px] min-h-[4.5rem] h-auto px-2 py-2 hover:bg-secondary-background w-full items-start"
                   size="lg"
                 >
-                  <Avatar className="h-6 w-6 flex-shrink-0">
+                  <Avatar className="h-6 w-6 flex-shrink-0 mt-0.5">
                     <AvatarImage
                       src={user?.avatarUrl || ""}
                       alt={user?.name || "User"}
@@ -317,11 +319,17 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                       {userInitials}
                     </AvatarFallback>
                   </Avatar>
-                  <div className="grid flex-1 text-left min-w-0 group-data-[collapsible=icon]:hidden">
+                  <div className="flex flex-1 flex-col items-start gap-1 text-left min-w-0 group-data-[collapsible=icon]:hidden">
                     <span className="truncate text-sm font-medium text-foreground">
                       {user?.name || "User"}
                     </span>
-                    <span className="truncate text-xs text-muted-foreground">
+                    <Badge
+                      variant="neutral"
+                      className="h-5 w-fit shrink-0 rounded-full border-border/60 bg-secondary-background px-2 text-[10px] font-medium uppercase tracking-wide text-foreground"
+                    >
+                      {userRoleLabel}
+                    </Badge>
+                    <span className="min-w-0 truncate text-xs text-muted-foreground">
                       {user?.email || ""}
                     </span>
                   </div>
@@ -333,8 +341,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 align="end"
                 sideOffset={4}
               >
-                <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
-                  <Avatar className="h-7 w-7">
+                <div className="flex items-start gap-2 px-3 py-1.5 border-b border-border">
+                  <Avatar className="h-7 w-7 mt-0.5">
                     <AvatarImage
                       src={user?.avatarUrl || ""}
                       alt={user?.name || "User"}
@@ -343,16 +351,23 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                       {userInitials}
                     </AvatarFallback>
                   </Avatar>
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-foreground truncate">
                       {user?.name || "User"}
                     </p>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {user?.email || ""}
-                    </p>
+                    <div className="mt-0.5 flex flex-col gap-0.5 min-w-0">
+                      <Badge
+                        variant="neutral"
+                        className="h-5 w-fit shrink-0 rounded-full border-border/60 bg-secondary-background px-2 text-[10px] font-medium uppercase tracking-wide text-foreground"
+                      >
+                        {userRoleLabel}
+                      </Badge>
+                      <p className="min-w-0 text-xs text-muted-foreground truncate">
+                        {user?.email || ""}
+                      </p>
+                    </div>
                   </div>
                 </div>
-                <DropdownMenuSeparator className="bg-border" />
                 <DropdownMenuItem
                   onClick={logout}
                   className="text-sm text-foreground rounded-[4px] bg-secondary-background hover:bg-foreground hover:text-background cursor-pointer mx-1 my-1"
@@ -381,6 +396,25 @@ function getUserInitials(name?: string): string {
     return (names[0][0] + names[1][0]).toUpperCase();
   }
   return name[0].toUpperCase();
+}
+
+function getUserPrimaryRoleLabel(roles?: string[]): string {
+  if (!roles || roles.length === 0) return "No role";
+
+  const normalizedRoles = roles.map((role) => role.toUpperCase());
+  const orderedRoles = [
+    ROLES.SUPER_ADMIN,
+    ROLES.ADMIN,
+    ROLES.MANAGER,
+    ROLES.EMPLOYEE,
+  ];
+  const primaryRole = orderedRoles.find((role) =>
+    normalizedRoles.includes(role)
+  );
+
+  if (!primaryRole) return roles[0];
+
+  return primaryRole.replaceAll("_", " ");
 }
 
 function isParentActive(item: NavItem, pathname: string): boolean {
