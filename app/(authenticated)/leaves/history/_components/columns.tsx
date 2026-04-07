@@ -276,7 +276,8 @@ function ActionsCell({
     } catch (error) {
       console.error("Error updating leave request:", error);
       toast.error("Failed to update leave request", {
-        description: "Unable to save changes. Please try again.",
+        description:
+          "Unable to update this leave request. If this date is a weekend or holiday, please select a valid working day and try again.",
       });
     } finally {
       setIsSavingEdit(false);
