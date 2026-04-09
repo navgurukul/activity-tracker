@@ -277,6 +277,18 @@ export default function DashboardPage() {
     cycleStart.setHours(0, 0, 0, 0);
     return cycleStart;
   });
+  // Separate state for employee salary cycle when viewing team members
+  const [employeeCurrentMonth, setEmployeeCurrentMonth] = useState<Date>(() => {
+    const today = new Date();
+    const cycleStartsOn = 26;
+    let cycleStart = new Date(today);
+    if (today.getDate() < cycleStartsOn) {
+      cycleStart.setMonth(today.getMonth() - 1);
+    }
+    cycleStart.setDate(cycleStartsOn);
+    cycleStart.setHours(0, 0, 0, 0);
+    return cycleStart;
+  });
   const [monthlyData, setMonthlyData] =
     useState<MonthlyTimesheetResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -708,6 +720,17 @@ export default function DashboardPage() {
       if (!isTeamMode) {
         localStorage.removeItem("team-dashboard-user");
         localStorage.removeItem("team-dashboard-search");
+        setEmployeeCurrentMonth(() => {
+          const today = new Date();
+          const cycleStartsOn = 26;
+          let cycleStart = new Date(today);
+          if (today.getDate() < cycleStartsOn) {
+            cycleStart.setMonth(today.getMonth() - 1);
+          }
+          cycleStart.setDate(cycleStartsOn);
+          cycleStart.setHours(0, 0, 0, 0);
+          return cycleStart;
+        });
       }
     }
   }, [isTeamMode, teamUser?.id]);
@@ -773,8 +796,9 @@ export default function DashboardPage() {
       setError(null);
 
       try {
-        const year = currentMonth.getFullYear();
-        const month = currentMonth.getMonth() + 1;
+        const monthToUse = isTeamMode ? employeeCurrentMonth : currentMonth;
+        const year = monthToUse.getFullYear();
+        const month = monthToUse.getMonth() + 1;
 
         // If teamUser is selected, include their id so backend returns that user's data
         const params: Record<string, any> = { year, month };
@@ -818,7 +842,7 @@ export default function DashboardPage() {
     };
 
     fetchMonthlyData();
-  }, [currentMonth, authLoading, isTeamMode, teamUser, refreshTick, user?.id]);
+  }, [currentMonth, employeeCurrentMonth, authLoading, isTeamMode, teamUser, refreshTick, user?.id]);
   useEffect(() => {
     if (authLoading || !user?.orgId || !canAccessTeamDashboard) return;
 
@@ -1259,12 +1283,13 @@ export default function DashboardPage() {
     const normalizedLimit = Math.floor(updatedLimit);
     const monthFromData = Number(monthlyData?.period?.month);
     const yearFromData = Number(monthlyData?.period?.year);
+    const monthToUseForContext = isTeamMode ? employeeCurrentMonth : currentMonth;
     const requestMonth = Number.isInteger(monthFromData)
       ? monthFromData
-      : currentMonth.getMonth() + 1;
+      : monthToUseForContext.getMonth() + 1;
     const requestYear = Number.isInteger(yearFromData)
       ? yearFromData
-      : currentMonth.getFullYear();
+      : monthToUseForContext.getFullYear();
 
     if (!Number.isInteger(requestYear) || !Number.isInteger(requestMonth)) {
       toast.error("Unable to update lifeline", {
@@ -1403,11 +1428,19 @@ export default function DashboardPage() {
   };
 
   const handlePreviousMonth = () => {
-    setCurrentMonth((prev) => subMonths(prev, 1));
+    if (isTeamMode) {
+      setEmployeeCurrentMonth((prev) => subMonths(prev, 1));
+    } else {
+      setCurrentMonth((prev) => subMonths(prev, 1));
+    }
   };
 
   const handleNextMonth = () => {
-    setCurrentMonth((prev) => addMonths(prev, 1));
+    if (isTeamMode) {
+      setEmployeeCurrentMonth((prev) => addMonths(prev, 1));
+    } else {
+      setCurrentMonth((prev) => addMonths(prev, 1));
+    }
   };
 
   const getRowKey = (row: TimesheetRow, index: number) =>
@@ -2080,7 +2113,17 @@ export default function DashboardPage() {
               ) : error ? (
                 <div className="text-center py-16">
                   <p className="text-sm text-muted-foreground mb-4">{error}</p>
-                  <Button variant="outline" size="sm" onClick={() => setCurrentMonth(new Date(currentMonth))}>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => {
+                      if (isTeamMode) {
+                        setEmployeeCurrentMonth(new Date(employeeCurrentMonth));
+                      } else {
+                        setCurrentMonth(new Date(currentMonth));
+                      }
+                    }}
+                  >
                     Retry
                   </Button>
                 </div>
