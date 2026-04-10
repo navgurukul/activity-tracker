@@ -2,7 +2,7 @@
 
 import { ColumnDef } from "@tanstack/react-table";
 import { format, parseISO } from "date-fns";
-import { Ban, Check, Pencil } from "lucide-react";
+import { Check, Pencil, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -61,7 +61,6 @@ type LeaveTypeOption = {
   code?: string;
 };
 
-// Helper function to format duration
 const formatDuration = (leave: LeaveRequest) => {
   if (leave.durationType === "half_day") {
     const segment =
@@ -72,22 +71,27 @@ const formatDuration = (leave: LeaveRequest) => {
   return days === 1 ? "1 Day" : `${days} Days`;
 };
 
-// Actions cell component with approval/rejection logic
 function ActionsCell({
   leave,
   onUpdate,
   isBulkOperationInProgress,
   canEditPendingRequests,
+  canDeleteApprovedRequests,
+  hasMultipleSelectedRows,
 }: {
   leave: LeaveRequest;
   onUpdate?: () => void;
   isBulkOperationInProgress?: boolean;
   canEditPendingRequests?: boolean;
+  canDeleteApprovedRequests?: boolean;
+  hasMultipleSelectedRows?: boolean;
 }) {
   const [isApproving, setIsApproving] = useState(false);
   const [isRejecting, setIsRejecting] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [isLoadingLeaveTypes, setIsLoadingLeaveTypes] = useState(false);
   const [leaveTypes, setLeaveTypes] = useState<LeaveTypeOption[]>([]);
 
@@ -153,7 +157,7 @@ function ActionsCell({
     return () => {
       isMounted = false;
     };
-  }, [isEditOpen, canEditPendingRequests]);
+  }, [isEditOpen, canEditPendingRequests, leaveTypeId]);
 
   const resetEditForm = () => {
     setLeaveTypeId(String(leave.leaveType?.id ?? ""));
@@ -171,7 +175,6 @@ function ActionsCell({
       toast.success("Leave request approved", {
         description: `Leave request for ${leave.user.name} has been approved.`,
       });
-      // Trigger parent component refresh if callback provided
       if (onUpdate) {
         onUpdate();
       }
@@ -192,7 +195,6 @@ function ActionsCell({
       toast.success("Leave request rejected", {
         description: `Leave request for ${leave.user.name} has been rejected.`,
       });
-      // Trigger parent component refresh if callback provided
       if (onUpdate) {
         onUpdate();
       }
@@ -235,7 +237,9 @@ function ActionsCell({
 
     const start = new Date(`${startDate}T00:00:00`);
     const end = new Date(`${endDate}T00:00:00`);
-    const days = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    const days =
+      Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) +
+      1;
     const hours = durationType === "half_day" ? days * 4 : days * 8;
 
     if (days <= 0 || Number.isNaN(hours)) {
@@ -284,8 +288,94 @@ function ActionsCell({
     }
   };
 
+  const handleDelete = async () => {
+    setIsDeleting(true);
+    try {
+      const path = API_PATHS.LEAVES_ADMIN_REQUEST_DELETE.replace(
+        "{id}",
+        String(leave.id)
+      );
+      await apiClient.delete(path);
+
+      toast.success("Leave request deleted", {
+        description: `Approved leave request for ${leave.user.name} has been deleted.`,
+      });
+
+      setIsDeleteOpen(false);
+      if (onUpdate) {
+        onUpdate();
+      }
+    } catch (error) {
+      console.error("Error deleting leave request:", error);
+      toast.error("Failed to delete leave request", {
+        description:
+          "Unable to delete the approved leave request. Please try again.",
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const isLoading = isApproving || isRejecting || isSavingEdit;
-  const isDisabled = isLoading || isBulkOperationInProgress;
+  const isDisabled = isLoading || isBulkOperationInProgress || isDeleting;
+  const canShowPendingActions = leave.state === "pending";
+  const canShowApprovedDelete =
+    leave.state === "approved" && Boolean(canDeleteApprovedRequests);
+
+  if (hasMultipleSelectedRows || (!canShowPendingActions && !canShowApprovedDelete)) {
+    return null;
+  }
+
+  if (canShowApprovedDelete) {
+    return (
+      <Dialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
+        <DialogTrigger asChild>
+          <Button
+            variant="neutral"
+            size="xs"
+            disabled={Boolean(isBulkOperationInProgress) || isDeleting}
+            title={
+              isBulkOperationInProgress
+                ? "Bulk operation in progress"
+                : "Delete approved request"
+            }
+          >
+            {isDeleting ? <Spinner /> : <Trash2 />}
+          </Button>
+        </DialogTrigger>
+        <DialogContent className="sm:max-w-[440px]">
+          <DialogHeader>
+            <DialogTitle>Delete Leave Request?</DialogTitle>
+            <DialogDescription>
+              {`Are you sure you want to delete approved leave request for ${leave.user.name}?`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="neutral"
+              onClick={() => setIsDeleteOpen(false)}
+              disabled={isDeleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={isDeleting}
+            >
+              {isDeleting ? (
+                <>
+                  <Spinner className="mr-2 h-4 w-4" /> Deleting...
+                </>
+              ) : (
+                "Delete"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <div className="flex gap-2">
@@ -303,7 +393,11 @@ function ActionsCell({
             <Button
               variant="outline"
               size="xs"
-              title={isBulkOperationInProgress ? "Bulk operation in progress" : "Edit request"}
+              title={
+                isBulkOperationInProgress
+                  ? "Bulk operation in progress"
+                  : "Edit request"
+              }
               disabled={Boolean(isBulkOperationInProgress)}
             >
               <Pencil />
@@ -323,7 +417,11 @@ function ActionsCell({
                 <Select value={leaveTypeId || undefined} onValueChange={setLeaveTypeId}>
                   <SelectTrigger id={`leave-type-${leave.id}`}>
                     <SelectValue
-                      placeholder={isLoadingLeaveTypes ? "Loading leave types..." : "Select leave type"}
+                      placeholder={
+                        isLoadingLeaveTypes
+                          ? "Loading leave types..."
+                          : "Select leave type"
+                      }
                     />
                   </SelectTrigger>
                   <SelectContent>
@@ -450,9 +548,10 @@ function ActionsCell({
         onClick={handleReject}
         disabled={isDisabled}
         size="xs"
+        className="text-red-600 hover:bg-red-50 border-red-200"
         title={isBulkOperationInProgress ? "Bulk operation in progress" : ""}
       >
-        {isRejecting ? <Spinner /> : <Ban />}
+        {isRejecting ? <Spinner /> : <X />}
       </Button>
     </div>
   );
@@ -474,6 +573,7 @@ export const columns: ColumnDef<LeaveRequest>[] = [
     cell: ({ row }) => (
       <Checkbox
         checked={row.getIsSelected()}
+        disabled={!row.getCanSelect()}
         onCheckedChange={(value) => row.toggleSelected(!!value)}
         aria-label="Select row"
       />
@@ -505,10 +605,7 @@ export const columns: ColumnDef<LeaveRequest>[] = [
     accessorKey: "requestedAt",
     header: "Applied Date",
     cell: ({ row }) => {
-      return format(
-        parseISO(row.getValue("requestedAt")),
-        DATE_FORMATS.DISPLAY
-      );
+      return format(parseISO(row.getValue("requestedAt")), DATE_FORMATS.DISPLAY);
     },
   },
   {
@@ -536,10 +633,34 @@ export const columns: ColumnDef<LeaveRequest>[] = [
     accessorKey: "reason",
     header: "Reason",
     cell: ({ row }) => (
-      <div className="max-w-[200px] truncate text-muted-foreground" title={row.original.reason}>
+      <div
+        className="max-w-[200px] truncate text-muted-foreground"
+        title={row.original.reason}
+      >
         {row.original.reason}
       </div>
     ),
+  },
+  {
+    accessorKey: "state",
+    header: "Status",
+    cell: ({ row }) => {
+      const state = row.original.state;
+      const stateConfig =
+        state === "pending"
+          ? { label: "Pending", className: "bg-[#bfa452] text-white" }
+          : state === "approved"
+            ? { label: "Approved", className: "bg-[#a5b68c] text-white" }
+            : { label: "Rejected", className: "bg-[#bb3b1e] text-white" };
+
+      return (
+        <span
+          className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${stateConfig.className}`}
+        >
+          {stateConfig.label}
+        </span>
+      );
+    },
   },
   {
     id: "actions",
@@ -550,6 +671,8 @@ export const columns: ColumnDef<LeaveRequest>[] = [
         onUpdate?: () => void;
         isBulkOperationInProgress?: boolean;
         canEditPendingRequests?: boolean;
+        canDeleteApprovedRequests?: boolean;
+        hasMultipleSelectedRows?: boolean;
       };
       return (
         <ActionsCell
@@ -557,6 +680,8 @@ export const columns: ColumnDef<LeaveRequest>[] = [
           onUpdate={meta?.onUpdate}
           isBulkOperationInProgress={meta?.isBulkOperationInProgress}
           canEditPendingRequests={meta?.canEditPendingRequests}
+          canDeleteApprovedRequests={meta?.canDeleteApprovedRequests}
+          hasMultipleSelectedRows={meta?.hasMultipleSelectedRows}
         />
       );
     },

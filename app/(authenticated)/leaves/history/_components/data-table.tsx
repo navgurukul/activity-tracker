@@ -5,6 +5,7 @@ import {
   flexRender,
   getCoreRowModel,
   getPaginationRowModel,
+  Row,
   useReactTable,
   VisibilityState,
 } from "@tanstack/react-table";
@@ -38,6 +39,8 @@ interface DataTableProps<TData, TValue> {
   data: TData[];
   onUpdate?: () => void;
   canEditPendingRequests?: boolean;
+  canDeleteApprovedRequests?: boolean;
+  getRowCanSelect?: (row: Row<TData>) => boolean;
 }
 
 export function DataTable<TData, TValue>({
@@ -45,6 +48,8 @@ export function DataTable<TData, TValue>({
   data,
   onUpdate,
   canEditPendingRequests = false,
+  canDeleteApprovedRequests = false,
+  getRowCanSelect,
 }: DataTableProps<TData, TValue>) {
   const [columnVisibility, setColumnVisibility] =
     React.useState<VisibilityState>({});
@@ -62,6 +67,8 @@ export function DataTable<TData, TValue>({
     columns,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
+    enableRowSelection: (row) =>
+      typeof getRowCanSelect === "function" ? getRowCanSelect(row) : true,
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setRowSelection,
     state: {
@@ -72,6 +79,8 @@ export function DataTable<TData, TValue>({
       onUpdate,
       isBulkOperationInProgress: isBulkLoading,
       canEditPendingRequests,
+      canDeleteApprovedRequests,
+      hasMultipleSelectedRows: Object.keys(rowSelection).length > 1,
     },
   });
 
@@ -172,6 +181,7 @@ export function DataTable<TData, TValue>({
               onClick={handleBulkApprove}
               disabled={isBulkLoading}
               size="sm"
+              className="bg-[#a5b68c] text-white hover:bg-[#8f9f76]"
             >
               {isBulkApproving ? (
                 <>
@@ -184,10 +194,11 @@ export function DataTable<TData, TValue>({
               )}
             </Button>
             <Button
-              variant="neutral"
+              variant="default"
               onClick={handleBulkReject}
               disabled={isBulkLoading}
               size="sm"
+              className="bg-[#bb3b1e] text-white hover:bg-[#9f331a]"
             >
               {isBulkRejecting ? (
                 <>

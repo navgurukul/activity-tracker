@@ -82,6 +82,9 @@ interface LeaveEntry {
   };
   hours: number;
   state?: string;
+  durationType?: string;
+  halfDaySegment?: string;
+  reason?: string;
 }
 
 interface DayData {
@@ -133,6 +136,7 @@ interface TimesheetRow {
   date: string;
   day: string;
   hours: number;
+  hoursDisplay?: string;
   isLeave: boolean;
   isWeekend: boolean;
   isHoliday: boolean;
@@ -153,6 +157,14 @@ interface DepartmentOption {
   name: string;
   code: string;
 }
+
+const toDisplayLabel = (value?: string) => {
+  if (!value) return "-";
+  return value
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+};
 
 /**
  * Minimal in-file TimesheetTable component to satisfy imports and typing.
@@ -981,13 +993,17 @@ export default function DashboardPage() {
                 ? "pending"
                 : "approved";
 
+          const leaveName = entry.leaveType?.name || "Leave";
+          const leaveStatusLabel = toDisplayLabel(leaveStatus);
+
           rows.push({
             sno: sno++,
-            project: "-",
-            activities: `Leave - ${entry.leaveType.name}`,
+            project: `${leaveName} - ${leaveStatusLabel}`,
+            activities: (entry as any).reason?.trim() || "-",
             date: format(parsedDate, "dd/MM/yyyy"),
             day: dayOfWeek,
             hours: entry.hours,
+            hoursDisplay: toDisplayLabel((entry as any).durationType),
             isLeave: true,
             isWeekend: isWeekendOff,
             isHoliday: day.isHoliday,
@@ -1077,6 +1093,7 @@ export default function DashboardPage() {
   const dailyTotals = useMemo(() => {
     const map = new Map<string, number>();
     timesheetRows.forEach((row) => {
+      if (row.isLeave) return;
       map.set(row.date, (map.get(row.date) ?? 0) + row.hours);
     });
     return map;
@@ -2197,8 +2214,7 @@ export default function DashboardPage() {
                     const timesheetEntries = day.timesheet?.entries ?? [];
                     const leaveEntries = day.leaves?.entries ?? [];
                     const totalHours =
-                      timesheetEntries.reduce((s, e) => s + e.hours, 0) +
-                      leaveEntries.reduce((s, e) => s + e.hours, 0);
+                      timesheetEntries.reduce((s, e) => s + e.hours, 0);
 
                     let status:
                       | "off"
@@ -2812,7 +2828,9 @@ export default function DashboardPage() {
                                     className="h-8 w-16 text-center"
                                   />
                                 ) : (
-                                  row.hours
+                                  row.isLeave
+                                    ? (row.hoursDisplay || "-")
+                                    : row.hours
                                 )}
                               </TableCell>
                               <TableCell
@@ -2836,30 +2854,6 @@ export default function DashboardPage() {
                                 ) : (
                                   <>
                                     {row.activities}
-                                    {row.leaveStatus === "pending" && (
-                                      <span
-                                        className="font-semibold ml-1"
-                                        style={{ color: "#806020" }}
-                                      >
-                                        · Pending approval
-                                      </span>
-                                    )}
-                                    {row.leaveStatus === "rejected" && (
-                                      <span
-                                        className="font-semibold ml-1"
-                                        style={{ color: "#903030" }}
-                                      >
-                                        · Rejected
-                                      </span>
-                                    )}
-                                    {row.leaveStatus === "approved" && (
-                                      <span
-                                        className="font-semibold ml-1"
-                                        style={{ color: "#2d6647" }}
-                                      >
-                                        · Approved
-                                      </span>
-                                    )}
                                     {!row.isLeave && row.timesheetState === "rejected" && (
                                       <span
                                         className="font-semibold ml-1"
@@ -3035,7 +3029,9 @@ export default function DashboardPage() {
                             </div>
                             <div className="text-right">
                               <p className="text-xl font-bold text-foreground">
-                                {row.hours}h
+                                {row.isLeave
+                                  ? (row.hoursDisplay || "-")
+                                  : `${row.hours}h`}
                               </p>
                             </div>
                           </div>
@@ -3053,30 +3049,6 @@ export default function DashboardPage() {
                             </p>
                             <p className="text-sm text-foreground">
                               {row.activities}
-                              {row.leaveStatus === "pending" && (
-                                <span
-                                  className="font-semibold ml-1"
-                                  style={{ color: "var(--color-yellow-text)" }}
-                                >
-                                  · Pending approval
-                                </span>
-                              )}
-                              {row.leaveStatus === "rejected" && (
-                                <span
-                                  className="font-semibold ml-1"
-                                  style={{ color: "var(--color-red-text)" }}
-                                >
-                                  · Rejected
-                                </span>
-                              )}
-                              {row.leaveStatus === "approved" && (
-                                <span
-                                  className="font-semibold ml-1"
-                                  style={{ color: "var(--color-green-text)" }}
-                                >
-                                  · Approved
-                                </span>
-                              )}
                             </p>
                           </div>
                         </div>

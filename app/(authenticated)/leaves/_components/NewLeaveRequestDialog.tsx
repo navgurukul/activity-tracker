@@ -21,6 +21,7 @@ import {
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -486,6 +487,10 @@ export function NewLeaveRequestDialog({
                         <SelectItem value="second_half">Second Half</SelectItem>
                       </SelectContent>
                     </Select>
+                    <FormDescription>
+                      Half day will be applied for each day in the selected
+                      range (excluding week offs and fixed holidays).
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
