@@ -112,7 +112,7 @@ export function LeaveApplicationForm({
   // Removed non-working-day logic so users can pick any date.
   const disabledDates = (date: Date) => {
     // Disable dates before 1900 as a sanity guard
-    if (date < new Date("1900-01-01")) return true;
+    if (date < new Date(1900, 0, 1)) return true;
     return false;
   };
 
@@ -125,8 +125,8 @@ export function LeaveApplicationForm({
         const balances = Array.isArray(res.data?.balances)
           ? res.data.balances
           : Array.isArray(res.data)
-          ? res.data
-          : [];
+            ? res.data
+            : [];
         const filtered = balances
           .filter((b: any) => (b.balanceHours ?? 0) > 0)
           .map((b: any) => {
@@ -280,7 +280,7 @@ export function LeaveApplicationForm({
       if (values.durationType === "full_day") {
         hours = daysDifference * 8; // Assuming 8 hours per full day
       } else if (values.durationType === "half_day") {
-        hours = daysDifference * 4; 
+        hours = daysDifference * 4;
       }
 
       // Transform form data to match API payload structure
@@ -347,15 +347,15 @@ export function LeaveApplicationForm({
 
       const errorMessage =
         typeof error === "object" &&
-        error !== null &&
-        "response" in error &&
-        (error as { response?: { data?: { message?: string } } }).response?.data
-          ?.message
+          error !== null &&
+          "response" in error &&
+          (error as { response?: { data?: { message?: string } } }).response?.data
+            ?.message
           ? (error as { response?: { data?: { message?: string } } }).response
-              ?.data?.message
+            ?.data?.message
           : error instanceof Error
-          ? error.message
-          : "Failed to submit leave application. Please try again.";
+            ? error.message
+            : "Failed to submit leave application. Please try again.";
 
       toast.error("Submission failed", {
         description: errorMessage,
@@ -453,35 +453,41 @@ export function LeaveApplicationForm({
                 render={({ field }) => (
                   <FormItem className="flex flex-col">
                     <FormLabel>Leave Date Range</FormLabel>
-                    <Popover open={dateRangeOpen} onOpenChange={setDateRangeOpen}>
+                    <Popover
+                      modal
+                      open={dateRangeOpen}
+                      onOpenChange={setDateRangeOpen}
+                    >
                       <PopoverTrigger asChild>
-                        <FormControl>
-                          <Button
-                            variant="noShadow"
-                            className={cn(
-                              "w-full justify-start text-left font-normal",
-                              !dateRange?.from && "text-muted-foreground"
-                            )}
-                          >
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {dateRange?.from ? (
-                              dateRange.to ? (
-                                <>
-                                  {format(dateRange.from, DATE_FORMATS.DISPLAY)}{" "}
-                                  - {format(dateRange.to, DATE_FORMATS.DISPLAY)}
-                                </>
-                              ) : (
-                                format(dateRange.from, DATE_FORMATS.DISPLAY)
-                              )
+                        <Button
+                          type="button"
+                          variant="noShadow"
+                          className={cn(
+                            "w-full justify-start text-left font-normal",
+                            !dateRange?.from && "text-muted-foreground"
+                          )}
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {dateRange?.from ? (
+                            dateRange.to ? (
+                              <>
+                                {format(dateRange.from, DATE_FORMATS.DISPLAY)}{" "}
+                                - {format(dateRange.to, DATE_FORMATS.DISPLAY)}
+                              </>
                             ) : (
-                              <span>Pick a date range</span>
-                            )}
-                          </Button>
-                        </FormControl>
+                              format(dateRange.from, DATE_FORMATS.DISPLAY)
+                            )
+                          ) : (
+                            <span>Pick a date range</span>
+                          )}
+                        </Button>
                       </PopoverTrigger>
                       <PopoverContent
                         className="w-auto p-0 border-0"
                         align="start"
+                        side="bottom"
+                        sideOffset={8}
+                        style={{ zIndex: 9999 }}
                       >
                         <Calendar
                           mode="range"
@@ -593,8 +599,8 @@ export function LeaveApplicationForm({
                 {isSubmitting
                   ? "Submitting..."
                   : isValidating
-                  ? "Validating..."
-                  : "Submit Leave Application"}
+                    ? "Validating..."
+                    : "Submit Leave Application"}
               </Button>
             </div>
           </form>

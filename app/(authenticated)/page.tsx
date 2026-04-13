@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { format, parseISO } from "date-fns";
 import { toast } from "sonner";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -82,6 +82,9 @@ interface LeaveEntry {
   };
   hours: number;
   state?: string;
+  durationType?: string;
+  halfDaySegment?: string;
+  reason?: string;
 }
 
 interface DayData {
@@ -133,6 +136,7 @@ interface TimesheetRow {
   date: string;
   day: string;
   hours: number;
+  hoursDisplay?: string;
   isLeave: boolean;
   isWeekend: boolean;
   isHoliday: boolean;
@@ -153,6 +157,14 @@ interface DepartmentOption {
   name: string;
   code: string;
 }
+
+const toDisplayLabel = (value?: string) => {
+  if (!value) return "-";
+  return value
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+};
 
 /**
  * Minimal in-file TimesheetTable component to satisfy imports and typing.
@@ -267,6 +279,18 @@ export default function DashboardPage() {
   const { isLoading: authLoading, user } = useAuth();
   const targetDateParam = searchParams.get("date");
   const [currentMonth, setCurrentMonth] = useState<Date>(() => {
+    const today = new Date();
+    const cycleStartsOn = 26;
+    let cycleStart = new Date(today);
+    if (today.getDate() < cycleStartsOn) {
+      cycleStart.setMonth(today.getMonth() - 1);
+    }
+    cycleStart.setDate(cycleStartsOn);
+    cycleStart.setHours(0, 0, 0, 0);
+    return cycleStart;
+  });
+  // Separate state for employee salary cycle when viewing team members
+  const [employeeCurrentMonth, setEmployeeCurrentMonth] = useState<Date>(() => {
     const today = new Date();
     const cycleStartsOn = 26;
     let cycleStart = new Date(today);
@@ -441,14 +465,82 @@ export default function DashboardPage() {
 
   const canManageTeamEntries = canEditTeamLifeline;
 
+  const normalizedRoleSet = useMemo(() => {
+    const rawRoles = (user as any)?.roles;
+    if (Array.isArray(rawRoles)) {
+      return new Set(
+        rawRoles
+          .map((role) => String(role).toLowerCase().replace(/[_\s-]/g, ""))
+          .filter(Boolean)
+      );
+    }
+    if (typeof rawRoles === "string") {
+      return new Set([rawRoles.toLowerCase().replace(/[_\s-]/g, "")]);
+    }
+    return new Set<string>();
+  }, [user]);
+
+  const isReportingManagerOnly = useMemo(() => {
+    const hasManagerRole = normalizedRoleSet.has("manager");
+    const hasElevatedRole =
+      normalizedRoleSet.has("admin") || normalizedRoleSet.has("superadmin");
+    return hasManagerRole && !hasElevatedRole;
+  }, [normalizedRoleSet]);
+
+  const canAccessTeamMemberByHierarchy = useCallback(
+    async (rawValue: string) => {
+      const normalizedValue = rawValue.trim().toLowerCase();
+      if (!normalizedValue || !user?.orgId) return false;
+
+      const params: Record<string, any> = {
+        orgId: user.orgId,
+        q: normalizedValue,
+        page: 1,
+        limit: 20,
+      };
+
+      if (isReportingManagerOnly && user?.id) {
+        params.managerId = user.id;
+      }
+
+      const res = await apiClient.get(API_PATHS.EMPLOYEES, { params });
+      const responseData = Array.isArray(res.data)
+        ? res.data
+        : res.data?.data || [];
+      const items = Array.isArray(responseData)
+        ? responseData
+        : responseData.data || [];
+
+      return items.some((item: any) => {
+        const email = String(item?.email ?? "").trim().toLowerCase();
+        const id = Number(item?.id);
+        const isNotSelf = !Number.isFinite(id) || id !== Number(user?.id);
+        return email === normalizedValue && isNotSelf;
+      });
+    },
+    [isReportingManagerOnly, user?.id, user?.orgId]
+  );
+
   const fetchTeamMemberOptions = async (
     query: string
   ): Promise<SearchComboboxOption[]> => {
     if (!user?.orgId) return [];
 
     try {
+      const params: Record<string, any> = {
+        orgId: user.orgId,
+        q: query,
+        page: 1,
+        limit: 8,
+      };
+
+      // Reporting Managers must only see direct reportees.
+      if (isReportingManagerOnly && user?.id) {
+        params.managerId = user.id;
+      }
+
       const res = await apiClient.get(API_PATHS.EMPLOYEES, {
-        params: { orgId: user.orgId, q: query, page: 1, limit: 8 },
+        params,
       });
 
       const responseData = Array.isArray(res.data)
@@ -459,6 +551,20 @@ export default function DashboardPage() {
         : responseData.data || [];
 
       return items
+        .filter((item: any) => {
+          const itemId = Number(item?.id);
+          const managerId = Number(item?.managerId);
+
+          if (Number.isFinite(itemId) && Number(itemId) === Number(user?.id)) {
+            return false;
+          }
+
+          if (isReportingManagerOnly && Number.isFinite(Number(user?.id))) {
+            return Number.isFinite(managerId) && managerId === Number(user?.id);
+          }
+
+          return true;
+        })
         .map((item: any) => ({
           value: String(item?.email ?? "").trim(),
           label: String(item?.name ?? item?.email ?? "").trim(),
@@ -492,6 +598,19 @@ export default function DashboardPage() {
     setTeamSearchError(null);
 
     try {
+      if (isReportingManagerOnly) {
+        const hasAccess = await canAccessTeamMemberByHierarchy(normalizedValue);
+        if (!hasAccess) {
+          setTeamUser(null);
+          setMonthlyData(null);
+          setTeamSearchError("You can search only your direct reportees.");
+          toast.error("Access denied", {
+            description: "You can search only your direct reportees.",
+          });
+          return;
+        }
+      }
+
       const res = await apiClient.get(API_PATHS.EMPLOYEE_SEARCH, {
         params: { email: normalizedValue },
         headers: {
@@ -613,6 +732,17 @@ export default function DashboardPage() {
       if (!isTeamMode) {
         localStorage.removeItem("team-dashboard-user");
         localStorage.removeItem("team-dashboard-search");
+        setEmployeeCurrentMonth(() => {
+          const today = new Date();
+          const cycleStartsOn = 26;
+          let cycleStart = new Date(today);
+          if (today.getDate() < cycleStartsOn) {
+            cycleStart.setMonth(today.getMonth() - 1);
+          }
+          cycleStart.setDate(cycleStartsOn);
+          cycleStart.setHours(0, 0, 0, 0);
+          return cycleStart;
+        });
       }
     }
   }, [isTeamMode, teamUser?.id]);
@@ -678,8 +808,9 @@ export default function DashboardPage() {
       setError(null);
 
       try {
-        const year = currentMonth.getFullYear();
-        const month = currentMonth.getMonth() + 1;
+        const monthToUse = isTeamMode ? employeeCurrentMonth : currentMonth;
+        const year = monthToUse.getFullYear();
+        const month = monthToUse.getMonth() + 1;
 
         // If teamUser is selected, include their id so backend returns that user's data
         const params: Record<string, any> = { year, month };
@@ -723,7 +854,7 @@ export default function DashboardPage() {
     };
 
     fetchMonthlyData();
-  }, [currentMonth, authLoading, isTeamMode, teamUser, refreshTick, user?.id]);
+  }, [currentMonth, employeeCurrentMonth, authLoading, isTeamMode, teamUser, refreshTick, user?.id]);
   useEffect(() => {
     if (authLoading || !user?.orgId || !canAccessTeamDashboard) return;
 
@@ -862,13 +993,17 @@ export default function DashboardPage() {
                 ? "pending"
                 : "approved";
 
+          const leaveName = entry.leaveType?.name || "Leave";
+          const leaveStatusLabel = toDisplayLabel(leaveStatus);
+
           rows.push({
             sno: sno++,
-            project: "-",
-            activities: `Leave - ${entry.leaveType.name}`,
+            project: `${leaveName} - ${leaveStatusLabel}`,
+            activities: (entry as any).reason?.trim() || "-",
             date: format(parsedDate, "dd/MM/yyyy"),
             day: dayOfWeek,
             hours: entry.hours,
+            hoursDisplay: toDisplayLabel((entry as any).durationType),
             isLeave: true,
             isWeekend: isWeekendOff,
             isHoliday: day.isHoliday,
@@ -958,6 +1093,7 @@ export default function DashboardPage() {
   const dailyTotals = useMemo(() => {
     const map = new Map<string, number>();
     timesheetRows.forEach((row) => {
+      if (row.isLeave) return;
       map.set(row.date, (map.get(row.date) ?? 0) + row.hours);
     });
     return map;
@@ -1164,12 +1300,13 @@ export default function DashboardPage() {
     const normalizedLimit = Math.floor(updatedLimit);
     const monthFromData = Number(monthlyData?.period?.month);
     const yearFromData = Number(monthlyData?.period?.year);
+    const monthToUseForContext = isTeamMode ? employeeCurrentMonth : currentMonth;
     const requestMonth = Number.isInteger(monthFromData)
       ? monthFromData
-      : currentMonth.getMonth() + 1;
+      : monthToUseForContext.getMonth() + 1;
     const requestYear = Number.isInteger(yearFromData)
       ? yearFromData
-      : currentMonth.getFullYear();
+      : monthToUseForContext.getFullYear();
 
     if (!Number.isInteger(requestYear) || !Number.isInteger(requestMonth)) {
       toast.error("Unable to update lifeline", {
@@ -1308,11 +1445,19 @@ export default function DashboardPage() {
   };
 
   const handlePreviousMonth = () => {
-    setCurrentMonth((prev) => subMonths(prev, 1));
+    if (isTeamMode) {
+      setEmployeeCurrentMonth((prev) => subMonths(prev, 1));
+    } else {
+      setCurrentMonth((prev) => subMonths(prev, 1));
+    }
   };
 
   const handleNextMonth = () => {
-    setCurrentMonth((prev) => addMonths(prev, 1));
+    if (isTeamMode) {
+      setEmployeeCurrentMonth((prev) => addMonths(prev, 1));
+    } else {
+      setCurrentMonth((prev) => addMonths(prev, 1));
+    }
   };
 
   const getRowKey = (row: TimesheetRow, index: number) =>
@@ -1863,7 +2008,7 @@ export default function DashboardPage() {
                 <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
                   {/* Team search (visible after clicking Team Dashboard) */}
                   {canAccessTeamDashboard && isTeamMode && (
-                    <div className="mr-2">
+                    <div className="mr-2 space-y-1">
                       <div className="flex items-center gap-2">
                         {canManageTeamEntries && (
                           <Button
@@ -1890,10 +2035,12 @@ export default function DashboardPage() {
                             void searchTeamMemberByEmail(nextValue);
                           }}
                           fetchOptions={fetchTeamMemberOptions}
-                          placeholder="Search by name or email"
-                          searchPlaceholder="Type name or email..."
+                          placeholder="Select employee"
+                          searchPlaceholder="Search employee..."
                           emptyMessage="No team member found."
+                          minQueryLength={0}
                           className="w-[260px]"
+                          disabled={teamSearchLoading}
                         />
                       </div>
                       {teamSearchError && (
@@ -1983,7 +2130,17 @@ export default function DashboardPage() {
               ) : error ? (
                 <div className="text-center py-16">
                   <p className="text-sm text-muted-foreground mb-4">{error}</p>
-                  <Button variant="outline" size="sm" onClick={() => setCurrentMonth(new Date(currentMonth))}>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => {
+                      if (isTeamMode) {
+                        setEmployeeCurrentMonth(new Date(employeeCurrentMonth));
+                      } else {
+                        setCurrentMonth(new Date(currentMonth));
+                      }
+                    }}
+                  >
                     Retry
                   </Button>
                 </div>
@@ -2057,8 +2214,7 @@ export default function DashboardPage() {
                     const timesheetEntries = day.timesheet?.entries ?? [];
                     const leaveEntries = day.leaves?.entries ?? [];
                     const totalHours =
-                      timesheetEntries.reduce((s, e) => s + e.hours, 0) +
-                      leaveEntries.reduce((s, e) => s + e.hours, 0);
+                      timesheetEntries.reduce((s, e) => s + e.hours, 0);
 
                     let status:
                       | "off"
@@ -2672,7 +2828,9 @@ export default function DashboardPage() {
                                     className="h-8 w-16 text-center"
                                   />
                                 ) : (
-                                  row.hours
+                                  row.isLeave
+                                    ? (row.hoursDisplay || "-")
+                                    : row.hours
                                 )}
                               </TableCell>
                               <TableCell
@@ -2696,30 +2854,6 @@ export default function DashboardPage() {
                                 ) : (
                                   <>
                                     {row.activities}
-                                    {row.leaveStatus === "pending" && (
-                                      <span
-                                        className="font-semibold ml-1"
-                                        style={{ color: "#806020" }}
-                                      >
-                                        · Pending approval
-                                      </span>
-                                    )}
-                                    {row.leaveStatus === "rejected" && (
-                                      <span
-                                        className="font-semibold ml-1"
-                                        style={{ color: "#903030" }}
-                                      >
-                                        · Rejected
-                                      </span>
-                                    )}
-                                    {row.leaveStatus === "approved" && (
-                                      <span
-                                        className="font-semibold ml-1"
-                                        style={{ color: "#2d6647" }}
-                                      >
-                                        · Approved
-                                      </span>
-                                    )}
                                     {!row.isLeave && row.timesheetState === "rejected" && (
                                       <span
                                         className="font-semibold ml-1"
@@ -2895,7 +3029,9 @@ export default function DashboardPage() {
                             </div>
                             <div className="text-right">
                               <p className="text-xl font-bold text-foreground">
-                                {row.hours}h
+                                {row.isLeave
+                                  ? (row.hoursDisplay || "-")
+                                  : `${row.hours}h`}
                               </p>
                             </div>
                           </div>
@@ -2913,30 +3049,6 @@ export default function DashboardPage() {
                             </p>
                             <p className="text-sm text-foreground">
                               {row.activities}
-                              {row.leaveStatus === "pending" && (
-                                <span
-                                  className="font-semibold ml-1"
-                                  style={{ color: "var(--color-yellow-text)" }}
-                                >
-                                  · Pending approval
-                                </span>
-                              )}
-                              {row.leaveStatus === "rejected" && (
-                                <span
-                                  className="font-semibold ml-1"
-                                  style={{ color: "var(--color-red-text)" }}
-                                >
-                                  · Rejected
-                                </span>
-                              )}
-                              {row.leaveStatus === "approved" && (
-                                <span
-                                  className="font-semibold ml-1"
-                                  style={{ color: "var(--color-green-text)" }}
-                                >
-                                  · Approved
-                                </span>
-                              )}
                             </p>
                           </div>
                         </div>

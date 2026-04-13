@@ -82,6 +82,9 @@ export function CompOffRequestForm() {
   const [employeeComboboxOpen, setEmployeeComboboxOpen] = useState(false);
   const [employeeSearchValue, setEmployeeSearchValue] = useState("");
   const [holidayDates, setHolidayDates] = useState<Set<string>>(new Set());
+  const [loadedHolidayMonths, setLoadedHolidayMonths] = useState<Set<string>>(
+    new Set()
+  );
   const [calendarOpen, setCalendarOpen] = useState(false);
   const { user } = useAuth();
 
@@ -99,6 +102,62 @@ export function CompOffRequestForm() {
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const getMonthKey = (year: number, month: number) => `${year}-${month}`;
+  const normalizeDateKey = (value: unknown): string | null => {
+    if (typeof value !== "string") return null;
+    return value.length >= 10 ? value.slice(0, 10) : null;
+  };
+
+  const loadHolidaysForMonth = async (targetDate: Date) => {
+    const year = targetDate.getFullYear();
+    const month = targetDate.getMonth() + 1;
+    const monthKey = getMonthKey(year, month);
+
+    if (loadedHolidayMonths.has(monthKey)) return;
+
+    try {
+      const response = await apiClient.get(API_PATHS.MONTHLY_TIMESHEET, {
+        params: { year, month },
+      });
+
+      const days = response.data?.days || response.data?.data?.days || [];
+      setHolidayDates((prev) => {
+        const next = new Set(prev);
+        days.forEach((day: any) => {
+          if (day?.isHoliday !== true) return;
+          const normalized = normalizeDateKey(day?.date);
+          if (normalized) next.add(normalized);
+        });
+        return next;
+      });
+      setLoadedHolidayMonths((prev) => {
+        const next = new Set(prev);
+        next.add(monthKey);
+        return next;
+      });
+    } catch (error: any) {
+      console.error("Error loading holidays:", error);
+    }
+  };
+  const checkHolidayForDate = async (date: Date): Promise<boolean> => {
+    const dateKey = format(date, DATE_FORMATS.API);
+    if (holidayDates.has(dateKey)) return true;
+    try {
+      const year = date.getFullYear();
+      const month = date.getMonth() + 1;
+      const response = await apiClient.get(API_PATHS.MONTHLY_TIMESHEET, {
+        params: { year, month },
+      });
+
+      const days = response.data?.days || response.data?.data?.days || [];
+      return days.some((day: any) => {
+        if (day?.isHoliday !== true) return false;
+        return normalizeDateKey(day?.date) === dateKey;
+      });
+    } catch {
+      return false;
+    }
+  };
 
   // Date matching function: Only allow non-working days and holidays
   // For Admin/Super Admin/Manager: allow future off-days
@@ -122,53 +181,15 @@ export function CompOffRequestForm() {
     return !isNonWorking && !isHolidayDate;
   };
 
-  // Proactively load holiday data for the current and previous months
+  // Preload holidays for initial calendar render; other months are loaded on navigation.
   useEffect(() => {
-    async function loadHolidays() {
-      try {
-        const today = new Date();
-        const currentYear = today.getFullYear();
-        const currentMonth = today.getMonth() + 1;
+    const today = new Date();
+    void loadHolidaysForMonth(today);
 
-        // Load current month holidays
-        const currentMonthData = await apiClient.get(
-          API_PATHS.MONTHLY_TIMESHEET,
-          {
-            params: { year: currentYear, month: currentMonth },
-          }
-        );
-
-        // Also load previous month in case user needs to select dates from it
-        const prevMonth = currentMonth === 1 ? 12 : currentMonth - 1;
-        const prevYear = currentMonth === 1 ? currentYear - 1 : currentYear;
-
-        const prevMonthData = await apiClient.get(API_PATHS.MONTHLY_TIMESHEET, {
-          params: { year: prevYear, month: prevMonth },
-        });
-
-        // Extract holiday dates from both months
-        const holidays = new Set<string>();
-
-        const processMonthData = (data: any) => {
-          const days = data?.days || data?.data?.days || [];
-          days.forEach((day: any) => {
-            if (day.isHoliday === true) {
-              holidays.add(day.date);
-            }
-          });
-        };
-
-        processMonthData(currentMonthData.data);
-        processMonthData(prevMonthData.data);
-
-        setHolidayDates(holidays);
-      } catch (error: any) {
-        console.error("Error loading holidays:", error);
-        // Silently fail - calendar will still work with non-working days
-      }
-    }
-
-    loadHolidays();
+    const prevMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    void loadHolidaysForMonth(prevMonthDate);
+    const nextMonthDate = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+    void loadHolidaysForMonth(nextMonthDate);
   }, []);
 
   // Fetch employees from API
@@ -291,7 +312,7 @@ export function CompOffRequestForm() {
       // Final validation: Ensure the date is a holiday or non-working day
       const isNonWorking = isNonWorkingDay(values.workDate);
       const dateKey = format(values.workDate, DATE_FORMATS.API);
-      const isHolidayDate = holidayDates.has(dateKey);
+      const isHolidayDate = await checkHolidayForDate(values.workDate);
 
       if (!isNonWorking && !isHolidayDate) {
         toast.error("Invalid work date", {
@@ -454,16 +475,13 @@ export function CompOffRequestForm() {
                         <FormControl>
                           <Button
                             variant="noShadow"
-                            className={cn(
-                              "w-full justify-start text-left font-normal",
-                              !field.value && "text-muted-foreground"
-                            )}
+                            className="w-full justify-start text-left font-normal text-main-foreground"
                           >
                             <CalendarIcon className="mr-2 h-4 w-4" />
                             {field.value ? (
                               format(field.value, DATE_FORMATS.DISPLAY)
                             ) : (
-                              <span>Pick a date</span>
+                              <span>Select date</span>
                             )}
                           </Button>
                         </FormControl>
@@ -478,6 +496,15 @@ export function CompOffRequestForm() {
                           onSelect={(date) => {
                             field.onChange(date);
                             setCalendarOpen(false);
+                          }}
+                          onMonthChange={(month) => {
+                            void loadHolidaysForMonth(month);
+                            void loadHolidaysForMonth(
+                              new Date(month.getFullYear(), month.getMonth() - 1, 1)
+                            );
+                            void loadHolidaysForMonth(
+                              new Date(month.getFullYear(), month.getMonth() + 1, 1)
+                            );
                           }}
                           disabled={disableInvalidDates}
                           initialFocus
