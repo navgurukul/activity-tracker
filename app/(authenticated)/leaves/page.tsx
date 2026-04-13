@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { format, parseISO } from "date-fns";
 import { Search, TreePalm, Clock, CheckCircle2, Calendar as CalendarIcon, X, Pencil, Plus, AlertCircle } from "lucide-react";
-import { DateRange } from "react-day-picker";
+import type { DateRange } from "react-day-picker";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -15,12 +15,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Calendar } from "@/components/ui/calendar";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import {
   Form,
   FormControl,
@@ -48,9 +48,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { DataTable } from "./history/_components/data-table";
-import { columns, type LeaveRequest as TeamLeaveRequest } from "./history/_components/columns";
-import { LeaveTable } from "./history/_components/LeaveTable";
+import {
+  DataTable,
+  columns,
+  type LeaveRequest as TeamLeaveRequest,
+} from "./history/_components";
 import { NewLeaveRequestDialog } from "./_components/NewLeaveRequestDialog";
 import apiClient from "@/lib/api-client";
 import { API_PATHS, DATE_FORMATS, VALIDATION } from "@/lib/constants";
@@ -100,7 +102,7 @@ interface LeaveBalanceItem {
   };
 }
 
-type LeavesMainTab = "leaves" | "balance" | "team";
+type LeavesMainTab = "leaves" | "my_reportees" | "all_org";
 
 interface PersistedLeavesState {
   activeMainTab?: LeavesMainTab;
@@ -138,6 +140,12 @@ export default function LeavesPage() {
       normalizedRoleSet.has("admin") || normalizedRoleSet.has("superadmin");
     return hasManagerRole && !hasElevatedRole;
   }, [normalizedRoleSet]);
+
+  const isAdminOrSuperAdmin = useMemo(() => {
+    return (
+      normalizedRoleSet.has("admin") || normalizedRoleSet.has("superadmin")
+    );
+  }, [normalizedRoleSet]);
   const [activeMainTab, setActiveMainTab] = useState<LeavesMainTab>("leaves");
 
   const [leaveHistory, setLeaveHistory] = useState<LeaveRequest[]>([]);
@@ -148,14 +156,16 @@ export default function LeavesPage() {
   const [isBalancesLoading, setIsBalancesLoading] = useState(true);
 
   // Filter state
-  const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [filterDateRange, setFilterDateRange] = useState<DateRange | undefined>();
+  const [leaveTypeFilter, setLeaveTypeFilter] = useState("all");
+  const [historyFromDate, setHistoryFromDate] = useState<Date | undefined>();
+  const [historyToDate, setHistoryToDate] = useState<Date | undefined>();
   const [leavesPage, setLeavesPage] = useState(1);
 
-  const [teamPage, setTeamPage] = useState(1);
-  const [teamPageSize, setTeamPageSize] = useState(10);
   const [teamSearch, setTeamSearch] = useState("");
+  const [teamStatusFilter, setTeamStatusFilter] = useState<"all" | "pending" | "approved" | "rejected">("all");
+  const [teamLeaveTypeFilter, setTeamLeaveTypeFilter] = useState("all");
+  const [teamVisibilityScope, setTeamVisibilityScope] = useState<"my_reportees" | "all_org">("my_reportees");
   const [isTeamEmployeeBalanceView, setIsTeamEmployeeBalanceView] = useState(false);
   const [showTeamEmployeeBalanceSearch, setShowTeamEmployeeBalanceSearch] = useState(false);
   const [teamEmployeeBalanceEmail, setTeamEmployeeBalanceEmail] = useState("");
@@ -173,6 +183,19 @@ export default function LeavesPage() {
   // Admin apply leave state
   const [adminApplyLeaveOpen, setAdminApplyLeaveOpen] = useState(false);
   const [adminApplLeaveSubmitting, setAdminApplyLeaveSubmitting] = useState(false);
+  const [adminApplyFormVisible, setAdminApplyFormVisible] = useState(false);
+  const [adminEmployeeDetailsLoading, setAdminEmployeeDetailsLoading] =
+    useState(false);
+  const [adminApplyEmployeeEmail, setAdminApplyEmployeeEmail] = useState("");
+  const [adminApplyEmployeeName, setAdminApplyEmployeeName] = useState("");
+  const [adminApplyEmployeeUserId, setAdminApplyEmployeeUserId] =
+    useState<number | null>(null);
+  const [adminEmployeeBalances, setAdminEmployeeBalances] = useState<
+    LeaveBalanceItem[]
+  >([]);
+  const [adminEmployeeHistory, setAdminEmployeeHistory] = useState<
+    TeamLeaveRequest[]
+  >([]);
   const [adminLeaveTypes, setAdminLeaveTypes] = useState<any[]>([]);
   const [adminLeaveDateRange, setAdminLeaveDateRange] = useState<DateRange | undefined>();
   const [isAdminDatePickerOpen, setIsAdminDatePickerOpen] = useState(false);
@@ -306,6 +329,187 @@ export default function LeavesPage() {
     [canUseLeaveSearch, isReportingManagerOnly, user?.id, user?.orgId]
   );
 
+  const fetchAdminApplyEmployeeSuggestions = useCallback(
+    async (query: string): Promise<SearchComboboxOption[]> => {
+      if (!user?.orgId || !isAdminOrSuperAdmin) return [];
+
+      try {
+        const res = await apiClient.get(API_PATHS.EMPLOYEES, {
+          params: {
+            orgId: user.orgId,
+            q: query,
+            page: 1,
+            limit: 8,
+          },
+        });
+
+        const responseData = Array.isArray(res.data)
+          ? res.data
+          : res.data?.data || [];
+        const items = Array.isArray(responseData)
+          ? responseData
+          : responseData.data || [];
+
+        return items
+          .map((item: any) => ({
+            value: String(item?.id ?? "").trim(),
+            label: String(item?.name ?? item?.email ?? "").trim(),
+            description: String(item?.email ?? "").trim(),
+          }))
+          .filter((item: SearchComboboxOption) => Boolean(item.value));
+      } catch {
+        return [];
+      }
+    },
+    [isAdminOrSuperAdmin, user?.orgId]
+  );
+
+  const resolveAdminApplyEmployeeByEmail = useCallback(
+    async (rawEmail: string) => {
+      if (!user?.orgId || !isAdminOrSuperAdmin) return null;
+
+      const email = rawEmail.trim().toLowerCase();
+      if (!email) return null;
+
+      try {
+        const res = await apiClient.get(API_PATHS.EMPLOYEES, {
+          params: {
+            orgId: user.orgId,
+            q: email,
+            page: 1,
+            limit: 20,
+          },
+        });
+
+        const responseData = Array.isArray(res.data)
+          ? res.data
+          : res.data?.data || [];
+        const items = Array.isArray(responseData)
+          ? responseData
+          : responseData.data || [];
+
+        const matchedEmployee = items.find(
+          (item: any) =>
+            String(item?.email ?? "").trim().toLowerCase() === email
+        );
+
+        if (matchedEmployee?.id) {
+          const resolvedName = String(
+            matchedEmployee?.name ?? matchedEmployee?.email ?? ""
+          ).trim();
+          const resolvedEmail = String(
+            matchedEmployee?.email ?? rawEmail
+          ).trim();
+          const resolvedUserId = Number(matchedEmployee.id);
+
+          setAdminApplyEmployeeName(resolvedName);
+          setAdminApplyEmployeeUserId(resolvedUserId);
+          setAdminApplyEmployeeEmail(resolvedEmail);
+
+          return {
+            userId: resolvedUserId,
+            email: resolvedEmail,
+            name: resolvedName,
+          };
+        }
+
+        setAdminApplyEmployeeUserId(null);
+        setAdminApplyEmployeeName("");
+        toast.error("Please select a valid employee from the list");
+        return null;
+      } catch {
+        setAdminApplyEmployeeUserId(null);
+        setAdminApplyEmployeeName("");
+        toast.error("Unable to resolve employee");
+        return null;
+      }
+    },
+    [isAdminOrSuperAdmin, user?.orgId]
+  );
+
+  const loadAdminEmployeeDetails = useCallback(
+    async (
+      rawEmail: string,
+      providedUserId?: number | null,
+      providedName?: string
+    ) => {
+      const email = rawEmail.trim().toLowerCase();
+      if (!email) {
+        setAdminEmployeeBalances([]);
+        setAdminEmployeeHistory([]);
+        return;
+      }
+
+      setAdminEmployeeDetailsLoading(true);
+
+      try {
+        const params: Record<string, unknown> = { email };
+        const response = await apiClient.get(API_PATHS.LEAVES_BALANCES_EMPLOYEE, {
+          params,
+        });
+
+        const parsedBalances = Array.isArray(response.data?.balances)
+          ? response.data.balances
+          : Array.isArray(response.data?.data?.balances)
+            ? response.data.data.balances
+            : [];
+
+        const resolvedUserId =
+          response.data?.userId ||
+          response.data?.data?.userId ||
+          response.data?.user?.id ||
+          (parsedBalances[0]?.userId as number | undefined) ||
+          providedUserId ||
+          null;
+
+        const matchingHistory = [...teamLeaveHistory]
+          .filter((leave) => {
+            if (resolvedUserId) {
+              return Number(leave.user?.id) === Number(resolvedUserId);
+            }
+            return (
+              String(leave.user?.email ?? "").trim().toLowerCase() === email
+            );
+          })
+          .sort((a, b) => {
+            const aTs = new Date(a.requestedAt).getTime();
+            const bTs = new Date(b.requestedAt).getTime();
+            return bTs - aTs;
+          })
+          .slice(0, 8);
+
+        const resolvedName =
+          providedName?.trim() ||
+          String(matchingHistory[0]?.user?.name ?? "").trim() ||
+          String(email.split("@")[0] ?? "");
+
+        setAdminApplyEmployeeName(resolvedName);
+        setAdminApplyEmployeeUserId(resolvedUserId);
+        setAdminEmployeeBalances(parsedBalances);
+        setAdminEmployeeHistory(matchingHistory);
+      } catch {
+        const fallbackHistory = [...teamLeaveHistory]
+          .filter(
+            (leave) =>
+              String(leave.user?.email ?? "").trim().toLowerCase() === email
+          )
+          .sort((a, b) => {
+            const aTs = new Date(a.requestedAt).getTime();
+            const bTs = new Date(b.requestedAt).getTime();
+            return bTs - aTs;
+          })
+          .slice(0, 8);
+
+        setAdminEmployeeBalances([]);
+        setAdminEmployeeHistory(fallbackHistory);
+        toast.error("Unable to load employee leave balance");
+      } finally {
+        setAdminEmployeeDetailsLoading(false);
+      }
+    },
+    [teamLeaveHistory]
+  );
+
   const validateManagerHierarchyAccess = useCallback(
     async (rawEmail: string) => {
       if (!isReportingManagerOnly || !user?.orgId || !user?.id) {
@@ -396,8 +600,10 @@ export default function LeavesPage() {
 
   const handleAdminApplyLeaveSubmit = useCallback(
     async (values: z.infer<typeof adminApplyLeaveFormSchema>) => {
-      if (!selectedTeamEmployeeUserId) {
-        toast.error("Please select an employee first");
+      if (!adminApplyEmployeeUserId) {
+        toast.error("Please select an employee first", {
+          description: "Choose an employee from the dropdown before submitting.",
+        });
         return;
       }
 
@@ -420,7 +626,7 @@ export default function LeavesPage() {
           values.durationType === "full_day" ? days * 8 : days * 4;
 
         const payload: Record<string, unknown> = {
-          userId: selectedTeamEmployeeUserId,
+          userId: adminApplyEmployeeUserId,
           leaveTypeId: selectedLeaveType.id,
           startDate: format(values.startDate, DATE_FORMATS.API),
           endDate: format(values.endDate, DATE_FORMATS.API),
@@ -437,7 +643,7 @@ export default function LeavesPage() {
           payload
         );
         if (response.status === 200 || response.status === 201) {
-          toast.success(`Leave applied successfully for ${selectedTeamEmployeeEmail}!`);
+          toast.success(`Leave applied and auto-approved for ${adminApplyEmployeeEmail || "employee"}`);
           invalidateMonthlyTimesheetCache(
             values.startDate.getFullYear(),
             values.startDate.getMonth() + 1
@@ -459,6 +665,8 @@ export default function LeavesPage() {
           setAdminLeaveDateRange(undefined);
           setIsAdminDatePickerOpen(false);
           setAdminLeaveValidationError(null);
+          setAdminApplyEmployeeEmail("");
+          setAdminApplyEmployeeUserId(null);
           setAdminApplyLeaveOpen(false);
           fetchTeamLeaves();
         }
@@ -479,16 +687,42 @@ export default function LeavesPage() {
         setAdminApplyLeaveSubmitting(false);
       }
     },
-    [selectedTeamEmployeeUserId, selectedTeamEmployeeEmail, adminLeaveTypes, adminApplyLeaveForm, fetchTeamLeaves]
+    [adminApplyEmployeeUserId, adminApplyEmployeeEmail, adminLeaveTypes, adminApplyLeaveForm, fetchTeamLeaves]
   );
 
   const openAdminApplyLeaveDialog = useCallback(() => {
-    if (!selectedTeamEmployeeUserId || !selectedTeamEmployeeEmail) {
-      toast.error("Please search for an employee first");
-      return;
+    setAdminApplyFormVisible(false);
+    if (selectedTeamEmployeeEmail) {
+      const matchedEmployee = teamLeaveHistory.find(
+        (leave) =>
+          String(leave.user?.email ?? "").trim().toLowerCase() ===
+          selectedTeamEmployeeEmail.trim().toLowerCase()
+      );
+
+      const prefillName = String(matchedEmployee?.user?.name ?? "").trim();
+      setAdminApplyEmployeeName(prefillName);
+      setAdminApplyEmployeeEmail(selectedTeamEmployeeEmail);
+      setAdminApplyEmployeeUserId(selectedTeamEmployeeUserId ?? null);
+      void loadAdminEmployeeDetails(
+        selectedTeamEmployeeEmail,
+        selectedTeamEmployeeUserId,
+        prefillName
+      );
+    } else {
+      setAdminApplyEmployeeEmail("");
+      setAdminApplyEmployeeName("");
+      setAdminApplyEmployeeUserId(null);
+      setAdminEmployeeBalances([]);
+      setAdminEmployeeHistory([]);
     }
+
     setAdminApplyLeaveOpen(true);
-  }, [selectedTeamEmployeeUserId, selectedTeamEmployeeEmail]);
+  }, [
+    loadAdminEmployeeDetails,
+    selectedTeamEmployeeEmail,
+    selectedTeamEmployeeUserId,
+    teamLeaveHistory,
+  ]);
 
   useEffect(() => {
     if (adminLeaveDateRange?.from && adminLeaveDateRange?.to) {
@@ -572,34 +806,71 @@ export default function LeavesPage() {
     const leavesState =
       (currentState.__leavesState as PersistedLeavesState | undefined) ?? {};
 
-    if (leavesState.activeMainTab && (leavesState.activeMainTab !== "team" || canUseLeaveSearch)) {
-      setActiveMainTab(leavesState.activeMainTab);
+    const rawRestoredTab = String(leavesState.activeMainTab ?? "");
+    const restoredMainTab: LeavesMainTab =
+      rawRestoredTab === "all_org"
+        ? "all_org"
+        : rawRestoredTab === "my_reportees" || rawRestoredTab === "team"
+          ? "my_reportees"
+          : "leaves";
+
+    const canRestoreTeamTab =
+      restoredMainTab === "my_reportees" ||
+      (restoredMainTab === "all_org" && isAdminOrSuperAdmin);
+
+    if (restoredMainTab === "leaves" || (canUseLeaveSearch && canRestoreTeamTab)) {
+      setActiveMainTab(restoredMainTab);
+      setTeamVisibilityScope(
+        restoredMainTab === "all_org" ? "all_org" : "my_reportees"
+      );
     }
 
     if (canUseLeaveSearch && leavesState.isTeamEmployeeBalanceView) {
       setIsTeamEmployeeBalanceView(true);
       setShowTeamEmployeeBalanceSearch(true);
-      setActiveMainTab("team");
+      const balanceTab: LeavesMainTab = "my_reportees";
+      setActiveMainTab(balanceTab);
+      setTeamVisibilityScope("my_reportees");
     }
 
     if (canUseLeaveSearch && leavesState.teamEmployeeEmail) {
       setTeamEmployeeBalanceEmail(leavesState.teamEmployeeEmail);
       void fetchEmployeeLeaveBalance(leavesState.teamEmployeeEmail);
     }
-  }, [canUseLeaveSearch, fetchEmployeeLeaveBalance]);
+  }, [canUseLeaveSearch, fetchEmployeeLeaveBalance, isAdminOrSuperAdmin]);
 
   useEffect(() => {
-    if (canUseLeaveSearch) return;
-
-    if (activeMainTab === "team") {
+    if (!canUseLeaveSearch && activeMainTab !== "leaves") {
       setActiveMainTab("leaves");
+      setTeamVisibilityScope("my_reportees");
+    }
+
+    if (
+      canUseLeaveSearch &&
+      activeMainTab === "all_org" &&
+      !isAdminOrSuperAdmin
+    ) {
+      setActiveMainTab("my_reportees");
+      setTeamVisibilityScope("my_reportees");
     }
 
     if (isTeamEmployeeBalanceView) {
-      setIsTeamEmployeeBalanceView(false);
-      setShowTeamEmployeeBalanceSearch(false);
+      if (!canUseLeaveSearch) {
+        setIsTeamEmployeeBalanceView(false);
+        setShowTeamEmployeeBalanceSearch(false);
+      }
+
+      if (activeMainTab === "all_org") {
+        setIsTeamEmployeeBalanceView(false);
+        setShowTeamEmployeeBalanceSearch(false);
+      }
     }
-  }, [activeMainTab, canUseLeaveSearch, isTeamEmployeeBalanceView]);
+  }, [
+    activeMainTab,
+    canUseLeaveSearch,
+    isAdminOrSuperAdmin,
+    isTeamEmployeeBalanceView,
+  ]);
 
   useEffect(() => {
     persistLeavesState({ activeMainTab });
@@ -619,16 +890,29 @@ export default function LeavesPage() {
 
     const success = await fetchEmployeeLeaveBalance(email);
     if (success) {
-      setActiveMainTab("team");
+      const balanceTab: LeavesMainTab =
+        activeMainTab === "all_org" && isAdminOrSuperAdmin
+          ? "all_org"
+          : "my_reportees";
+      setActiveMainTab(balanceTab);
+      setTeamVisibilityScope(
+        balanceTab === "all_org" ? "all_org" : "my_reportees"
+      );
       setIsTeamEmployeeBalanceView(true);
       setShowTeamEmployeeBalanceSearch(true);
       persistLeavesState({
-        activeMainTab: "team",
+        activeMainTab: balanceTab,
         isTeamEmployeeBalanceView: true,
         teamEmployeeEmail: email,
       });
     }
-  }, [canUseLeaveSearch, fetchEmployeeLeaveBalance, persistLeavesState]);
+  }, [
+    activeMainTab,
+    canUseLeaveSearch,
+    fetchEmployeeLeaveBalance,
+    isAdminOrSuperAdmin,
+    persistLeavesState,
+  ]);
 
   const handleSearchTeamEmployeeBalance = useCallback(async () => {
     await searchTeamEmployeeBalanceByEmail(teamEmployeeBalanceEmail);
@@ -641,22 +925,37 @@ export default function LeavesPage() {
     setSelectedTeamEmployeeUserId(null);
     setTeamEmployeeBalances([]);
 
+    const currentTeamTab: LeavesMainTab =
+      activeMainTab === "all_org" && isAdminOrSuperAdmin
+        ? "all_org"
+        : "my_reportees";
+
     persistLeavesState({
-      activeMainTab: "team",
+      activeMainTab: currentTeamTab,
       isTeamEmployeeBalanceView: true,
       teamEmployeeEmail: "",
     });
-  }, [persistLeavesState]);
+  }, [activeMainTab, isAdminOrSuperAdmin, persistLeavesState]);
 
   const backToTeamLeaves = useCallback(() => {
+    const currentTeamTab: LeavesMainTab =
+      activeMainTab === "all_org" && isAdminOrSuperAdmin
+        ? "all_org"
+        : "my_reportees";
+
     setIsTeamEmployeeBalanceView(false);
     setShowTeamEmployeeBalanceSearch(false);
     persistLeavesState({
-      activeMainTab: "team",
+      activeMainTab: currentTeamTab,
       isTeamEmployeeBalanceView: false,
       teamEmployeeEmail: teamEmployeeBalanceEmail,
     });
-  }, [persistLeavesState, teamEmployeeBalanceEmail]);
+  }, [
+    activeMainTab,
+    isAdminOrSuperAdmin,
+    persistLeavesState,
+    teamEmployeeBalanceEmail,
+  ]);
 
   const handleUpdateAllocatedBalance = useCallback(async () => {
     if (!editingAllocatedBalance || !selectedTeamEmployeeUserId) return;
@@ -726,19 +1025,29 @@ export default function LeavesPage() {
 
   // Filtered leave requests
   const filteredLeaves = useMemo(() => {
-    const fromStr = filterDateRange?.from ? format(filterDateRange.from, "yyyy-MM-dd") : "";
-    const toStr = filterDateRange?.to ? format(filterDateRange.to, "yyyy-MM-dd") : (filterDateRange?.from ? format(filterDateRange.from, "yyyy-MM-dd") : "");
+    const effectiveFromDate =
+      historyFromDate && historyToDate
+        ? (historyFromDate <= historyToDate ? historyFromDate : historyToDate)
+        : historyFromDate;
+    const effectiveToDate =
+      historyFromDate && historyToDate
+        ? (historyFromDate <= historyToDate ? historyToDate : historyFromDate)
+        : historyToDate;
+
+    const fromStr = effectiveFromDate ? format(effectiveFromDate, "yyyy-MM-dd") : "";
+    const toStr = effectiveToDate ? format(effectiveToDate, "yyyy-MM-dd") : "";
+
     return leaveHistory.filter((leave) => {
-      const matchesSearch =
-        !searchQuery ||
-        leave.leaveType.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        leave.reason.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesLeaveType =
+        leaveTypeFilter === "all" ||
+        String(leave.leaveType?.name ?? "").trim().toLowerCase() ===
+          leaveTypeFilter.trim().toLowerCase();
       const matchesStatus = statusFilter === "all" || leave.state === statusFilter;
-      const matchesFrom = !fromStr || leave.startDate >= fromStr;
-      const matchesTo = !toStr || leave.endDate <= toStr;
-      return matchesSearch && matchesStatus && matchesFrom && matchesTo;
+      const matchesFrom = !fromStr || leave.endDate >= fromStr;
+      const matchesTo = !toStr || leave.startDate <= toStr;
+      return matchesLeaveType && matchesStatus && matchesFrom && matchesTo;
     });
-  }, [leaveHistory, searchQuery, statusFilter, filterDateRange]);
+  }, [leaveHistory, statusFilter, leaveTypeFilter, historyFromDate, historyToDate]);
 
   const leavesTotal = filteredLeaves.length;
   const leavesTotalPages = Math.max(1, Math.ceil(leavesTotal / leavesPageSize));
@@ -755,59 +1064,74 @@ export default function LeavesPage() {
     setLeavesPage((prev) => Math.min(prev, leavesTotalPages));
   }, [leavesTotalPages]);
 
-  // Team leaves by state
-  const teamPending = useMemo(
-    () => teamLeaveHistory.filter((l) => l.state === "pending"),
-    [teamLeaveHistory]
-  );
-  const teamApproved = useMemo(
-    () => teamLeaveHistory.filter((l) => l.state === "approved"),
-    [teamLeaveHistory]
-  );
-  const teamRejected = useMemo(
-    () => teamLeaveHistory.filter((l) => l.state === "rejected"),
-    [teamLeaveHistory]
-  );
-  const filteredTeamPending = useMemo(() => {
-    if (!teamSearch.trim()) return teamPending;
-    const q = teamSearch.toLowerCase();
-    return teamPending.filter(
-      (l) =>
-        (l.user?.name ?? "").toLowerCase().includes(q) ||
-        (l.user?.email ?? "").toLowerCase().includes(q)
+  const myReporteeTeamLeaves = useMemo(() => {
+    if (!user?.id) return [] as TeamLeaveRequest[];
+    return teamLeaveHistory.filter(
+      (leave) => Number(leave.managerId) === Number(user.id)
     );
-  }, [teamPending, teamSearch]);
+  }, [teamLeaveHistory, user?.id]);
 
-  const filteredTeamApproved = useMemo(() => {
-    if (!teamSearch.trim()) return teamApproved;
-    const q = teamSearch.toLowerCase();
-    return teamApproved.filter(
-      (l) =>
-        (l.user?.name ?? "").toLowerCase().includes(q) ||
-        (l.user?.email ?? "").toLowerCase().includes(q)
-    );
-  }, [teamApproved, teamSearch]);
+  const scopedTeamLeaves = useMemo(() => {
+    if (isReportingManagerOnly) {
+      return myReporteeTeamLeaves;
+    }
 
-  const filteredTeamRejected = useMemo(() => {
-    if (!teamSearch.trim()) return teamRejected;
-    const q = teamSearch.toLowerCase();
-    return teamRejected.filter(
-      (l) =>
-        (l.user?.name ?? "").toLowerCase().includes(q) ||
-        (l.user?.email ?? "").toLowerCase().includes(q)
-    );
-  }, [teamRejected, teamSearch]);
+    if (isAdminOrSuperAdmin && teamVisibilityScope === "my_reportees") {
+      return myReporteeTeamLeaves;
+    }
 
-  const teamTotal = filteredTeamApproved.length;
-  const teamTotalPages = Math.max(1, Math.ceil(teamTotal / teamPageSize));
-  const paginatedTeamApproved = useMemo(() => {
-    const start = (teamPage - 1) * teamPageSize;
-    return filteredTeamApproved.slice(start, start + teamPageSize);
-  }, [filteredTeamApproved, teamPage, teamPageSize]);
+    return teamLeaveHistory;
+  }, [
+    isAdminOrSuperAdmin,
+    isReportingManagerOnly,
+    myReporteeTeamLeaves,
+    teamLeaveHistory,
+    teamVisibilityScope,
+  ]);
 
-  useEffect(() => {
-    setTeamPage(1);
-  }, [filteredTeamApproved, teamPageSize]);
+  const teamLeaveTypeOptions = useMemo(() => {
+    const seen = new Set<string>();
+    return scopedTeamLeaves
+      .map((leave) => String(leave.leaveType?.name ?? "").trim())
+      .filter((name) => {
+        if (!name || seen.has(name)) return false;
+        seen.add(name);
+        return true;
+      })
+      .sort((a, b) => a.localeCompare(b))
+      .map((name) => ({ value: name, label: getDisplayLeaveTypeName(name) }));
+  }, [scopedTeamLeaves]);
+
+  const filteredTeamLeaves = useMemo(() => {
+    const query = teamSearch.trim().toLowerCase();
+
+    return [...scopedTeamLeaves]
+      .filter((leave) => {
+        const matchesSearch =
+          !query ||
+          String(leave.user?.name ?? "").toLowerCase().includes(query) ||
+          String(leave.user?.email ?? "").toLowerCase().includes(query);
+        const matchesStatus =
+          teamStatusFilter === "all" || leave.state === teamStatusFilter;
+        const matchesLeaveType =
+          teamLeaveTypeFilter === "all" ||
+          String(leave.leaveType?.name ?? "").trim().toLowerCase() ===
+            teamLeaveTypeFilter.trim().toLowerCase();
+
+        return matchesSearch && matchesStatus && matchesLeaveType;
+      })
+      .sort((a, b) => {
+        const aTs = new Date(a.requestedAt).getTime();
+        const bTs = new Date(b.requestedAt).getTime();
+        return bTs - aTs;
+      });
+  }, [scopedTeamLeaves, teamSearch, teamStatusFilter, teamLeaveTypeFilter]);
+
+  const showNoReporteesEmptyState =
+    isAdminOrSuperAdmin &&
+    teamVisibilityScope === "my_reportees" &&
+    !isTeamLoading &&
+    myReporteeTeamLeaves.length === 0;
 
   // Sorted balances (casual/wellness first)
   const sortedBalances = useMemo(() => {
@@ -823,6 +1147,23 @@ export default function LeavesPage() {
       );
     });
   }, [visibleBalances]);
+
+  const leaveTypeOptions = useMemo(() => {
+    const seen = new Set<string>();
+    return sortedBalances
+      .map((balance) => {
+        const value = String(balance.leaveType?.name ?? "").trim();
+        return {
+          value,
+          label: getDisplayLeaveTypeName(value),
+        };
+      })
+      .filter((option) => {
+        if (!option.value || seen.has(option.value)) return false;
+        seen.add(option.value);
+        return true;
+      });
+  }, [sortedBalances]);
 
   const sortedTeamEmployeeBalances = useMemo(() => {
     const priority = ["casual leave", "wellness leave"];
@@ -865,12 +1206,56 @@ export default function LeavesPage() {
     return `${formatLeaveDaysValue(days)}d`;
   };
 
-  const hasFilters = searchQuery || statusFilter !== "all" || filterDateRange;
+  const formatTeamLeaveDuration = (leave: TeamLeaveRequest) => {
+    if (leave.durationType === "half_day") {
+      const segment =
+        leave.halfDaySegment === "first_half" ? "First Half" : "Second Half";
+      return `Half Day (${segment})`;
+    }
+
+    const days = leave.hours / 8;
+    return `${formatLeaveDaysValue(days)} ${days === 1 ? "day" : "days"}`;
+  };
+
+  const sortedAdminEmployeeBalances = useMemo(() => {
+    const priority = ["casual leave", "wellness leave"];
+    return adminEmployeeBalances
+      .filter((balance) => {
+        const leaveName = String(balance.leaveType?.name ?? "")
+          .trim()
+          .toLowerCase();
+        const leaveCode = String(balance.leaveType?.code ?? "")
+          .trim()
+          .toLowerCase();
+
+        const isCompensatoryLeave =
+          leaveName === "compensatory leave" ||
+          leaveCode === "compensatory_leave" ||
+          leaveCode === "compensatory-leave" ||
+          leaveCode === "compensatory";
+
+        return !isCompensatoryLeave;
+      })
+      .sort((a, b) => {
+        const aKey = (a.leaveType?.name || "").toLowerCase();
+        const bKey = (b.leaveType?.name || "").toLowerCase();
+        const ai = priority.findIndex((p) => aKey.includes(p));
+        const bi = priority.findIndex((p) => bKey.includes(p));
+        return (
+          (ai === -1 ? Infinity : ai) - (bi === -1 ? Infinity : bi) ||
+          aKey.localeCompare(bKey)
+        );
+      });
+  }, [adminEmployeeBalances]);
+
+  const hasFilters =
+    statusFilter !== "all" || leaveTypeFilter !== "all" || historyFromDate || historyToDate;
 
   const clearFilters = () => {
-    setSearchQuery("");
     setStatusFilter("all");
-    setFilterDateRange(undefined);
+    setLeaveTypeFilter("all");
+    setHistoryFromDate(undefined);
+    setHistoryToDate(undefined);
   };
 
   const getStatusBadge = (state: string) => {
@@ -888,16 +1273,86 @@ export default function LeavesPage() {
     );
   };
 
-  const getDisplayLeaveTypeName = (name: string) => {
+  function getDisplayLeaveTypeName(name: string) {
     const normalizedName = name.trim().toLowerCase();
     if (normalizedName === "comp off") {
       return "Compensatory Leave";
     }
     return name;
+  }
+
+  const getLeaveCategory = (leaveCode?: string, leaveName?: string) => {
+    const normalizedCode = String(leaveCode ?? "")
+      .trim()
+      .toUpperCase();
+    const normalizedName = String(leaveName ?? "")
+      .trim()
+      .toLowerCase();
+
+    const isEarnedLeave =
+      normalizedCode === "CL" ||
+      normalizedCode === "WL" ||
+      normalizedName === "casual leave" ||
+      normalizedName === "wellness leave";
+
+    return isEarnedLeave
+      ? {
+          label: "Earned Leave",
+          className: "bg-emerald-50 text-emerald-700 border-emerald-200",
+        }
+      : {
+          label: "Special Leave",
+          className: "bg-amber-50 text-amber-700 border-amber-200",
+        };
   };
 
   const currentYear = new Date().getFullYear();
   const fyLabel = `FY ${currentYear - 1}–${String(currentYear).slice(-2)}`;
+  const leavePolicyUrl = process.env.NEXT_PUBLIC_LEAVE_POLICY_URL?.trim() ?? "";
+  const headerAction = (() => {
+    if (activeMainTab === "leaves") {
+      return (
+        <NewLeaveRequestDialog
+          userEmail={user?.email ?? ""}
+          onSuccess={handleNewRequestSuccess}
+        />
+      );
+    }
+
+    if (activeMainTab === "my_reportees") {
+      return (
+        <Button
+          size="sm"
+          variant="default"
+          onClick={() => {
+            setIsTeamEmployeeBalanceView(true);
+            setShowTeamEmployeeBalanceSearch(true);
+            persistLeavesState({
+              activeMainTab: "my_reportees",
+              isTeamEmployeeBalanceView: true,
+              teamEmployeeEmail: teamEmployeeBalanceEmail,
+            });
+          }}
+          className="gap-1.5 whitespace-nowrap"
+        >
+          View Leave Balance for Reportees
+        </Button>
+      );
+    }
+    if (activeMainTab === "all_org" && isAdminOrSuperAdmin) {
+      return (
+        <Button
+          size="sm"
+          variant="default"
+          onClick={openAdminApplyLeaveDialog}
+          className="gap-1.5 whitespace-nowrap"
+        >
+          Add Leave request for employee
+        </Button>
+      );
+    }
+    return null;
+  })();
 
   const statCards = [
     {
@@ -940,29 +1395,59 @@ export default function LeavesPage() {
 
   return (
     <>
-      <AppHeader crumbs={[{ label: "Leaves" }]} />
+      <AppHeader
+        crumbs={[{ label: "Leaves" }]}
+        right={
+          <div className="flex items-center gap-2">
+            <a
+              href={leavePolicyUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="my-1 inline-flex h-9 items-center whitespace-nowrap rounded-md border border-border px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary-background hover:text-foreground"
+            >
+              View Leave Policy ↗
+            </a>
+            <div className="my-1">{headerAction}</div>
+          </div>
+        }
+      />
       <PageWrapper>
         <div className="p-4 md:p-6 space-y-6">
           {/* Page header */}
-          <div className="flex items-start justify-between gap-4">
+          <div>
             <div>
               <h1 className="text-xl font-semibold text-foreground tracking-tight">Leave Management</h1>
               <p className="text-sm text-muted-foreground mt-0.5">Track and manage your time off</p>
             </div>
-            <NewLeaveRequestDialog
-              userEmail={user?.email ?? ""}
-              onSuccess={handleNewRequestSuccess}
-            />
           </div>
 
           <Tabs
             value={activeMainTab}
             onValueChange={(value) => {
-              if (value === "team" && !canUseLeaveSearch) {
+              const nextTab = value as LeavesMainTab;
+
+              if (nextTab !== "leaves" && !canUseLeaveSearch) {
                 setActiveMainTab("leaves");
+                setTeamVisibilityScope("my_reportees");
                 return;
               }
-              setActiveMainTab(value as LeavesMainTab);
+
+              if (nextTab === "all_org" && !isAdminOrSuperAdmin) {
+                setActiveMainTab("my_reportees");
+                setTeamVisibilityScope("my_reportees");
+                return;
+              }
+
+              setTeamVisibilityScope(
+                nextTab === "all_org" ? "all_org" : "my_reportees"
+              );
+
+              if (nextTab === "all_org") {
+                setIsTeamEmployeeBalanceView(false);
+                setShowTeamEmployeeBalanceSearch(false);
+              }
+
+              setActiveMainTab(nextTab);
             }}
             className="w-full"
           >
@@ -970,9 +1455,11 @@ export default function LeavesPage() {
             <TabsList className="inline-flex items-center gap-1 rounded-lg border border-border bg-secondary-background p-1 h-auto mb-6">
               {[
                 { value: "leaves", label: "My Leaves" },
-                { value: "balance", label: "My Leave Balance" },
                 ...(canUseLeaveSearch
-                  ? ([{ value: "team", label: "Team" }] as const)
+                  ? ([{ value: "my_reportees", label: "My Reportees" }] as const)
+                  : []),
+                ...(canUseLeaveSearch && isAdminOrSuperAdmin
+                  ? ([{ value: "all_org", label: "All Org" }] as const)
                   : []),
               ].map((tab) => (
                 <TabsTrigger
@@ -1021,108 +1508,224 @@ export default function LeavesPage() {
                           <span className="text-sm font-normal text-muted-foreground ml-1">days</span>
                         </p>
                       )}
-                      {/* <p className="text-xs text-muted-foreground mt-1">{card.sub}</p> */}
                     </div>
                   );
                 })}
               </div>
 
-              {/* Filters row */}
-              <div className="flex flex-wrap items-center gap-2">
-                {canUseLeaveSearch && (
-                  <div className="relative flex-1 min-w-[200px] max-w-sm">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                    <Input
-                      placeholder="Search leave type or reason..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-9 h-9 bg-background text-sm font-base"
-                    />
+              {/* Leave Balance */}
+              <div className="rounded-lg border border-border overflow-hidden bg-background">
+                <div className="px-4 py-3 border-b border-border bg-secondary-background flex items-center justify-between gap-3">
+                  <span className="text-sm font-medium text-foreground">Leave Balance</span>
+                  {!isBalancesLoading && (
+                    <span className="text-xs text-muted-foreground">
+                      {sortedBalances.length} {sortedBalances.length === 1 ? "record" : "records"}
+                    </span>
+                  )}
+                </div>
+                {isBalancesLoading ? (
+                  <div className="p-5 space-y-4">
+                    {Array.from({ length: 6 }).map((_, i) => (
+                      <div key={i} className="h-8 bg-secondary-background rounded animate-pulse" />
+                    ))}
                   </div>
-                )}
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className={cn(
-                        "h-9 gap-2 min-w-[200px] justify-start text-sm font-base",
-                        !filterDateRange?.from && "text-muted-foreground"
-                      )}
-                    >
-                      <CalendarIcon className="h-4 w-4 flex-shrink-0" />
-                      {filterDateRange?.from ? (
-                        filterDateRange.to ? (
-                          <>
-                            {format(filterDateRange.from, "d MMM yyyy")}
-                            {" — "}
-                            {format(filterDateRange.to, "d MMM yyyy")}
-                          </>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm min-w-[640px]">
+                      <thead>
+                        <tr className="border-b border-border bg-secondary-background">
+                          <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Leave Type</th>
+                          <th className="text-center px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Allocated</th>
+                          <th className="text-center px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Pending</th>
+                          <th className="text-center px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Approved/Taken</th>
+                          <th className="text-center px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Remaining</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sortedBalances.length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="px-4 py-8 text-center text-sm text-muted-foreground">
+                              No leave balance found.
+                            </td>
+                          </tr>
                         ) : (
-                          format(filterDateRange.from, "d MMM yyyy")
-                        )
-                      ) : (
-                        "Filter by date range"
-                      )}
-                      {filterDateRange?.from && (
-                        <span
-                          role="button"
-                          className="ml-auto h-4 w-4 rounded-full flex items-center justify-center hover:bg-secondary-background"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setFilterDateRange(undefined);
-                          }}
-                        >
-                          <X className="h-3 w-3" />
-                        </span>
-                      )}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0 border-0" align="start">
-                    <Calendar
-                      mode="range"
-                      defaultMonth={filterDateRange?.from}
-                      selected={filterDateRange}
-                      onSelect={setFilterDateRange}
-                      numberOfMonths={2}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="h-9 w-[130px] bg-background text-foreground border-border text-sm font-base">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Status</SelectItem>
-                    <SelectItem value="pending">Pending</SelectItem>
-                    <SelectItem value="approved">Approved</SelectItem>
-                    <SelectItem value="rejected">Declined</SelectItem>
-                  </SelectContent>
-                </Select>
-                {hasFilters && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-9 gap-1.5 text-muted-foreground hover:text-foreground"
-                    onClick={clearFilters}
-                  >
-                    <X className="h-3.5 w-3.5" />
-                    Clear all
-                  </Button>
+                          sortedBalances.map((balance) => {
+                            const allocated = balance.allocatedHours / 8;
+                            const pending = balance.pendingHours / 8;
+                            const approved = balance.bookedHours / 8;
+                            const remaining = balance.balanceHours / 8;
+                            const remainingTone =
+                              remaining <= 0
+                                ? "bg-red-50 text-red-700 border-red-200"
+                                : remaining <= 2
+                                  ? "bg-amber-50 text-amber-700 border-amber-200"
+                                  : "bg-emerald-50 text-emerald-700 border-emerald-200";
+
+                            return (
+                              <tr key={balance.id} className="border-b border-border last:border-0 hover:bg-secondary-background/50 transition-colors">
+                                <td className="px-4 py-3.5 font-medium text-foreground">
+                                  <div className="flex items-center gap-2">
+                                    <span>{getDisplayLeaveTypeName(balance.leaveType.name)}</span>
+                                    <span
+                                      className={cn(
+                                        "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium",
+                                        getLeaveCategory(balance.leaveType.code, balance.leaveType.name).className
+                                      )}
+                                    >
+                                      {getLeaveCategory(balance.leaveType.code, balance.leaveType.name).label}
+                                    </span>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3.5 text-center tabular-nums text-foreground">
+                                  {formatLeaveDaysValue(allocated)}
+                                </td>
+                                <td className="px-4 py-3.5 text-center tabular-nums text-foreground">
+                                  {formatLeaveDaysValue(pending)}
+                                </td>
+                                <td className="px-4 py-3.5 text-center tabular-nums text-foreground">
+                                  {formatLeaveDaysValue(approved)}
+                                </td>
+                                <td className="px-4 py-3.5 text-center tabular-nums font-semibold">
+                                  <span className={cn("inline-flex min-w-[3rem] items-center justify-center rounded-md border px-2 py-1", remainingTone)}>
+                                    {formatLeaveDaysValue(remaining)}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
               </div>
 
-              {/* Leave requests table */}
+              {/* Leave History */}
               <div className="rounded-lg border border-border overflow-hidden bg-background">
-                <div className="px-4 py-3 border-b border-border bg-secondary-background flex items-center justify-between">
-                  <span className="text-sm font-medium text-foreground">Leave Requests</span>
+                <div className="px-4 py-3 border-b border-border bg-secondary-background flex items-center justify-between gap-3">
+                  <span className="text-sm font-medium text-foreground">Leave History</span>
                   {!isLoading && (
                     <span className="text-xs text-muted-foreground">
                       {filteredLeaves.length} {filteredLeaves.length === 1 ? "record" : "records"}
                     </span>
                   )}
                 </div>
+
+                <div className="px-4 py-4 border-b border-border flex flex-wrap items-center gap-2">
+                  <Select value={leaveTypeFilter} onValueChange={setLeaveTypeFilter}>
+                    <SelectTrigger className="h-9 w-[170px] bg-background text-foreground border-border text-sm font-base">
+                      <SelectValue placeholder="All Leave Types" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Leave Types</SelectItem>
+                      {leaveTypeOptions.map((leaveType) => (
+                        <SelectItem key={leaveType.value} value={leaveType.value}>
+                          {leaveType.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <div className="flex flex-wrap items-center gap-2">
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className={cn(
+                              "h-9 min-w-[170px] justify-start text-sm font-base",
+                              !historyFromDate && "text-muted-foreground"
+                            )}
+                          >
+                            <CalendarIcon className="mr-2 h-4 w-4 flex-shrink-0" />
+                            {historyFromDate
+                              ? `From: ${format(historyFromDate, "d MMM yyyy")}`
+                              : "From"}
+                            {historyFromDate && (
+                              <span
+                                role="button"
+                                className="ml-auto h-4 w-4 rounded-full flex items-center justify-center hover:bg-secondary-background"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setHistoryFromDate(undefined);
+                                }}
+                              >
+                                <X className="h-3 w-3" />
+                              </span>
+                            )}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0 border-0" align="start">
+                          <Calendar
+                            mode="single"
+                            selected={historyFromDate}
+                            onSelect={setHistoryFromDate}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className={cn(
+                              "h-9 min-w-[170px] justify-start text-sm font-base",
+                              !historyToDate && "text-muted-foreground"
+                            )}
+                          >
+                            <CalendarIcon className="mr-2 h-4 w-4 flex-shrink-0" />
+                            {historyToDate
+                              ? `To: ${format(historyToDate, "d MMM yyyy")}`
+                              : "To"}
+                            {historyToDate && (
+                              <span
+                                role="button"
+                                className="ml-auto h-4 w-4 rounded-full flex items-center justify-center hover:bg-secondary-background"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setHistoryToDate(undefined);
+                                }}
+                              >
+                                <X className="h-3 w-3" />
+                              </span>
+                            )}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0 border-0" align="start">
+                          <Calendar
+                            mode="single"
+                            selected={historyToDate}
+                            onSelect={setHistoryToDate}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                  </div>
+                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger className="h-9 w-[130px] bg-background text-foreground border-border text-sm font-base">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Status</SelectItem>
+                      <SelectItem value="pending">Pending</SelectItem>
+                      <SelectItem value="approved">Approved</SelectItem>
+                      <SelectItem value="rejected">Declined</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {hasFilters && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-9 gap-1.5 text-muted-foreground hover:text-foreground"
+                      onClick={clearFilters}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      Clear all
+                    </Button>
+                  )}
+                </div>
+
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm min-w-[600px]">
                     <thead>
@@ -1227,188 +1830,13 @@ export default function LeavesPage() {
               </div>
             </TabsContent>
 
-            {/* ── LEAVE BALANCE TAB ── */}
-            <TabsContent value="balance" className="mt-0">
-              <div className="rounded-lg border border-border overflow-hidden bg-background">
-                <div className="px-5 py-4 border-b border-border bg-secondary-background flex flex-wrap items-start gap-y-2 justify-between">
-                  <div>
-                    <h2 className="text-sm font-semibold text-foreground">Leave Balance</h2>
-                  </div>
-                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1.5">
-                      <span className="h-2 w-2 rounded-full bg-emerald-400 inline-block" />
-                      Healthy
-                    </span>
-                    <span className="flex items-center gap-1.5">
-                      <span className="h-2 w-2 rounded-full bg-amber-400 inline-block" />
-                      Low
-                    </span>
-                  </div>
-                </div>
-
-                {isBalancesLoading ? (
-                  <div className="p-5 space-y-4">
-                    {Array.from({ length: 6 }).map((_, i) => (
-                      <div key={i} className="flex items-center gap-4">
-                        <div className="h-4 w-40 bg-secondary-background rounded animate-pulse" />
-                        <div className="h-4 flex-1 bg-secondary-background rounded animate-pulse" />
-                        <div className="h-4 w-16 bg-secondary-background rounded animate-pulse" />
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="divide-y divide-border">
-                    {sortedBalances.map((balance) => {
-                      const allocated = balance.allocatedHours / 8;
-                      const remaining = balance.balanceHours / 8;
-                      const pending = balance.pendingHours / 8;
-                      const approved = balance.bookedHours / 8;
-                      const pct = allocated > 0 ? Math.round((remaining / allocated) * 100) : 0;
-                      const isLow = pct < 50;
-
-                      return (
-                        <div key={balance.id} className="px-5 py-4 hover:bg-secondary-background/40 transition-colors">
-                          <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-4">
-                            {/* Leave type name */}
-                            <div className="flex items-center gap-2 sm:w-44 sm:flex-shrink-0">
-                              <span className="text-sm font-medium text-foreground">{getDisplayLeaveTypeName(balance.leaveType.name)}</span>
-                              {balance.leaveType.paid && (
-                                <span className="text-[10px] font-medium text-[#748074] bg-[#e5eeea] rounded px-1.5 py-0.5">Paid</span>
-                              )}
-                            </div>
-
-                            {/* Progress bar */}
-                            <div className="flex-1 flex items-center gap-3 min-w-0">
-                              <div className="flex-1 h-2 bg-border rounded-full overflow-hidden">
-                                <div
-                                  className={cn(
-                                    "h-full rounded-full transition-all duration-500",
-                                    isLow ? "bg-amber-400" : "bg-emerald-400"
-                                  )}
-                                  style={{ width: `${Math.min(pct, 100)}%` }}
-                                />
-                              </div>
-                              <span className="text-xs text-muted-foreground w-8 text-right tabular-nums">{pct}%</span>
-                            </div>
-
-                            {/* Stats */}
-                            <div className="flex items-center gap-4 sm:gap-5 text-sm sm:flex-shrink-0">
-                              <div className="text-center min-w-[2.5rem]">
-                                <p className={cn("font-semibold tabular-nums", isLow ? "text-amber-600" : "text-emerald-600")}>
-                                  {formatLeaveDaysValue(remaining)}
-                                </p>
-                                <p className="text-[10px] text-muted-foreground">remaining</p>
-                              </div>
-                              <div className="text-center min-w-[2.5rem]">
-                                <p className="font-medium text-foreground tabular-nums">{formatLeaveDaysValue(allocated)}</p>
-                                <p className="text-[10px] text-muted-foreground">allocated</p>
-                              </div>
-                              {pending > 0 && (
-                                <div className="text-center min-w-[2.5rem]">
-                                  <p className="font-medium text-amber-600 tabular-nums">{formatLeaveDaysValue(pending)}</p>
-                                  <p className="text-[10px] text-muted-foreground">pending</p>
-                                </div>
-                              )}
-                              {approved > 0 && (
-                                <div className="text-center min-w-[2.5rem]">
-                                  <p className="font-medium text-muted-foreground tabular-nums">{formatLeaveDaysValue(approved)}</p>
-                                  <p className="text-[10px] text-muted-foreground">taken</p>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </TabsContent>
-
-            {/* ── TEAM MANAGEMENT TAB ── */}
+            {/* ── TEAM MANAGEMENT TABS ── */}
             {canUseLeaveSearch && (
-            <TabsContent value="team" className="mt-0">
-              <Tabs defaultValue="pending" className="w-full">
-                {/* Inner tab bar for team sub-tabs */}
-                <div className="flex items-center justify-between mb-5 border-b border-border">
-                  {!isTeamEmployeeBalanceView && (
-                    <div className="flex items-center gap-1">
-                      {[
-                        { val: "pending", label: "Pending", count: filteredTeamPending.length, activeColor: "data-[state=active]:text-amber-700 data-[state=active]:border-amber-500" },
-                        { val: "approved", label: "Approved", count: filteredTeamApproved.length, activeColor: "data-[state=active]:text-emerald-700 data-[state=active]:border-emerald-500" },
-                        { val: "rejected", label: "Rejected", count: filteredTeamRejected.length, activeColor: "data-[state=active]:text-red-700 data-[state=active]:border-red-500" },
-                      ].map(({ val, label, count, activeColor }) => (
-                        <TabsList key={val} className="h-auto p-0 bg-transparent border-0 rounded-none">
-                          <TabsTrigger
-                            value={val}
-                            className={cn(
-                              "rounded-none px-4 pb-3 pt-1 text-sm font-medium bg-transparent shadow-none",
-                              "border-b-2 border-transparent -mb-px",
-                              "text-muted-foreground hover:text-foreground transition-colors",
-                              "data-[state=active]:bg-transparent data-[state=active]:shadow-none",
-                              activeColor
-                            )}
-                          >
-                            {label}
-                            <span
-                              className={cn(
-                                "ml-2 inline-flex items-center justify-center min-w-[1.25rem] h-5 rounded-full px-1.5 text-[10px] font-semibold tabular-nums",
-                                val === "pending" ? "bg-amber-50 text-amber-700" :
-                                  val === "approved" ? "bg-emerald-50 text-emerald-700" :
-                                    "bg-red-50 text-red-700"
-                              )}
-                            >
-                              {count}
-                            </span>
-                          </TabsTrigger>
-                        </TabsList>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Right-side search for team name / email */}
-                  <div className="ml-4">
-                    <div className="flex items-center gap-2">
-                      {canUseLeaveSearch && !isTeamEmployeeBalanceView && (
-                        <div className="relative">
-                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                          <Input
-                            placeholder="Search team name or email..."
-                            value={teamSearch}
-                            onChange={(e) => setTeamSearch(e.target.value)}
-                            className="pl-9 h-8 bg-background text-sm min-w-[220px]"
-                          />
-                        </div>
-                      )}
-                      {canUseLeaveSearch && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            if (isTeamEmployeeBalanceView) {
-                              backToTeamLeaves();
-                              return;
-                            }
-                            setActiveMainTab("team");
-                            setIsTeamEmployeeBalanceView(true);
-                            setShowTeamEmployeeBalanceSearch(true);
-                            persistLeavesState({
-                              activeMainTab: "team",
-                              isTeamEmployeeBalanceView: true,
-                              teamEmployeeEmail: teamEmployeeBalanceEmail.trim(),
-                            });
-                          }}
-                        >
-                          {isTeamEmployeeBalanceView
-                            ? "Back to Team Leaves"
-                            : "Employee Leave Balance"}
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {canUseLeaveSearch && isTeamEmployeeBalanceView && showTeamEmployeeBalanceSearch && (
+            <TabsContent
+              value={activeMainTab === "all_org" ? "all_org" : "my_reportees"}
+              className="mt-0"
+            >
+                {canUseLeaveSearch && activeMainTab === "my_reportees" && isTeamEmployeeBalanceView && showTeamEmployeeBalanceSearch && (
                   <div className="mb-4 rounded-lg border border-border bg-background p-4">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
                       <SearchCombobox
@@ -1447,17 +1875,6 @@ export default function LeavesPage() {
                       >
                         Clear
                       </Button>
-                      {selectedTeamEmployeeEmail && canEditTeamPendingRequests && (
-                        <Button
-                          size="sm"
-                          variant="default"
-                          onClick={openAdminApplyLeaveDialog}
-                          className="sm:min-w-[160px] gap-1.5"
-                        >
-                          <Plus className="h-4 w-4" />
-                          Apply leave for employee
-                        </Button>
-                      )}
                     </div>
 
                     {selectedTeamEmployeeEmail && (
@@ -1489,7 +1906,17 @@ export default function LeavesPage() {
                               sortedTeamEmployeeBalances.map((balance) => (
                                 <tr key={balance.id} className="border-b border-border last:border-0">
                                   <td className="px-4 py-3 font-medium text-foreground">
-                                    {getDisplayLeaveTypeName(balance.leaveType.name)}
+                                    <div className="flex items-center gap-2">
+                                      <span>{getDisplayLeaveTypeName(balance.leaveType.name)}</span>
+                                      <span
+                                        className={cn(
+                                          "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium",
+                                          getLeaveCategory(balance.leaveType.code, balance.leaveType.name).className
+                                        )}
+                                      >
+                                        {getLeaveCategory(balance.leaveType.code, balance.leaveType.name).label}
+                                      </span>
+                                    </div>
                                   </td>
                                   <td className="px-4 py-3 text-center tabular-nums">
                                     {editingAllocatedBalance?.id === balance.id ? (
@@ -1561,60 +1988,72 @@ export default function LeavesPage() {
                   </div>
                 )}
 
-                {!isTeamEmployeeBalanceView && (
-                  <>
-                    <TabsContent value="pending" className="mt-0">
-                      <DataTable
-                        columns={columns}
-                        data={filteredTeamPending}
-                        onUpdate={fetchTeamLeaves}
-                        canEditPendingRequests={canEditTeamPendingRequests}
-                      />
-                    </TabsContent>
-                    <TabsContent value="approved" className="mt-0">
-                      <LeaveTable
-                        leaves={paginatedTeamApproved}
-                        isLoading={isTeamLoading}
-                        showEmployee={true}
-                        canDeleteApprovedRequests={canEditTeamPendingRequests}
-                        onUpdate={fetchTeamLeaves}
-                      />
-                      <div className="flex items-center justify-between px-4 py-3 border-t border-border bg-secondary-background gap-3 mt-2">
-                        <div className="text-xs text-muted-foreground">
-                          {`0 of ${teamTotal} row(s) selected.`}
-                        </div>
-
-                        <div className="flex items-center gap-3">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setTeamPage((p) => Math.max(1, p - 1))}
-                            disabled={teamPage === 1}
-                          >
-                            Previous
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setTeamPage((p) => Math.min(teamTotalPages, p + 1))}
-                            disabled={teamPage === teamTotalPages}
-                          >
-                            Next
-                          </Button>
-                        </div>
+                <div className="space-y-4">
+                  <div className="rounded-lg border border-border bg-background p-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="relative min-w-[220px] flex-1 max-w-sm">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                        <Input
+                          placeholder="Search employee name or email..."
+                          value={teamSearch}
+                          onChange={(e) => setTeamSearch(e.target.value)}
+                          className="pl-9 h-9 bg-background text-sm"
+                        />
                       </div>
-                    </TabsContent>
-                    <TabsContent value="rejected" className="mt-0">
-                      <LeaveTable
-                        leaves={filteredTeamRejected}
-                        isLoading={isTeamLoading}
-                        showEmployee={true}
-                        canDeleteApprovedRequests={false}
-                      />
-                    </TabsContent>
-                  </>
-                )}
-              </Tabs>
+
+                      <Select
+                        value={teamLeaveTypeFilter}
+                        onValueChange={setTeamLeaveTypeFilter}
+                      >
+                        <SelectTrigger className="h-9 w-[170px] bg-background text-foreground border-border text-sm font-base">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Leave Types</SelectItem>
+                          {teamLeaveTypeOptions.map((typeOption) => (
+                            <SelectItem key={typeOption.value} value={typeOption.value}>
+                              {typeOption.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+
+                      <Select
+                        value={teamStatusFilter}
+                        onValueChange={(value) =>
+                          setTeamStatusFilter(
+                            value as "all" | "pending" | "approved" | "rejected"
+                          )
+                        }
+                      >
+                        <SelectTrigger className="h-9 w-[150px] bg-background text-foreground border-border text-sm font-base">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Status</SelectItem>
+                          <SelectItem value="pending">Pending</SelectItem>
+                          <SelectItem value="approved">Approved</SelectItem>
+                          <SelectItem value="rejected">Rejected</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {showNoReporteesEmptyState ? (
+                    <div className="rounded-lg border border-border bg-background p-8 text-center text-sm text-muted-foreground">
+                      No reportees found. 
+                    </div>
+                  ) : (
+                    <DataTable
+                      columns={columns}
+                      data={filteredTeamLeaves}
+                      onUpdate={fetchTeamLeaves}
+                      canEditPendingRequests={canEditTeamPendingRequests}
+                      canDeleteApprovedRequests={canEditTeamPendingRequests}
+                      getRowCanSelect={(row) => row.original.state === "pending"}
+                    />
+                  )}
+                </div>
             </TabsContent>
             )}
           </Tabs>
@@ -1622,211 +2061,409 @@ export default function LeavesPage() {
 
       </PageWrapper>
 
-      {/* Admin Apply Leave Dialog */}
-      <Dialog
+      {/* Admin Apply Leave Side Panel */}
+      <Sheet
         open={adminApplyLeaveOpen}
         onOpenChange={(nextOpen) => {
           setAdminApplyLeaveOpen(nextOpen);
           if (!nextOpen) {
+            setAdminApplyFormVisible(false);
             setIsAdminDatePickerOpen(false);
+            setAdminApplyEmployeeEmail("");
+            setAdminApplyEmployeeName("");
+            setAdminApplyEmployeeUserId(null);
+            setAdminEmployeeBalances([]);
+            setAdminEmployeeHistory([]);
           }
         }}
       >
-        <DialogContent className="sm:max-w-[520px] max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Apply Leave for Employee</DialogTitle>
-            <DialogDescription>
-              Apply leave on behalf of {selectedTeamEmployeeEmail}
-            </DialogDescription>
-          </DialogHeader>
+        <SheetContent
+          side="right"
+          className="w-full sm:w-[620px] md:w-[680px] lg:w-[740px] xl:w-[800px] max-w-[90vw] overflow-y-auto p-0"
+        >
+          <SheetHeader className="border-b border-border pb-4 pr-12">
+            <div className="flex items-start justify-between gap-3 pr-8">
+              <div>
+                <SheetTitle>Apply Leave for Employee</SheetTitle>
+                <SheetDescription>
+                  {adminApplyEmployeeEmail
+                    ? `Apply leave on behalf of ${adminApplyEmployeeEmail}`
+                    : "Select an employee and submit to auto-approve leave."}
+                </SheetDescription>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => {
+                  setAdminApplyFormVisible(true);
+                  window.setTimeout(() => {
+                    const formSection = document.getElementById("admin-apply-leave-form");
+                    formSection?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }, 0);
+                }}
+                disabled={!adminApplyEmployeeEmail}
+                className="gap-1.5"
+              >
+                <Plus className="h-4 w-4" />
+                Apply Leave
+              </Button>
+            </div>
+          </SheetHeader>
 
           <Form {...adminApplyLeaveForm}>
             <form
               onSubmit={adminApplyLeaveForm.handleSubmit(handleAdminApplyLeaveSubmit)}
-              className="space-y-4 mt-2"
+              className="p-4 md:p-5"
             >
-              <FormField
-                control={adminApplyLeaveForm.control}
-                name="leaveType"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Leave Type</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="— Select leave type —" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {adminLeaveTypes.map((type) => (
-                          <SelectItem key={type.id} value={String(type.id)}>
-                            {type.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={adminApplyLeaveForm.control}
-                name="reason"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Reason for Leave</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder="Please provide a reason for the leave request..."
-                        className="min-h-[80px] resize-none"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={adminApplyLeaveForm.control}
-                name="startDate"
-                render={() => (
-                  <FormItem className="flex flex-col">
-                    <FormLabel>Leave Date Range</FormLabel>
-                    <Popover
-                      modal
-                      open={isAdminDatePickerOpen}
-                      onOpenChange={setIsAdminDatePickerOpen}
-                    >
-                      <PopoverTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className={cn(
-                            "w-full justify-start text-left font-normal",
-                            !adminLeaveDateRange?.from && "text-muted-foreground"
-                          )}
-                        >
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {adminLeaveDateRange?.from ? (
-                            adminLeaveDateRange.to ? (
-                              <>
-                                {format(adminLeaveDateRange.from, DATE_FORMATS.DISPLAY)}{" "}
-                                –{" "}
-                                {format(adminLeaveDateRange.to, DATE_FORMATS.DISPLAY)}
-                              </>
-                            ) : (
-                              format(adminLeaveDateRange.from, DATE_FORMATS.DISPLAY)
-                            )
-                          ) : (
-                            <span>Pick a date range</span>
-                          )}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent
-                        className="w-auto p-0 border-0"
-                        align="start"
-                        side="bottom"
-                        sideOffset={8}
-                        style={{ zIndex: 9999 }}
-                      >
-                        <Calendar
-                          mode="range"
-                          defaultMonth={adminLeaveDateRange?.from}
-                          selected={adminLeaveDateRange}
-                          onSelect={(range) => {
-                            setAdminLeaveDateRange(range);
-                            if (range?.from && range?.to) {
-                              setIsAdminDatePickerOpen(false);
-                            }
-                          }}
-                          numberOfMonths={2}
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={adminApplyLeaveForm.control}
-                name="durationType"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Duration Type</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="— Select duration —" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {durationTypes.map((type) => (
-                          <SelectItem key={type.value} value={type.value}>
-                            {type.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {adminApplyLeaveForm.watch("durationType") === "half_day" && (
-                <FormField
-                  control={adminApplyLeaveForm.control}
-                  name="halfDaySegment"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Half Day Segment</FormLabel>
-                      <Select value={field.value || ""} onValueChange={field.onChange}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="— Select segment —" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="first_half">First Half</SelectItem>
-                          <SelectItem value="second_half">Second Half</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+              <div className="space-y-2 mb-4">
+                <p className="text-sm font-medium">Employee</p>
+                <SearchCombobox
+                  value={adminApplyEmployeeEmail}
+                  onValueChange={(nextValue) => {
+                    setAdminApplyFormVisible(false);
+                    setAdminApplyEmployeeEmail(nextValue);
+                    setAdminApplyEmployeeName("");
+                    setAdminApplyEmployeeUserId(null);
+                    setAdminEmployeeBalances([]);
+                    setAdminEmployeeHistory([]);
+                  }}
+                  onSelect={(option) => {
+                    const selectedEmail = option.description ?? option.label;
+                    const selectedUserId = Number(option.value);
+                    setAdminApplyEmployeeName(option.label);
+                    setAdminApplyEmployeeUserId(selectedUserId);
+                    setAdminApplyEmployeeEmail(selectedEmail);
+                    void loadAdminEmployeeDetails(selectedEmail, selectedUserId, option.label);
+                  }}
+                  onSubmitValue={(nextValue) => {
+                    void (async () => {
+                      const resolved = await resolveAdminApplyEmployeeByEmail(nextValue);
+                      if (resolved) {
+                        await loadAdminEmployeeDetails(resolved.email, resolved.userId, resolved.name);
+                      }
+                    })();
+                  }}
+                  fetchOptions={fetchAdminApplyEmployeeSuggestions}
+                  placeholder="Select employee"
+                  searchPlaceholder="Search employee..."
+                  emptyMessage="No employee found."
+                  minQueryLength={0}
+                  className="w-full"
                 />
-              )}
+              </div>
 
-              {adminLeaveValidationError && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>{adminLeaveValidationError}</AlertDescription>
-                </Alert>
-              )}
+              <div className="grid gap-4">
+                <div className="space-y-4">
+                  {!adminApplyEmployeeEmail ? (
+                    <div className="rounded-lg border border-dashed border-border bg-secondary-background/30 p-4 text-sm text-muted-foreground">
+                      Select an employee to view leave balance and leave history.
+                    </div>
+                  ) : (
+                    <div className="space-y-4 rounded-lg border border-border bg-secondary-background/40 p-3">
+                      <div>
+                        <p className="text-base font-semibold text-foreground">
+                          {adminApplyEmployeeName || adminApplyEmployeeEmail}
+                        </p>
+                        <p className="text-sm text-muted-foreground">{adminApplyEmployeeEmail}</p>
+                      </div>
 
-              <div className="flex gap-2 justify-end pt-4">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setAdminApplyLeaveOpen(false)}
-                  disabled={adminApplLeaveSubmitting}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={adminApplLeaveSubmitting}
-                >
-                  {adminApplLeaveSubmitting ? "Applying..." : "Apply Leave"}
-                </Button>
+                      {adminEmployeeDetailsLoading ? (
+                        <div className="space-y-2">
+                          <div className="h-8 rounded bg-secondary-background animate-pulse" />
+                          <div className="h-8 rounded bg-secondary-background animate-pulse" />
+                          <div className="h-8 rounded bg-secondary-background animate-pulse" />
+                        </div>
+                      ) : (
+                        <>
+                          <div className="rounded-lg border border-border bg-background overflow-hidden">
+                            <div className="px-3 py-2 border-b border-border bg-secondary-background">
+                              <span className="text-sm font-medium text-foreground">Leave Balance</span>
+                            </div>
+                            <div className="overflow-x-auto">
+                              <table className="w-full min-w-[420px] text-sm">
+                                <thead>
+                                  <tr className="border-b border-border bg-secondary-background">
+                                    <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Leave Type</th>
+                                    <th className="px-3 py-2 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider">Allocated</th>
+                                    <th className="px-3 py-2 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider">Pending</th>
+                                    <th className="px-3 py-2 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider">Taken</th>
+                                    <th className="px-3 py-2 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider">Remaining</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {sortedAdminEmployeeBalances.length === 0 ? (
+                                    <tr>
+                                      <td colSpan={5} className="px-3 py-4 text-center text-sm text-muted-foreground">
+                                        No leave balance found for this employee.
+                                      </td>
+                                    </tr>
+                                  ) : (
+                                    sortedAdminEmployeeBalances.map((balance) => {
+                                      const allocated = balance.allocatedHours / 8;
+                                      const pending = balance.pendingHours / 8;
+                                      const taken = balance.bookedHours / 8;
+                                      const remaining = balance.balanceHours / 8;
+                                      const remainingTone =
+                                        remaining <= 0
+                                          ? "text-red-600"
+                                          : remaining <= 2
+                                            ? "text-amber-600"
+                                            : "text-emerald-600";
+
+                                      return (
+                                        <tr key={balance.id} className="border-b border-border last:border-0">
+                                          <td className="px-3 py-2.5 font-medium text-foreground">
+                                            <div className="flex items-center gap-2">
+                                              <span>{getDisplayLeaveTypeName(balance.leaveType.name)}</span>
+                                              <span
+                                                className={cn(
+                                                  "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium",
+                                                  getLeaveCategory(balance.leaveType.code, balance.leaveType.name).className
+                                                )}
+                                              >
+                                                {getLeaveCategory(balance.leaveType.code, balance.leaveType.name).label}
+                                              </span>
+                                            </div>
+                                          </td>
+                                          <td className="px-3 py-2.5 text-center tabular-nums">{formatLeaveDaysValue(allocated)}</td>
+                                          <td className="px-3 py-2.5 text-center tabular-nums">{formatLeaveDaysValue(pending)}</td>
+                                          <td className="px-3 py-2.5 text-center tabular-nums">{formatLeaveDaysValue(taken)}</td>
+                                          <td className={cn("px-3 py-2.5 text-center tabular-nums font-semibold", remainingTone)}>
+                                            {formatLeaveDaysValue(remaining)}
+                                          </td>
+                                        </tr>
+                                      );
+                                    })
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+
+                          <div className="rounded-lg border border-border bg-background overflow-hidden">
+                            <div className="px-3 py-2 border-b border-border bg-secondary-background">
+                              <span className="text-sm font-medium text-foreground">Leave History</span>
+                            </div>
+                            <div className="overflow-x-auto">
+                              <table className="w-full min-w-[420px] text-sm">
+                                <thead>
+                                  <tr className="border-b border-border bg-secondary-background">
+                                    <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Type</th>
+                                    <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Period</th>
+                                    <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Duration</th>
+                                    <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {adminEmployeeHistory.length === 0 ? (
+                                    <tr>
+                                      <td colSpan={4} className="px-3 py-4 text-center text-sm text-muted-foreground">
+                                        No leave history found for this employee.
+                                      </td>
+                                    </tr>
+                                  ) : (
+                                    adminEmployeeHistory.map((leave) => {
+                                      const start = parseISO(leave.startDate);
+                                      const end = parseISO(leave.endDate);
+                                      const period =
+                                        leave.startDate === leave.endDate
+                                          ? format(start, "d MMM")
+                                          : `${format(start, "d MMM")} - ${format(end, "d MMM")}`;
+
+                                      return (
+                                        <tr key={leave.id} className="border-b border-border last:border-0">
+                                          <td className="px-3 py-2.5 font-medium text-foreground">
+                                            {getDisplayLeaveTypeName(leave.leaveType?.name ?? "-")}
+                                          </td>
+                                          <td className="px-3 py-2.5 text-muted-foreground">{period}</td>
+                                          <td className="px-3 py-2.5 text-foreground">{formatTeamLeaveDuration(leave)}</td>
+                                          <td className="px-3 py-2.5">{getStatusBadge(leave.state)}</td>
+                                        </tr>
+                                      );
+                                    })
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {adminApplyFormVisible && adminApplyEmployeeEmail && (
+                  <div id="admin-apply-leave-form" className="space-y-4 rounded-lg border border-border bg-background p-4 md:p-5">
+                    <p className="text-sm font-semibold text-foreground">Apply Leave</p>
+
+                    <FormField
+                      control={adminApplyLeaveForm.control}
+                      name="leaveType"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Leave Type</FormLabel>
+                          <Select value={field.value} onValueChange={field.onChange}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="— Select leave type —" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {adminLeaveTypes.map((type) => (
+                                <SelectItem key={type.id} value={String(type.id)}>
+                                  {type.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={adminApplyLeaveForm.control}
+                      name="reason"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Reason for Leave</FormLabel>
+                          <FormControl>
+                            <Textarea
+                              placeholder="Please provide a reason for the leave request..."
+                              className="min-h-[80px] resize-none"
+                              {...field}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={adminApplyLeaveForm.control}
+                      name="startDate"
+                      render={() => (
+                        <FormItem className="flex flex-col">
+                          <FormLabel>Leave Date Range</FormLabel>
+                          <Popover modal open={isAdminDatePickerOpen} onOpenChange={setIsAdminDatePickerOpen}>
+                            <PopoverTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                className={cn(
+                                  "w-full justify-start text-left font-normal",
+                                  !adminLeaveDateRange?.from && "text-muted-foreground"
+                                )}
+                              >
+                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                {adminLeaveDateRange?.from ? (
+                                  adminLeaveDateRange.to ? (
+                                    <>
+                                      {format(adminLeaveDateRange.from, DATE_FORMATS.DISPLAY)} - {format(adminLeaveDateRange.to, DATE_FORMATS.DISPLAY)}
+                                    </>
+                                  ) : (
+                                    format(adminLeaveDateRange.from, DATE_FORMATS.DISPLAY)
+                                  )
+                                ) : (
+                                  <span>Pick a date range</span>
+                                )}
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0 border-0" align="start" side="bottom" sideOffset={8} style={{ zIndex: 9999 }}>
+                              <Calendar
+                                mode="range"
+                                defaultMonth={adminLeaveDateRange?.from}
+                                selected={adminLeaveDateRange}
+                                onSelect={(range) => {
+                                  setAdminLeaveDateRange(range);
+                                  if (range?.from && range?.to) setIsAdminDatePickerOpen(false);
+                                }}
+                                numberOfMonths={2}
+                                initialFocus
+                              />
+                            </PopoverContent>
+                          </Popover>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={adminApplyLeaveForm.control}
+                      name="durationType"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Duration Type</FormLabel>
+                          <Select value={field.value} onValueChange={field.onChange}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="— Select duration —" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {durationTypes.map((type) => (
+                                <SelectItem key={type.value} value={type.value}>
+                                  {type.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    {adminApplyLeaveForm.watch("durationType") === "half_day" && (
+                      <FormField
+                        control={adminApplyLeaveForm.control}
+                        name="halfDaySegment"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Half Day Segment</FormLabel>
+                            <Select value={field.value || ""} onValueChange={field.onChange}>
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="— Select segment —" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="first_half">First Half</SelectItem>
+                                <SelectItem value="second_half">Second Half</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+
+                    {adminLeaveValidationError && (
+                      <Alert variant="destructive">
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertDescription>{adminLeaveValidationError}</AlertDescription>
+                      </Alert>
+                    )}
+
+                    <div className="flex gap-2 justify-end pt-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setAdminApplyFormVisible(false)}
+                        disabled={adminApplLeaveSubmitting}
+                      >
+                        Cancel
+                      </Button>
+                      <Button type="submit" disabled={adminApplLeaveSubmitting}>
+                        {adminApplLeaveSubmitting ? "Applying..." : "Apply Leave"}
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             </form>
           </Form>
-        </DialogContent>
-      </Dialog>
+        </SheetContent>
+      </Sheet>
     </>
   );
 }
