@@ -85,7 +85,7 @@ const navLinks: NavItem[] = [
     icon: TreePalm,
   },
   {
-    title: "Comp-Off Request",
+    title: " Off-day work",
     url: "/compoff",
     icon: CalendarSync,
     requiredRoles: [ROLES.ADMIN, ROLES.SUPER_ADMIN, ROLES.MANAGER],

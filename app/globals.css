@@ -46,6 +46,12 @@
   --chart-4: #748074;
   --chart-5: #907490;
   --chart-active-dot: #4a5548;
+
+  /* Dashboard status pills */
+  --dashboard-pill-green: #a5b68c;
+  --dashboard-pill-yellow: #bfa452;
+  --dashboard-pill-red: #bb3b1e;
+  --dashboard-pill-khaki: #6d5542;
 }
 
 @theme inline {
@@ -153,4 +159,26 @@ input[data-slot="input"][type="number"] {
   outline: 2px solid rgba(100, 116, 160, 0.85);
   outline-offset: -2px;
   animation: today-pulse 2.4s ease-in-out infinite;
+}
+
+.dashboard-status-pill {
+  border: none;
+  color: #ffffff;
+  border-radius: 9999px;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.dashboard-status-pill--green {
+  background-color: var(--dashboard-pill-green);
+}
+.dashboard-status-pill--yellow {
+  background-color: var(--dashboard-pill-yellow);
+}
+.dashboard-status-pill--red {
+  background-color: var(--dashboard-pill-red);
+}
+.dashboard-status-pill--khaki {
+  background-color: var(--dashboard-pill-khaki);
 }

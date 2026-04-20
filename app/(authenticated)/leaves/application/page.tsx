@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 import { toast } from "sonner";
 
@@ -43,8 +44,16 @@ interface LeaveBalancesResponse {
 
 export default function LeaveApplicationPage() {
   const { user, isLoading: authLoading } = useAuth();
+  const searchParams = useSearchParams();
   const [allocatedLeaves, setAllocatedLeaves] = useState<AllocatedLeave[]>([]);
   const [loading, setLoading] = useState(false);
+  const initialTab = searchParams.get("tab") === "apply" ? "apply" : "allocated";
+  const [activeTab, setActiveTab] = useState<"allocated" | "apply">(initialTab);
+  const prefilledDate = searchParams.get("date") ?? undefined;
+
+  useEffect(() => {
+    setActiveTab(searchParams.get("tab") === "apply" ? "apply" : "allocated");
+  }, [searchParams]);
 
   const fetchLeaveBalances = async (): Promise<void> => {
     setLoading(true);
@@ -101,7 +110,10 @@ export default function LeaveApplicationPage() {
       <PageWrapper>
         <div className="w-full p-4 flex flex-col gap-4">
           <Tabs
-            defaultValue="allocated"
+            value={activeTab}
+            onValueChange={(value) =>
+              setActiveTab(value === "apply" ? "apply" : "allocated")
+            }
             className="mx-auto w-full min-w-[120px] max-w-[80vw] sm:max-w-xs md:max-w-lg lg:max-w-2xl xl:max-w-3xl"
           >
             <TabsList>
@@ -118,6 +130,7 @@ export default function LeaveApplicationPage() {
               <LeaveApplicationForm
                 userEmail={user?.email ?? ""}
                 fetchLeaves={fetchLeaveBalances}
+                prefilledDate={prefilledDate}
               />
             </TabsContent>
           </Tabs>
