@@ -1,25 +1,25 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, isValid } from "date-fns";
 import { toast } from "sonner";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ChevronLeft,
   ChevronRight,
+  CircleHelp,
+  FileDown,
   LayoutGrid,
   List,
   Plus,
-  Briefcase,
   Calendar,
   Clock,
-  AlertCircle,
-  TreePalm,
   Check,
   X,
   Pencil,
   Trash2,
   Loader2,
+  AlertTriangle,
 } from "lucide-react";
 import { cn, getISTBusinessDate } from "@/lib/utils";
 
@@ -58,10 +58,23 @@ import {
   SearchComboboxOption,
 } from "@/components/ui/search-combobox";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import apiClient from "@/lib/api-client";
 import { API_PATHS, DATE_FORMATS, VALIDATION } from "@/lib/constants";
 import { useAuth } from "@/hooks/use-auth";
-import { startOfMonth, endOfMonth, addMonths, subMonths } from "date-fns";
+import {
+  startOfMonth,
+  endOfMonth,
+  addMonths,
+  subMonths,
+  addDays,
+  differenceInCalendarDays,
+} from "date-fns";
 
 // TypeScript interfaces for API response
 interface TimesheetEntry {
@@ -73,6 +86,7 @@ interface TimesheetEntry {
   projectName?: string;
   taskDescription: string;
   hours: number;
+  createdAt?: string;
 }
 
 interface LeaveEntry {
@@ -98,6 +112,7 @@ interface DayData {
     state: string;
     totalHours: number;
     notes: string;
+    createdAt?: string;
     entries: TimesheetEntry[];
   } | null;
   leaves: {
@@ -146,6 +161,7 @@ interface TimesheetRow {
   entryId?: number | string;
   projectId?: number;
   dateApi?: string;
+  createdAt?: string;
 }
 interface ProjectOption {
   id: number;
@@ -158,12 +174,56 @@ interface DepartmentOption {
   code: string;
 }
 
+type TeamVisibilityScope = "my_reportees" | "all_org";
+
 const toDisplayLabel = (value?: string) => {
   if (!value) return "-";
   return value
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+};
+
+const formatCreatedAt = (value?: string | null) => {
+  if (!value) return "-";
+  const parsed = parseISO(value);
+  if (!isValid(parsed)) return value;
+  return format(parsed, "dd/MM/yyyy HH:mm");
+};
+
+type ProjectPillTone = "green" | "yellow" | "red" | "khaki";
+const getProjectPillClassName = (tone: ProjectPillTone) => {
+  return cn("dashboard-status-pill", {
+    "dashboard-status-pill--green": tone === "green",
+    "dashboard-status-pill--yellow": tone === "yellow",
+    "dashboard-status-pill--red": tone === "red",
+    "dashboard-status-pill--khaki": tone === "khaki",
+  });
+};
+const getProjectPill = (row: TimesheetRow) => {
+  if (row.isLeave) {
+    return {
+      label: row.project,
+      tone: row.leaveStatus === "rejected"
+        ? "red"
+        : row.leaveStatus === "pending"
+          ? "yellow"
+          : "green",
+    } as const;
+  }
+
+  if (row.isHoliday) {
+    return { label: "Public Holiday", tone: "green" } as const;
+  }
+
+  if (row.isWeekend) {
+    return { label: "Off Day", tone: "green" } as const;
+  }
+
+  if (row.activities === "-") {
+    return { label: "No Entries", tone: "khaki" } as const;
+  }
+  return null;
 };
 
 /**
@@ -232,41 +292,39 @@ export const TimesheetTable: React.FC<TimesheetTableProps> = ({
         </div>
 
         <div className="overflow-auto">
-          <table className="w-full table-auto">
-            <thead>
-              <tr>
-                <th className="text-left">#</th>
-                <th className="text-left">Date</th>
-                <th className="text-left">Day</th>
-                <th className="text-left">Project</th>
-                <th className="text-left">Activity</th>
-                <th className="text-right">Hours</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="text-left">Date</TableHead>
+                <TableHead className="text-left">Day</TableHead>
+                <TableHead className="text-left">Project</TableHead>
+                <TableHead className="text-left">Activity</TableHead>
+                <TableHead className="text-right">Hours</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {timesheetRows.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={6}
+                <TableRow>
+                  <TableCell
+                    colSpan={5}
                     className="py-4 text-center text-muted-foreground"
                   >
                     No records for this month.
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ) : (
                 timesheetRows.map((r) => (
-                  <tr key={r.sno}>
-                    <td>{r.sno}</td>
-                    <td>{r.date}</td>
-                    <td>{r.day}</td>
-                    <td>{r.project}</td>
-                    <td>{r.activities}</td>
-                    <td className="text-right">{r.hours}</td>
-                  </tr>
+                  <TableRow key={r.sno}>
+                    <TableCell>{r.date}</TableCell>
+                    <TableCell>{r.day}</TableCell>
+                    <TableCell>{r.project}</TableCell>
+                    <TableCell>{r.activities}</TableCell>
+                    <TableCell className="text-right">{r.hours}</TableCell>
+                  </TableRow>
                 ))
               )}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       </CardContent>
     </Card>
@@ -309,6 +367,7 @@ export default function DashboardPage() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [isExporting, setIsExporting] = useState(false);
+  const [isPdfExporting, setIsPdfExporting] = useState(false);
   const [viewMode, setViewMode] = useState<"table" | "grid">(() => {
     if (typeof window !== "undefined") {
       const userRaw = localStorage.getItem("current-user-id");
@@ -341,6 +400,8 @@ export default function DashboardPage() {
 
   // Team dashboard / search (admin/super admin/manager)
   const [isTeamMode, setIsTeamMode] = useState(false);
+  const [teamVisibilityScope, setTeamVisibilityScope] =
+    useState<TeamVisibilityScope>("my_reportees");
   const [teamSearch, setTeamSearch] = useState("");
   const [teamSearchLoading, setTeamSearchLoading] = useState(false);
   const [teamSearchError, setTeamSearchError] = useState<string | null>(null);
@@ -352,6 +413,10 @@ export default function DashboardPage() {
     const state = window.history.state || {};
     if (state.__teamDashboard) {
       setIsTeamMode(!!state.__teamDashboard.isTeamMode);
+      const storedScope = state.__teamDashboard.teamVisibilityScope;
+      if (storedScope === "all_org" || storedScope === "my_reportees") {
+        setTeamVisibilityScope(storedScope);
+      }
       setTeamSearch(state.__teamDashboard.teamSearch || "");
       setTeamUser(state.__teamDashboard.teamUser || null);
     }
@@ -376,6 +441,7 @@ export default function DashboardPage() {
   const [savingRowKey, setSavingRowKey] = useState<string | null>(null);
   const [deletingRowKey, setDeletingRowKey] = useState<string | null>(null);
   const [confirmDeleteRowKey, setConfirmDeleteRowKey] = useState<string | null>(null);
+  const [activeCalendarCreatedAtKey, setActiveCalendarCreatedAtKey] = useState<string | null>(null);
   const [teamProjects, setTeamProjects] = useState<ProjectOption[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(false);
   const [isEditingLifeline, setIsEditingLifeline] = useState(false);
@@ -387,6 +453,172 @@ export default function DashboardPage() {
   const [teamProjectsByDepartment, setTeamProjectsByDepartment] = useState<
     Record<string, ProjectOption[]>
   >({});
+
+  const getEarliestTrackableDate = useCallback(() => {
+    const today = getISTBusinessDate();
+    today.setHours(0, 0, 0, 0);
+
+    const backfillRemaining = Number(user?.backfill?.remaining ?? 0);
+    if (backfillRemaining <= 0) {
+      return today;
+    }
+
+    const workDaysNeeded = 3;
+    const cursor = new Date(today);
+    cursor.setDate(cursor.getDate() - 1);
+
+    let found = 0;
+    while (found < workDaysNeeded) {
+      const dayName = format(cursor, "EEEE");
+      const dayOfMonth = cursor.getDate();
+      const weekOfMonth = Math.ceil(dayOfMonth / 7);
+      const isSaturday = dayName === "Saturday";
+      const is2ndOr4thSaturday =
+        isSaturday && (weekOfMonth === 2 || weekOfMonth === 4);
+      const isSunday = dayName === "Sunday";
+
+      if (!isSunday && !is2ndOr4thSaturday) {
+        found += 1;
+      }
+
+      if (found < workDaysNeeded) {
+        cursor.setDate(cursor.getDate() - 1);
+      }
+    }
+
+    cursor.setHours(0, 0, 0, 0);
+    return cursor;
+  }, [user?.backfill?.remaining]);
+
+  const isAddEntryEligibleDate = useCallback(
+    (dateApi?: string) => {
+      if (!dateApi || isTeamMode) return false;
+
+      const targetDate = parseISO(dateApi);
+      if (!isValid(targetDate)) return false;
+      targetDate.setHours(0, 0, 0, 0);
+
+      const today = getISTBusinessDate();
+      today.setHours(0, 0, 0, 0);
+      if (targetDate.getTime() > today.getTime()) return false;
+
+      const earliestTrackableDate = getEarliestTrackableDate();
+      return targetDate.getTime() >= earliestTrackableDate.getTime();
+    },
+    [getEarliestTrackableDate, isTeamMode]
+  );
+
+  const isLeaveEligibleDate = useCallback(
+    (dateApi?: string) => {
+      return Boolean(dateApi) && !isTeamMode;
+    },
+    [isTeamMode]
+  );
+
+  const openAddEntryForm = useCallback(
+    (dateApi: string) => {
+      setIsDaySheetOpen(false);
+      router.push(`/tracker?date=${dateApi}`);
+    },
+    [router]
+  );
+  const openLeaveApplicationForm = useCallback(
+    (dateApi: string) => {
+      setIsDaySheetOpen(false);
+      router.push(`/leaves?openNewRequest=1&date=${dateApi}`);
+    },
+    [router]
+  );
+
+  const renderEmptyDayActions = useCallback(
+    ({
+      dateApi,
+      layout = "inline",
+      stopPropagation = false,
+      showLabel = true,
+    }: {
+      dateApi?: string;
+      layout?: "inline" | "stack";
+      stopPropagation?: boolean;
+      showLabel?: boolean;
+    }) => {
+      if (!dateApi) {
+        return showLabel
+          ? <span className="text-muted-foreground">No entry</span>
+          : null;
+      }
+
+      const canAddEntry = isAddEntryEligibleDate(dateApi);
+      const canSubmitLeave = isLeaveEligibleDate(dateApi);
+
+      const handleActionClick = (
+        event: React.MouseEvent<HTMLButtonElement>,
+        action: () => void
+      ) => {
+        if (stopPropagation) {
+          event.stopPropagation();
+        }
+        action();
+      };
+
+      const actionButtons = (
+        <div className={cn("flex flex-wrap gap-2", layout === "inline" && "items-center")}>
+          {canAddEntry && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 px-2"
+              onClick={(event) =>
+                handleActionClick(event, () => openAddEntryForm(dateApi))
+              }
+            >
+              Add entry
+            </Button>
+          )}
+          {canSubmitLeave && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 px-2"
+              onClick={(event) =>
+                handleActionClick(event, () => openLeaveApplicationForm(dateApi))
+              }
+            >
+              Submit Leave
+            </Button>
+          )}
+        </div>
+      );
+
+      if (!showLabel) {
+        return actionButtons;
+      }
+
+      if (layout === "stack") {
+        return (
+          <div className="space-y-2">
+            <p className="text-sm text-muted-foreground">No entry</p>
+            {actionButtons}
+          </div>
+        );
+      }
+
+      return (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-muted-foreground">No entry</span>
+          {actionButtons}
+        </div>
+      );
+    },
+    [
+      isAddEntryEligibleDate,
+      isLeaveEligibleDate,
+      openAddEntryForm,
+      openLeaveApplicationForm,
+    ]
+  );
   const [teamLoggerProjectsLoading, setTeamLoggerProjectsLoading] = useState(false);
   const [teamLoggerForm, setTeamLoggerForm] = useState({
     workDate: format(new Date(), DATE_FORMATS.API),
@@ -487,10 +719,19 @@ export default function DashboardPage() {
     return hasManagerRole && !hasElevatedRole;
   }, [normalizedRoleSet]);
 
+  const canAccessAllOrgDashboard = useMemo(() => {
+    return canAccessTeamDashboard && !isReportingManagerOnly;
+  }, [canAccessTeamDashboard, isReportingManagerOnly]);
+
+  const isReporteeScope = teamVisibilityScope === "my_reportees";
+
   const canAccessTeamMemberByHierarchy = useCallback(
-    async (rawValue: string) => {
+    async (rawValue: string, scopeOverride?: TeamVisibilityScope) => {
       const normalizedValue = rawValue.trim().toLowerCase();
       if (!normalizedValue || !user?.orgId) return false;
+      const effectiveScope = scopeOverride ?? teamVisibilityScope;
+      const shouldRestrictToReportees =
+        isReportingManagerOnly || effectiveScope === "my_reportees";
 
       const params: Record<string, any> = {
         orgId: user.orgId,
@@ -499,7 +740,7 @@ export default function DashboardPage() {
         limit: 20,
       };
 
-      if (isReportingManagerOnly && user?.id) {
+      if (shouldRestrictToReportees && user?.id) {
         params.managerId = user.id;
       }
 
@@ -518,7 +759,7 @@ export default function DashboardPage() {
         return email === normalizedValue && isNotSelf;
       });
     },
-    [isReportingManagerOnly, user?.id, user?.orgId]
+    [isReportingManagerOnly, teamVisibilityScope, user?.id, user?.orgId]
   );
 
   const fetchTeamMemberOptions = async (
@@ -535,7 +776,7 @@ export default function DashboardPage() {
       };
 
       // Reporting Managers must only see direct reportees.
-      if (isReportingManagerOnly && user?.id) {
+      if ((isReportingManagerOnly || isReporteeScope) && user?.id) {
         params.managerId = user.id;
       }
 
@@ -559,7 +800,10 @@ export default function DashboardPage() {
             return false;
           }
 
-          if (isReportingManagerOnly && Number.isFinite(Number(user?.id))) {
+          if (
+            (isReportingManagerOnly || isReporteeScope) &&
+            Number.isFinite(Number(user?.id))
+          ) {
             return Number.isFinite(managerId) && managerId === Number(user?.id);
           }
 
@@ -577,9 +821,16 @@ export default function DashboardPage() {
     }
   };
 
-  const searchTeamMemberByEmail = async (rawValue: string, persist = true) => {
+  const searchTeamMemberByEmail = async (
+    rawValue: string,
+    persist = true,
+    scopeOverride?: TeamVisibilityScope
+  ) => {
     const normalizedValue = rawValue.trim();
     if (!normalizedValue) return;
+    const effectiveScope = scopeOverride ?? teamVisibilityScope;
+    const shouldRestrictToReportees =
+      isReportingManagerOnly || effectiveScope === "my_reportees";
 
     setTeamSearch(normalizedValue);
     // Persist in browser history
@@ -590,6 +841,7 @@ export default function DashboardPage() {
         __teamDashboard: {
           ...state.__teamDashboard,
           isTeamMode: true,
+          teamVisibilityScope: effectiveScope,
           teamSearch: normalizedValue,
         },
       }, "");
@@ -598,8 +850,11 @@ export default function DashboardPage() {
     setTeamSearchError(null);
 
     try {
-      if (isReportingManagerOnly) {
-        const hasAccess = await canAccessTeamMemberByHierarchy(normalizedValue);
+      if (shouldRestrictToReportees) {
+        const hasAccess = await canAccessTeamMemberByHierarchy(
+          normalizedValue,
+          effectiveScope
+        );
         if (!hasAccess) {
           setTeamUser(null);
           setMonthlyData(null);
@@ -680,6 +935,7 @@ export default function DashboardPage() {
             ...state.__teamDashboard,
             teamUser: normalizedTeamUser,
             isTeamMode: true,
+            teamVisibilityScope: effectiveScope,
           },
         }, "");
       }
@@ -693,14 +949,30 @@ export default function DashboardPage() {
   };
   // Restore from browser history on mount and fetch data if needed
   useEffect(() => {
+    if (isReportingManagerOnly && teamVisibilityScope === "all_org") {
+      setTeamVisibilityScope("my_reportees");
+    }
+  }, [isReportingManagerOnly, teamVisibilityScope]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
     const state = window.history.state || {};
     if (state.__teamDashboard) {
       setIsTeamMode(!!state.__teamDashboard.isTeamMode);
+      const storedScope = state.__teamDashboard.teamVisibilityScope;
+      const resolvedScope: TeamVisibilityScope =
+        storedScope === "all_org" ? "all_org" : "my_reportees";
+      if (storedScope === "all_org" || storedScope === "my_reportees") {
+        setTeamVisibilityScope(storedScope);
+      }
       setTeamSearch(state.__teamDashboard.teamSearch || "");
       setTeamUser(state.__teamDashboard.teamUser || null);
       if (state.__teamDashboard.isTeamMode && state.__teamDashboard.teamSearch) {
-        searchTeamMemberByEmail(state.__teamDashboard.teamSearch, false);
+        searchTeamMemberByEmail(
+          state.__teamDashboard.teamSearch,
+          false,
+          resolvedScope
+        );
       }
     }
   }, []);
@@ -713,6 +985,7 @@ export default function DashboardPage() {
         __teamDashboard: {
           ...state.__teamDashboard,
           isTeamMode: true,
+          teamVisibilityScope,
           teamUser,
           teamSearch,
         },
@@ -721,7 +994,7 @@ export default function DashboardPage() {
       const { __teamDashboard, ...rest } = state;
       window.history.replaceState(rest, "");
     }
-  }, [isTeamMode, teamUser, teamSearch]);
+  }, [isTeamMode, teamVisibilityScope, teamUser, teamSearch]);
 
   useEffect(() => {
     setIsEditingLifeline(false);
@@ -729,6 +1002,7 @@ export default function DashboardPage() {
     // Persist team mode and user on change
     if (typeof window !== "undefined") {
       localStorage.setItem("team-dashboard-mode", String(isTeamMode));
+      localStorage.setItem("team-dashboard-scope", teamVisibilityScope);
       if (!isTeamMode) {
         localStorage.removeItem("team-dashboard-user");
         localStorage.removeItem("team-dashboard-search");
@@ -745,17 +1019,21 @@ export default function DashboardPage() {
         });
       }
     }
-  }, [isTeamMode, teamUser?.id]);
+  }, [isTeamMode, teamVisibilityScope, teamUser?.id]);
   // Restore persisted team dashboard state on mount
   useEffect(() => {
     if (typeof window === "undefined") return;
     const persistedMode = localStorage.getItem("team-dashboard-mode") === "true";
     const persistedUserRaw = localStorage.getItem("team-dashboard-user");
     const persistedSearch = localStorage.getItem("team-dashboard-search");
+    const persistedScope = localStorage.getItem("team-dashboard-scope");
     if (persistedMode && persistedUserRaw) {
       try {
         const persistedUser = JSON.parse(persistedUserRaw);
         setIsTeamMode(true);
+        if (persistedScope === "all_org" || persistedScope === "my_reportees") {
+          setTeamVisibilityScope(persistedScope);
+        }
         setTeamUser(persistedUser);
         if (persistedSearch) setTeamSearch(persistedSearch);
       } catch {}
@@ -956,6 +1234,7 @@ export default function DashboardPage() {
       const isSunday = dayOfWeek === "Sunday";
       const isWeekendOff = is2ndOr4thSaturday || isSunday;
       const timesheetEntries = day.timesheet?.entries ?? [];
+      const timesheetDayCreatedAt = day.timesheet?.createdAt;
       const leaveEntries = day.leaves?.entries ?? [];
       const hasTimesheetEntries = timesheetEntries.length > 0;
       const hasLeaveEntries = leaveEntries.length > 0;
@@ -979,6 +1258,7 @@ export default function DashboardPage() {
             timesheetState: day.timesheet?.state,
             entryId: (entry as any).id ?? (entry as any).entryId ?? undefined,
             projectId: (entry as any).projectId,
+            createdAt: entry.createdAt ?? timesheetDayCreatedAt,
           });
         });
       }
@@ -1001,6 +1281,7 @@ export default function DashboardPage() {
             project: `${leaveName} - ${leaveStatusLabel}`,
             activities: (entry as any).reason?.trim() || "-",
             date: format(parsedDate, "dd/MM/yyyy"),
+            dateApi: format(parsedDate, DATE_FORMATS.API),
             day: dayOfWeek,
             hours: entry.hours,
             hoursDisplay: toDisplayLabel((entry as any).durationType),
@@ -1046,7 +1327,7 @@ export default function DashboardPage() {
         rows.push({
           sno: sno++,
           project: "-",
-          activities: "No entry",
+          activities: "-",
           date: format(parsedDate, "dd/MM/yyyy"),
           dateApi: format(parsedDate, DATE_FORMATS.API),
           day: dayOfWeek,
@@ -1099,14 +1380,27 @@ export default function DashboardPage() {
     return map;
   }, [timesheetRows]);
 
-  const dateSerialMap = useMemo(() => {
-    const map = new Map<string, number>();
-    let serial = 1;
+  const dateCreatedAtMap = useMemo(() => {
+    const map = new Map<string, string>();
+
     timesheetRows.forEach((row) => {
-      if (!map.has(row.date)) {
-        map.set(row.date, serial++);
+      if (!row.createdAt) return;
+
+      const existing = map.get(row.date);
+      if (!existing) {
+        map.set(row.date, row.createdAt);
+        return;
+      }
+      const existingDate = parseISO(existing);
+      const currentDate = parseISO(row.createdAt);
+      if (
+        isValid(currentDate) &&
+        (!isValid(existingDate) || currentDate.getTime() > existingDate.getTime())
+      ) {
+        map.set(row.date, row.createdAt);
       }
     });
+
     return map;
   }, [timesheetRows]);
 
@@ -1267,9 +1561,7 @@ export default function DashboardPage() {
   const handleStartLifelineEdit = () => {
     if (!isTeamMode || !teamUser || !canEditTeamLifeline) return;
     const currentValue = Number(
-      (teamUser as any)?.backfill?.limit ??
       (teamUser as any)?.backfill?.remaining ??
-      (monthlyData as any)?.backfill?.limit ??
       (monthlyData as any)?.backfill?.remaining ??
       0
     );
@@ -1289,15 +1581,15 @@ export default function DashboardPage() {
       return;
     }
 
-    const updatedLimit = Number(lifelineDraft);
-    if (!Number.isFinite(updatedLimit) || updatedLimit < 0) {
-      toast.error("Invalid lifeline value", {
-        description: "Lifelines must be a number greater than or equal to 0.",
+    const updatedBalance = Number(lifelineDraft);
+    if (!Number.isFinite(updatedBalance) || updatedBalance < 0) {
+      toast.error("Invalid lifeline balance", {
+        description: "Lifeline balance must be a number greater than or equal to 0.",
       });
       return;
     }
 
-    const normalizedLimit = Math.floor(updatedLimit);
+    const normalizedBalance = Math.floor(updatedBalance);
     const monthFromData = Number(monthlyData?.period?.month);
     const yearFromData = Number(monthlyData?.period?.year);
     const monthToUseForContext = isTeamMode ? employeeCurrentMonth : currentMonth;
@@ -1321,31 +1613,32 @@ export default function DashboardPage() {
     };
 
     const payloadsToTry: Array<Record<string, unknown>> = [
-      { ...contextPayload, userId: targetUserId, limit: normalizedLimit },
-      { ...contextPayload, targetUserId, limit: normalizedLimit },
-      { ...contextPayload, employeeId: targetUserId, limit: normalizedLimit },
+      { ...contextPayload, userId: targetUserId, remaining: normalizedBalance },
+      { ...contextPayload, targetUserId, remaining: normalizedBalance },
+      { ...contextPayload, employeeId: targetUserId, remaining: normalizedBalance },
+      { ...contextPayload, userId: targetUserId, balance: normalizedBalance },
+      { ...contextPayload, targetUserId, balance: normalizedBalance },
+      { ...contextPayload, employeeId: targetUserId, balance: normalizedBalance },
       {
         ...contextPayload,
         userId: targetUserId,
-        backfillLimit: normalizedLimit,
+        backfillBalance: normalizedBalance,
       },
       {
         ...contextPayload,
         targetUserId,
-        backfillLimit: normalizedLimit,
+        backfillBalance: normalizedBalance,
       },
       {
         ...contextPayload,
         userId: targetUserId,
-        lifelineLimit: normalizedLimit,
+        lifelineBalance: normalizedBalance,
       },
       {
         ...contextPayload,
         targetUserId,
-        lifelineLimit: normalizedLimit,
+        lifelineBalance: normalizedBalance,
       },
-      { ...contextPayload, userId: targetUserId, remaining: normalizedLimit },
-      { ...contextPayload, targetUserId, remaining: normalizedLimit },
     ];
 
     setIsSavingLifeline(true);
@@ -1353,26 +1646,18 @@ export default function DashboardPage() {
       await postBackfillLimitWithFallbackPayloads(payloadsToTry);
       setTeamUser((prev: any) => {
         if (!prev) return prev;
-        const previousLimit = Number(prev.backfill?.limit ?? 0);
-        const previousRemaining = Number(prev.backfill?.remaining ?? 0);
-        const consumedCount =
-          Number.isFinite(previousLimit) && Number.isFinite(previousRemaining)
-            ? Math.max(previousLimit - previousRemaining, 0)
-            : 0;
-        const nextRemaining = Math.max(normalizedLimit - consumedCount, 0);
 
         return {
           ...prev,
           backfill: {
             ...(prev.backfill || {}),
-            limit: normalizedLimit,
-            remaining: nextRemaining,
+            remaining: normalizedBalance,
           },
         };
       });
       setIsEditingLifeline(false);
       setRefreshTick((prev) => prev + 1);
-      toast.success("Lifeline updated successfully");
+      toast.success("Lifeline balance updated successfully");
     } catch (err: unknown) {
       console.error("Failed to update lifeline:", err);
       const error = err as {
@@ -1383,7 +1668,7 @@ export default function DashboardPage() {
         error.response?.data?.message ||
         error.message ||
         "Failed to update lifeline";
-      toast.error("Lifeline update failed", {
+      toast.error("Lifeline balance update failed", {
         description: message,
       });
     } finally {
@@ -1441,6 +1726,276 @@ export default function DashboardPage() {
       });
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  const handleExportCycleToPdf = async () => {
+    if (isTeamMode) {
+      return;
+    }
+    if (!monthlyData) {
+      toast.error("No monthly timesheet data available");
+      return;
+    }
+    setIsPdfExporting(true);
+    try {
+      const toAscii = (value: string) => value.replace(/[^\x20-\x7E]/g, "?");
+      const escapePdfText = (value: string) =>
+        toAscii(value)
+          .replace(/\\/g, "\\\\")
+          .replace(/\(/g, "\\(")
+          .replace(/\)/g, "\\)");
+      const padCell = (value: string, width: number) => {
+        const trimmed = value.trim();
+        if (trimmed.length >= width) return `${trimmed.slice(0, width - 1)}~`;
+        return `${trimmed}${" ".repeat(width - trimmed.length)}`;
+      };
+      const wrapText = (value: string, width: number) => {
+        const text = value.trim();
+        if (!text) return ["-"];
+        const result: string[] = [];
+        let cursor = 0;
+        while (cursor < text.length) {
+          result.push(text.slice(cursor, cursor + width));
+          cursor += width;
+        }
+        return result;
+      };
+
+      const formatDate = (value: string) => {
+        const parsed = parseISO(value);
+        if (!isValid(parsed)) return value;
+        return format(parsed, "dd/MM/yyyy");
+      };
+
+      const getCycleRows = (data: MonthlyTimesheetResponse) => {
+        const rows: Array<{
+          date: string;
+          day: string;
+          department: string;
+          projectType: string;
+          activity: string;
+          hours: string;
+          status: string;
+        }> = [];
+
+        const sortedDays = [...data.days].sort(
+          (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+        );
+
+        sortedDays.forEach((day) => {
+          const parsedDate = parseISO(day.date);
+          const dayName = isValid(parsedDate) ? format(parsedDate, "EEEE") : "-";
+          const rowDate = formatDate(day.date);
+          const dayOfMonth = isValid(parsedDate) ? parsedDate.getDate() : 0;
+          const weekOfMonth = Math.ceil(dayOfMonth / 7);
+          const isSaturday = dayName === "Saturday";
+          const is2ndOr4thSaturday =
+            isSaturday && (weekOfMonth === 2 || weekOfMonth === 4);
+          const isSunday = dayName === "Sunday";
+          const isWeekendOff = is2ndOr4thSaturday || isSunday;
+
+          const timesheetEntries = day.timesheet?.entries ?? [];
+          const leaveEntries = day.leaves?.entries ?? [];
+
+          if (timesheetEntries.length > 0) {
+            timesheetEntries.forEach((entry) => {
+              rows.push({
+                date: rowDate,
+                day: dayName,
+                department: entry.departmentName || "-",
+                projectType: entry.projectName || "-",
+                activity: entry.taskDescription || "-",
+                hours: String(entry.hours ?? 0),
+                status: toDisplayLabel(day.timesheet?.state) || "Submitted",
+              });
+            });
+          }
+
+          if (leaveEntries.length > 0) {
+            leaveEntries.forEach((entry) => {
+              const leaveType = entry.leaveType?.name || "Leave";
+              const leaveStatus = toDisplayLabel(entry.state) || "Approved";
+              rows.push({
+                date: rowDate,
+                day: dayName,
+                department: "-",
+                projectType: `${leaveType} (${leaveStatus})`,
+                activity: entry.reason?.trim() || "-",
+                hours: String(entry.hours ?? 0),
+                status: leaveStatus,
+              });
+            });
+          }
+
+          if (
+            timesheetEntries.length === 0 &&
+            leaveEntries.length === 0 &&
+            (isWeekendOff || day.isHoliday)
+          ) {
+            const activity = day.isHoliday
+              ? day.holidayName
+                ? `Holiday (${day.holidayName})`
+                : "Holiday"
+              : isSunday
+                ? "Sunday"
+                : "Saturday (Off)";
+            rows.push({
+              date: rowDate,
+              day: dayName,
+              department: "-",
+              projectType: "-",
+              activity,
+              hours: "0",
+              status: "Off Day",
+            });
+          }
+
+          if (
+            timesheetEntries.length === 0 &&
+            leaveEntries.length === 0 &&
+            !isWeekendOff &&
+            !day.isHoliday
+          ) {
+            rows.push({
+              date: rowDate,
+              day: dayName,
+              department: "-",
+              projectType: "-",
+              activity: "-",
+              hours: "0",
+              status: "Pending",
+            });
+          }
+        });
+
+        return rows;
+      };
+
+      const cycleRows = getCycleRows(monthlyData);
+      const periodStart = formatDate(monthlyData.period.start);
+      const periodEnd = formatDate(monthlyData.period.end);
+      const userEmail = user?.email || "N/A";
+      const contentLines: string[] = [
+        "TIMESHEET - SALARY CYCLE",
+        `User Email: ${userEmail}`,
+        `Cycle Range: ${periodStart} - ${periodEnd}`,
+        `Total Rows: ${cycleRows.length}`,
+        "",
+        `${padCell("S.No", 6)}${padCell("Date", 12)}${padCell("Day", 12)}${padCell("Dept", 18)}${padCell("Project/Type", 24)}${padCell("Hours", 8)}${padCell("Status", 12)}Activity`,
+        "------------------------------------------------------------------------------------------------------------------------",
+      ];
+
+      cycleRows.forEach((row, index) => {
+        const activityLines = wrapText(row.activity, 70);
+        activityLines.forEach((activityLine, lineIndex) => {
+          if (lineIndex === 0) {
+            contentLines.push(
+              `${padCell(String(index + 1), 6)}${padCell(row.date, 12)}${padCell(row.day, 12)}${padCell(row.department, 18)}${padCell(row.projectType, 24)}${padCell(row.hours, 8)}${padCell(row.status, 12)}${activityLine}`
+            );
+            return;
+          }
+
+          contentLines.push(
+            `${padCell("", 6)}${padCell("", 12)}${padCell("", 12)}${padCell("", 18)}${padCell("", 24)}${padCell("", 8)}${padCell("", 12)}${activityLine}`
+          );
+        });
+      });
+
+      const linesPerPage = 42;
+      const pages: string[][] = [];
+      for (let i = 0; i < contentLines.length; i += linesPerPage) {
+        pages.push(contentLines.slice(i, i + linesPerPage));
+      }
+
+      const objects: string[] = [""];
+      const addObject = (content: string) => {
+        objects.push(content);
+        return objects.length - 1;
+      };
+
+      const catalogObjectNumber = 1;
+      const pagesObjectNumber = 2;
+      const fontObjectNumber = 3;
+
+      objects[catalogObjectNumber] = "";
+      objects[pagesObjectNumber] = "";
+      objects[fontObjectNumber] =
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>";
+
+      const pageObjectNumbers: number[] = [];
+
+      pages.forEach((pageLines) => {
+        let stream = "BT\n/F1 9 Tf\n36 560 Td\n";
+        pageLines.forEach((line, index) => {
+          if (index === 0) {
+            stream += `(${escapePdfText(line)}) Tj\n`;
+          } else {
+            stream += `0 -12 Td\n(${escapePdfText(line)}) Tj\n`;
+          }
+        });
+        stream += "ET";
+
+        const contentObjectNumber = addObject(
+          `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`
+        );
+
+        const pageObjectNumber = addObject(
+          `<< /Type /Page /Parent ${pagesObjectNumber} 0 R /MediaBox [0 0 842 595] /Resources << /Font << /F1 ${fontObjectNumber} 0 R >> >> /Contents ${contentObjectNumber} 0 R >>`
+        );
+
+        pageObjectNumbers.push(pageObjectNumber);
+      });
+
+      objects[catalogObjectNumber] = `<< /Type /Catalog /Pages ${pagesObjectNumber} 0 R >>`;
+      objects[pagesObjectNumber] = `<< /Type /Pages /Kids [${pageObjectNumbers
+        .map((objNo) => `${objNo} 0 R`)
+        .join(" ")}] /Count ${pageObjectNumbers.length} >>`;
+
+      let pdf = "%PDF-1.4\n";
+      const offsets: number[] = [0];
+
+      for (let i = 1; i < objects.length; i += 1) {
+        offsets[i] = pdf.length;
+        pdf += `${i} 0 obj\n${objects[i]}\nendobj\n`;
+      }
+
+      const startXref = pdf.length;
+      pdf += `xref\n0 ${objects.length}\n`;
+      pdf += "0000000000 65535 f \n";
+
+      for (let i = 1; i < objects.length; i += 1) {
+        pdf += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
+      }
+
+      pdf += `trailer\n<< /Size ${objects.length} /Root ${catalogObjectNumber} 0 R >>\n`;
+      pdf += `startxref\n${startXref}\n%%EOF`;
+
+      const blob = new Blob([pdf], { type: "application/pdf" });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `timesheet-${periodStart}-to-${periodEnd}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+
+      toast.success("Timesheet PDF downloaded successfully");
+    } catch (err: unknown) {
+      console.error("Error exporting timesheet PDF:", err);
+      const error = err as {
+        response?: { data?: { message?: string } };
+        message?: string;
+      };
+      toast.error("Export failed", {
+        description:
+          error.response?.data?.message ||
+          error.message ||
+          "Failed to export timesheet PDF",
+      });
+    } finally {
+      setIsPdfExporting(false);
     }
   };
 
@@ -1798,41 +2353,65 @@ export default function DashboardPage() {
 
   return (
     <>
-      {/* Dashboard Tabs Navigation */}
-      <div className="border-b border-border bg-background px-4 pt-4 pb-2 flex items-center">
-        <Tabs value={isTeamMode ? "team" : "my"} onValueChange={(val) => {
-          if (val === "my") {
-            setIsTeamMode(false);
-            setTeamUser(null);
-            setTeamSearch("");
-            setTeamSearchError(null);
-            if (typeof window !== "undefined") {
-              const state = window.history.state || {};
-              const { __teamDashboard, ...rest } = state;
-              window.history.replaceState(rest, "");
+      <AppHeader
+        crumbs={[]}
+        className="h-auto min-h-11 py-2"
+        left={
+          <Tabs
+            value={
+              isTeamMode
+                ? teamVisibilityScope === "all_org"
+                  ? "all_org"
+                  : "my_reportees"
+                : "my"
             }
-          } else {
-            setIsTeamMode(true);
-            setTeamSearch("");
-            setTeamSearchError(null);
-            setTeamUser(null);
-          }
-        }}>
-          <TabsList className="gap-2">
-            <TabsTrigger value="my">My Dashboard</TabsTrigger>
-            {canAccessTeamDashboard && (
-              <TabsTrigger value="team">Team Dashboard</TabsTrigger>
-            )}
-          </TabsList>
-        </Tabs>
-      </div>
+            onValueChange={(val) => {
+              if (val === "my") {
+                setTeamVisibilityScope("my_reportees");
+                setIsTeamMode(false);
+                setTeamUser(null);
+                setTeamSearch("");
+                setTeamSearchError(null);
+                if (typeof window !== "undefined") {
+                  const state = window.history.state || {};
+                  const { __teamDashboard, ...rest } = state;
+                  window.history.replaceState(rest, "");
+                }
+                return;
+              }
+
+              if (val === "all_org" && !canAccessAllOrgDashboard) {
+                return;
+              }
+
+              setIsTeamMode(true);
+              setTeamVisibilityScope(
+                val === "all_org" ? "all_org" : "my_reportees"
+              );
+              setTeamSearch("");
+              setTeamSearchError(null);
+              setTeamUser(null);
+            }}
+          >
+            <TabsList className="gap-2">
+              <TabsTrigger value="my">My Dashboard</TabsTrigger>
+              {canAccessTeamDashboard && (
+                <TabsTrigger value="my_reportees">My Reportees</TabsTrigger>
+              )}
+              {canAccessAllOrgDashboard && (
+                <TabsTrigger value="all_org">All Org</TabsTrigger>
+              )}
+            </TabsList>
+          </Tabs>
+        }
+      />
       <PageWrapper>
         <div className="p-4 md:p-6 space-y-5">
           {/* Billing cycle chip */}
           <div>
             <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground bg-secondary-background border border-border px-3 py-1.5 rounded-full">
               <Clock className="h-3 w-3 flex-shrink-0" />
-              Billing cycle: 26th to 25th of the month
+              Salary cycle runs from 26th of one month to 25th of the next
             </span>
           </div>
 
@@ -1843,19 +2422,16 @@ export default function DashboardPage() {
                 label: "Hours Logged",
                 display: String(monthlyData?.totals.timesheetHours || 0),
                 unit: "hrs",
-                icon: Clock,
+                tooltip:
+                  "Total hours logged in the current salary cycle. Part-time and hourly employees are paid based on these hours.",
                 accent: "border-l-[#74808e]",
-                iconBg: "bg-[#e5edf5]",
-                iconColor: "text-[#74808e]",
               },
               {
                 label: "Leave Days",
                 display: String(leaveDaysDisplay),
                 unit: "days",
-                icon: TreePalm,
+                tooltip: "Total approved leave days in the current salary cycle.",
                 accent: "border-l-amber-400",
-                iconBg: "bg-amber-50",
-                iconColor: "text-amber-600",
               },
               {
                 label: "Lifelines",
@@ -1868,28 +2444,24 @@ export default function DashboardPage() {
                     const end = new Date(period.end);
                     isCurrentCycle = todayIST >= start && todayIST <= end;
                   }
-                  const limit = resolvedBackfill?.limit ?? 0;
                   const remaining = isCurrentCycle ? (resolvedBackfill?.remaining ?? 0) : 0;
-                  return `${remaining}/${limit}`;
+                  return String(remaining);
                 })(),
                 unit: "",
                 sub: "",
-                icon: AlertCircle,
+                tooltip:
+                  "You're expected to submit timesheets daily. Lifelines allow you to add missed entries for up to 3 past working days. You can use up to 3 lifelines per cycle. This card shows how many lifelines you have remaining in the current cycle.",
                 accent: (resolvedBackfill?.remaining ?? 0) > 0 ? "border-l-emerald-400" : "border-l-amber-400",
-                iconBg: (resolvedBackfill?.remaining ?? 0) > 0 ? "bg-emerald-50" : "bg-amber-50",
-                iconColor: (resolvedBackfill?.remaining ?? 0) > 0 ? "text-emerald-600" : "text-amber-600",
               },
               {
                 label: "Payable Days",
                 display: `${payableDays}/${totalCycleDays}`,
                 unit: "",
-                icon: Briefcase,
+                tooltip:
+                  "Applicable only to full-time employees, consultants, and interns. This is your total payable days for the current cycle, including attendance on working days, approved leaves, week-offs (2nd and 4th Saturdays, Sundays), and fixed holidays. Any shortfall is treated as unpaid leave and deducted from your salary.",
                 accent: "border-l-[#8a6f5e]",
-                iconBg: "bg-[#f0ebe3]",
-                iconColor: "text-[#8a6f5e]",
               },
             ].map((card) => {
-              const Icon = card.icon;
               const isLifelineCard = card.label === "Lifelines";
               const canShowLifelineEditor =
                 isLifelineCard && isTeamMode && Boolean(teamUser) && canEditTeamLifeline;
@@ -1906,9 +2478,26 @@ export default function DashboardPage() {
                       {card.label}
                     </span>
                     <div className="flex items-center gap-1.5">
-                      <span className={cn("p-1.5 rounded-md flex-shrink-0", card.iconBg)}>
-                        <Icon className={cn("h-3.5 w-3.5", card.iconColor)} />
-                      </span>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:text-foreground"
+                              aria-label={`${card.label} information`}
+                            >
+                              <CircleHelp className="h-3.5 w-3.5" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent
+                            className="w-72 max-w-[calc(100vw-2rem)] whitespace-normal break-words text-xs leading-relaxed text-left"
+                            side="top"
+                            align="end"
+                          >
+                            {card.tooltip}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     </div>
                   </div>
                   {isLifelineCard && canShowLifelineEditor ? (
@@ -1942,7 +2531,7 @@ export default function DashboardPage() {
                           onClick={handleSaveLifeline}
                           disabled={isSavingLifeline}
                           className="h-6 w-6 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background disabled:opacity-40 disabled:cursor-not-allowed"
-                          title="Save available lifelines"
+                          title="Save lifeline balance"
                         >
                           {isSavingLifeline ? (
                             <Loader2 className="h-3.5 w-3.5 animate-spin text-foreground" />
@@ -1955,7 +2544,7 @@ export default function DashboardPage() {
                           onClick={handleCancelLifelineEdit}
                           disabled={isSavingLifeline}
                           className="h-6 w-6 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background disabled:opacity-40 disabled:cursor-not-allowed"
-                          title="Cancel available lifelines edit"
+                          title="Cancel lifeline balance edit"
                         >
                           <X className="h-3.5 w-3.5 text-red-600" />
                         </button>
@@ -1967,7 +2556,7 @@ export default function DashboardPage() {
                           type="button"
                           onClick={handleStartLifelineEdit}
                           className="h-5 w-5 rounded-md border border-border bg-background flex items-center justify-center hover:bg-secondary-background"
-                          title="Edit available lifelines"
+                          title="Edit lifeline balance"
                         >
                           <Pencil className="h-3 w-3 text-foreground" />
                         </button>
@@ -2049,6 +2638,18 @@ export default function DashboardPage() {
                     </div>
                   )}
                   {/* View toggle */}
+                  {!isTeamMode && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleExportCycleToPdf}
+                      disabled={isLoading || !monthlyData || isPdfExporting}
+                      className="h-8"
+                    >
+                      <FileDown className="h-3.5 w-3.5" />
+                      {isPdfExporting ? "Exporting..." : "Export to PDF"}
+                    </Button>
+                  )}
                   <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-background p-0.5">
                     <button
                       onClick={() => {
@@ -2059,15 +2660,16 @@ export default function DashboardPage() {
                           localStorage.setItem("timesheet-view-mode", "table");
                         }
                       }}
-                      title="List view"
+                      title="List View"
                       className={cn(
-                        "h-7 w-7 rounded-md flex items-center justify-center transition-all cursor-pointer",
+                        "h-7 rounded-md px-3 flex items-center gap-2 transition-all cursor-pointer",
                         viewMode === "table"
                           ? "bg-foreground text-background shadow-sm"
                           : "text-muted-foreground hover:text-foreground"
                       )}
                     >
                       <List className="h-3.5 w-3.5" />
+                      <span className="text-xs font-medium">List View</span>
                     </button>
                     <button
                       onClick={() => {
@@ -2078,15 +2680,16 @@ export default function DashboardPage() {
                           localStorage.setItem("timesheet-view-mode", "grid");
                         }
                       }}
-                      title="Grid view"
+                      title="Calendar View"
                       className={cn(
-                        "h-7 w-7 rounded-md flex items-center justify-center transition-all cursor-pointer",
+                        "h-7 rounded-md px-3 flex items-center gap-2 transition-all cursor-pointer",
                         viewMode === "grid"
                           ? "bg-foreground text-background shadow-sm"
                           : "text-muted-foreground hover:text-foreground"
                       )}
                     >
                       <LayoutGrid className="h-3.5 w-3.5" />
+                      <span className="text-xs font-medium">Calendar View</span>
                     </button>
                   </div>
                   {/* Period navigation */}
@@ -2159,29 +2762,30 @@ export default function DashboardPage() {
                   const todayMidnight = new Date();
                   todayMidnight.setHours(0, 0, 0, 0);
 
-                  // Group days by week
-                  const weeks: (typeof sortedGridDays)[] = [];
-                  let currentWeek: typeof sortedGridDays = [];
-                  let currentWeekNum = 0;
+                  const cycleStart = parseISO(
+                    monthlyData?.period?.start ?? sortedGridDays[0]?.date ?? ""
+                  );
+                  const firstWeekEnd = endOfMonth(cycleStart);
+                  const postFirstWeekStart = addDays(firstWeekEnd, 1);
 
+                  const weekBuckets = new Map<number, typeof sortedGridDays>();
                   sortedGridDays.forEach((day) => {
                     const parsedDate = parseISO(day.date);
-                    const dayOfMonth = parsedDate.getDate();
-                    const weekNum = Math.ceil(dayOfMonth / 7);
+                    const isInFirstWeek = parsedDate.getTime() <= firstWeekEnd.getTime();
+                    const weekIndex = isInFirstWeek
+                      ? 0
+                      : 1 +
+                        Math.floor(
+                          differenceInCalendarDays(parsedDate, postFirstWeekStart) / 6
+                        );
 
-                    if (
-                      weekNum !== currentWeekNum &&
-                      currentWeek.length > 0
-                    ) {
-                      weeks.push(currentWeek);
-                      currentWeek = [];
-                    }
-                    currentWeekNum = weekNum;
-                    currentWeek.push(day);
+                    const bucket = weekBuckets.get(weekIndex) ?? [];
+                    bucket.push(day);
+                    weekBuckets.set(weekIndex, bucket);
                   });
-                  if (currentWeek.length > 0) {
-                    weeks.push(currentWeek);
-                  }
+                  const weeks = Array.from(weekBuckets.entries())
+                    .sort(([a], [b]) => a - b)
+                    .map(([, weekDays]) => weekDays);
 
                   // Helper to get day card data
                   const getDayCardData = (
@@ -2201,7 +2805,10 @@ export default function DashboardPage() {
 
                     const hasTimesheet =
                       (day.timesheet?.entries?.length ?? 0) > 0;
-                    const hasLeave = (day.leaves?.entries?.length ?? 0) > 0;
+                    const hasLeave =
+                      (day.leaves?.entries ?? []).some(
+                        (entry: any) => entry.state !== "rejected"
+                      );
                     const isOff = isWeekendOff || day.isHoliday;
                     const isUnfilled = !hasTimesheet && !hasLeave && !isOff;
 
@@ -2215,6 +2822,25 @@ export default function DashboardPage() {
                     const leaveEntries = day.leaves?.entries ?? [];
                     const totalHours =
                       timesheetEntries.reduce((s, e) => s + e.hours, 0);
+                    const dayCreatedAt =
+                      timesheetEntries.reduce<string | undefined>(
+                      (latest, entry) => {
+                        if (!entry.createdAt) return latest;
+                        if (!latest) return entry.createdAt;
+
+                        const latestDate = parseISO(latest);
+                        const entryDate = parseISO(entry.createdAt);
+                        if (
+                          isValid(entryDate) &&
+                          (!isValid(latestDate) || entryDate.getTime() > latestDate.getTime())
+                        ) {
+                          return entry.createdAt;
+                        }
+
+                        return latest;
+                      },
+                      undefined
+                    ) ?? day.timesheet?.createdAt;
 
                     let status:
                       | "off"
@@ -2247,6 +2873,7 @@ export default function DashboardPage() {
                       totalHours,
                       status,
                       timesheetEntries,
+                      dayCreatedAt,
                       leaveEntries,
                       isHoliday: day.isHoliday,
                       holidayName: day.holidayName,
@@ -2319,10 +2946,8 @@ export default function DashboardPage() {
                             </div>
 
                             {/* Week Days Grid */}
-                            <div
-                              className="grid grid-cols-7 divide-x divide-border"
-                              style={{ borderColor: "var(--border)" }}
-                            >
+                            <div className="px-2 py-2">
+                              <div className="grid grid-cols-6 gap-2">
                               {weekData.map((dayData) => {
                                 // Determine cell background
                                 let cellBg = "var(--background)";
@@ -2357,6 +2982,8 @@ export default function DashboardPage() {
                                     style={{
                                       backgroundColor: cellBg,
                                       borderColor: "var(--border)",
+                                      borderWidth: "1px",
+                                      borderStyle: "solid",
                                       boxShadow,
                                     }}
                                     onClick={() => {
@@ -2382,30 +3009,72 @@ export default function DashboardPage() {
                                           {dayData.dayShort}
                                         </span>
                                       </div>
-                                      {dayData.totalHours > 0 && (
-                                        <span
-                                          className="text-xs font-semibold px-1.5 py-0.5 rounded-[3px]"
-                                          style={{
-                                            backgroundColor:
-                                              dayData.status === "rejected"
-                                                ? "#ecdcdc"
-                                                : dayData.status === "pending"
-                                                  ? "#ece6cc"
-                                                  : dayData.status === "filled"
-                                                    ? "#daeae2"
-                                                    : "var(--secondary-background)",
-                                            color:
-                                              dayData.status === "rejected"
-                                                ? "#803838"
-                                                : dayData.status === "pending"
-                                                  ? "#786020"
-                                                  : dayData.status === "filled"
-                                                    ? "#386050"
-                                                    : "var(--foreground)",
-                                          }}
-                                        >
-                                          {dayData.totalHours}h
-                                        </span>
+                                      {dayData.dayCreatedAt && (
+                                        <div className="flex items-center gap-1">
+                                          {dayData.dayCreatedAt && (
+                                            <TooltipProvider>
+                                              <Tooltip
+                                                open={activeCalendarCreatedAtKey === `day-${dayData.day.date}`}
+                                                onOpenChange={(isOpen) => {
+                                                  if (isOpen) {
+                                                    setActiveCalendarCreatedAtKey(`day-${dayData.day.date}`);
+                                                    return;
+                                                  }
+
+                                                  setActiveCalendarCreatedAtKey((prev) =>
+                                                    prev === `day-${dayData.day.date}` ? null : prev
+                                                  );
+                                                }}
+                                              >
+                                                <TooltipTrigger asChild>
+                                                  <button
+                                                    type="button"
+                                                    className="inline-flex h-4 w-4 items-center justify-center text-amber-600 hover:text-amber-700"
+                                                    aria-label="Show created at timestamp"
+                                                    onClick={(event) => {
+                                                      event.stopPropagation();
+                                                      setActiveCalendarCreatedAtKey((prev) =>
+                                                        prev === `day-${dayData.day.date}`
+                                                          ? null
+                                                          : `day-${dayData.day.date}`
+                                                      );
+                                                    }}
+                                                  >
+                                                    <AlertTriangle className="h-3 w-3" />
+                                                  </button>
+                                                </TooltipTrigger>
+                                                <TooltipContent side="top">
+                                                  <div className="text-xs whitespace-nowrap">
+                                                    Created: {format(parseISO(dayData.dayCreatedAt), "dd/MM/yyyy HH:mm")}
+                                                  </div>
+                                                </TooltipContent>
+                                              </Tooltip>
+                                            </TooltipProvider>
+                                          )}
+                                          <span
+                                            className="text-xs font-semibold px-1.5 py-0.5 rounded-[3px]"
+                                            style={{
+                                              backgroundColor:
+                                                dayData.status === "rejected"
+                                                  ? "#ecdcdc"
+                                                  : dayData.status === "pending"
+                                                    ? "#ece6cc"
+                                                    : dayData.status === "filled"
+                                                      ? "#daeae2"
+                                                      : "var(--secondary-background)",
+                                              color:
+                                                dayData.status === "rejected"
+                                                  ? "#803838"
+                                                  : dayData.status === "pending"
+                                                    ? "#786020"
+                                                    : dayData.status === "filled"
+                                                      ? "#386050"
+                                                      : "var(--foreground)",
+                                            }}
+                                          >
+                                            {dayData.totalHours}h
+                                          </span>
+                                        </div>
                                       )}
                                     </div>
 
@@ -2450,35 +3119,35 @@ export default function DashboardPage() {
                                                   key={i}
                                                   className="text-xs truncate flex items-center gap-1"
                                                 >
-                                                  <span
-                                                    className="font-medium truncate"
-                                                    style={{
-                                                      color:
-                                                        "var(--foreground)",
-                                                    }}
-                                                  >
-                                                    {entry.projectName ||
-                                                      "Project"}
-                                                  </span>
-                                                  <span
-                                                    className="font-medium flex-shrink-0"
-                                                    style={{
-                                                      color: "var(--muted)",
-                                                    }}
-                                                  >
-                                                    {entry.hours}h
-                                                  </span>
-                                                  {dayData.day.timesheet
-                                                    ?.state === "rejected" && (
-                                                      <span
-                                                        className="flex-shrink-0"
-                                                        style={{
-                                                          color: "#903030",
-                                                        }}
-                                                      >
-                                                        ×
-                                                      </span>
-                                                    )}
+                                                    <span
+                                                      className="font-medium truncate"
+                                                      style={{
+                                                        color:
+                                                          "var(--foreground)",
+                                                      }}
+                                                    >
+                                                      {entry.projectName ||
+                                                        "Project"}
+                                                    </span>
+                                                    <span
+                                                      className="font-medium flex-shrink-0"
+                                                      style={{
+                                                        color: "var(--muted)",
+                                                      }}
+                                                    >
+                                                      {entry.hours}h
+                                                    </span>
+                                                    {dayData.day.timesheet
+                                                      ?.state === "rejected" && (
+                                                        <span
+                                                          className="flex-shrink-0"
+                                                          style={{
+                                                            color: "#903030",
+                                                          }}
+                                                        >
+                                                          ×
+                                                        </span>
+                                                      )}
                                                 </div>
                                               )
                                             )}
@@ -2544,6 +3213,7 @@ export default function DashboardPage() {
                                 );
                               })}
                             </div>
+                            </div>
                           </div>
                         );
                       })}
@@ -2557,9 +3227,6 @@ export default function DashboardPage() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead className="whitespace-nowrap w-16">
-                            Sr
-                          </TableHead>
                           <TableHead className="whitespace-nowrap w-28 text-center">
                             Date
                           </TableHead>
@@ -2567,7 +3234,7 @@ export default function DashboardPage() {
                             Day
                           </TableHead>
                           <TableHead className="whitespace-nowrap w-20 text-center">
-                            Total
+                            Total Hours
                           </TableHead>
                           <TableHead className="whitespace-nowrap w-32">
                             Project
@@ -2576,6 +3243,9 @@ export default function DashboardPage() {
                             Hours
                           </TableHead>
                           <TableHead>Activities</TableHead>
+                          <TableHead className="whitespace-nowrap w-40">
+                            Created At
+                          </TableHead>
                           {isTeamMode && canManageTeamEntries && (
                             <TableHead className="whitespace-nowrap w-32 text-center">
                               Actions
@@ -2604,21 +3274,21 @@ export default function DashboardPage() {
                             (row.isLeave && row.leaveStatus === "rejected") ||
                             row.timesheetState === "rejected"
                           ) {
-                            bgColor = "#f0c0c0";
+                            bgColor = "#f6d8dd";
                             isColored = true;
                           } else if (
                             row.isLeave &&
                             row.leaveStatus === "pending"
                           ) {
-                            bgColor = "#f5eab0";
+                            bgColor = "#f8efcc";
                             isColored = true;
                           } else if (
                             row.isLeave && row.leaveStatus === "approved"
                           ) {
-                            bgColor = "#c8e4d4";
+                            bgColor = "#d9eee2";
                             isColored = true;
                           } else if (row.isHoliday) {
-                            bgColor = "#c8e4d4";
+                            bgColor = "#d9eee2";
                             isColored = true;
                           } else if (row.isWeekend) {
                             bgColor = "var(--secondary-background)";
@@ -2638,9 +3308,19 @@ export default function DashboardPage() {
                           const isSaving = savingRowKey === rowKey;
                           const isDeleting = deletingRowKey === rowKey;
                           const isConfirmingDelete = confirmDeleteRowKey === rowKey;
+                          const isRejectedLeaveRow =
+                            row.isLeave && row.leaveStatus === "rejected";
+                          const isEmptyWorkingDayRow =
+                            (!row.isLeave &&
+                              !row.isHoliday &&
+                              !row.isWeekend &&
+                              row.project === "-" &&
+                              row.activities === "-") ||
+                            (isRejectedLeaveRow && !row.isHoliday && !row.isWeekend);
                           const isTargetDateRow =
                             highlightedDateApi !== null &&
                             row.dateApi === highlightedDateApi;
+                          const projectPill = getProjectPill(row);
 
                           return (
                             <TableRow
@@ -2663,12 +3343,6 @@ export default function DashboardPage() {
                                 isTargetDateRow && "animate-[pulse_1s_ease-in-out_3]"
                               )}
                             >
-                              <TableCell className="px-3 py-2.5 text-sm text-muted-foreground whitespace-nowrap">
-                                {!isSameDateAsPrev
-                                  ? dateSerialMap.get(row.date) ?? ""
-                                  : ""}
-                              </TableCell>
-
                               <TableCell className="px-3 py-2.5 text-sm text-foreground whitespace-nowrap text-center">
                                 {isEditing ? (
                                   <Input
@@ -2683,7 +3357,49 @@ export default function DashboardPage() {
                                     className="h-8 w-36"
                                   />
                                 ) : !isSameDateAsPrev ? (
-                                  row.date
+                                  <div className="flex items-center justify-center gap-1.5">
+                                    <span>{row.date}</span>
+                                    {dateCreatedAtMap.get(row.date) && (
+                                      <TooltipProvider>
+                                        <Tooltip
+                                          open={activeCalendarCreatedAtKey === `row-${row.date}`}
+                                          onOpenChange={(isOpen) => {
+                                            if (isOpen) {
+                                              setActiveCalendarCreatedAtKey(`row-${row.date}`);
+                                              return;
+                                            }
+
+                                            setActiveCalendarCreatedAtKey((prev) =>
+                                              prev === `row-${row.date}` ? null : prev
+                                            );
+                                          }}
+                                        >
+                                          <TooltipTrigger asChild>
+                                            <button
+                                              type="button"
+                                              className="inline-flex h-4 w-4 items-center justify-center text-amber-600 hover:text-amber-700"
+                                              aria-label="Show created at timestamp"
+                                              onClick={(event) => {
+                                                event.stopPropagation();
+                                                setActiveCalendarCreatedAtKey((prev) =>
+                                                  prev === `row-${row.date}`
+                                                    ? null
+                                                    : `row-${row.date}`
+                                                );
+                                              }}
+                                            >
+                                              <AlertTriangle className="h-3 w-3" />
+                                            </button>
+                                          </TooltipTrigger>
+                                          <TooltipContent side="top">
+                                            <div className="text-xs whitespace-nowrap">
+                                              Created: {formatCreatedAt(dateCreatedAtMap.get(row.date))}
+                                            </div>
+                                          </TooltipContent>
+                                        </Tooltip>
+                                      </TooltipProvider>
+                                    )}
+                                  </div>
                                 ) : (
                                   ""
                                 )}
@@ -2804,7 +3520,13 @@ export default function DashboardPage() {
                                     })()}
                                   </div>
                                 ) : (
-                                  row.project
+                                  projectPill ? (
+                                    <span className={getProjectPillClassName(projectPill.tone)}>
+                                      {projectPill.label}
+                                    </span>
+                                  ) : (
+                                    row.project
+                                  )
                                 )}
                               </TableCell>
                               <TableCell
@@ -2852,17 +3574,33 @@ export default function DashboardPage() {
                                     className="h-8 min-w-[280px]"
                                   />
                                 ) : (
-                                  <>
-                                    {row.activities}
-                                    {!row.isLeave && row.timesheetState === "rejected" && (
-                                      <span
-                                        className="font-semibold ml-1"
-                                        style={{ color: "#903030" }}
-                                      >
-                                        · Rejected
-                                      </span>
-                                    )}
-                                  </>
+                                  isEmptyWorkingDayRow ? (
+                                    renderEmptyDayActions({
+                                      dateApi: row.dateApi,
+                                      layout: "inline",
+                                      stopPropagation: true,
+                                      showLabel: false,
+                                    })
+                                  ) : (
+                                    <>
+                                      {row.activities}
+                                      {!row.isLeave && row.timesheetState === "rejected" && (
+                                        <span
+                                          className="font-semibold ml-1"
+                                          style={{ color: "#903030" }}
+                                        >
+                                          · Rejected
+                                        </span>
+                                      )}
+                                    </>
+                                  )
+                                )}
+                              </TableCell>
+                              <TableCell className="px-3 py-2.5 text-sm text-foreground whitespace-nowrap">
+                                {row.createdAt ? (
+                                  formatCreatedAt(row.createdAt)
+                                ) : (
+                                  "-"
                                 )}
                               </TableCell>
                               {isTeamMode && canManageTeamEntries && (
@@ -2974,26 +3712,38 @@ export default function DashboardPage() {
                         prevRow && prevRow.date === row.date;
 
                       let bgColor = undefined;
+                      const projectPill = getProjectPill(row);
 
                       if (
                         (row.isLeave && row.leaveStatus === "rejected") ||
                         row.timesheetState === "rejected"
                       ) {
-                        bgColor = "var(--color-red-bg)";
+                        bgColor = "#f6d8dd";
                       } else if (
                         row.isLeave &&
                         row.leaveStatus === "pending"
                       ) {
-                        bgColor = "var(--color-yellow-bg)";
+                        bgColor = "#f8efcc";
                       } else if (
                         row.isHoliday ||
                         row.isWeekend ||
                         (row.isLeave && row.leaveStatus === "approved")
                       ) {
-                        bgColor = "var(--color-green-bg)";
+                        bgColor = "#d9eee2";
                       } else {
                         bgColor = "var(--background)";
                       }
+
+                      const isEmptyWorkingDayRow =
+                        (!row.isLeave &&
+                          !row.isHoliday &&
+                          !row.isWeekend &&
+                          row.project === "-" &&
+                          row.activities === "-") ||
+                        (row.isLeave &&
+                          row.leaveStatus === "rejected" &&
+                          !row.isHoliday &&
+                          !row.isWeekend);
 
                       return (
                         <div
@@ -3016,14 +3766,51 @@ export default function DashboardPage() {
                         >
                           <div className="flex justify-between items-start">
                             <div className="space-y-0.5 flex-1">
-                              <p className="text-xs text-muted-foreground">
-                                {!isSameDateAsPrev
-                                  ? `#${dateSerialMap.get(row.date) ?? ""}`
-                                  : ""}
-                              </p>
                               {!isSameDateAsPrev && (
-                                <p className="text-sm font-medium text-foreground">
-                                  {row.date} - {row.day}
+                                <p className="text-sm font-medium text-foreground flex items-center gap-1.5 flex-wrap">
+                                  <span>
+                                    {row.date} - {row.day}
+                                  </span>
+                                  {dateCreatedAtMap.get(row.date) && (
+                                    <TooltipProvider>
+                                      <Tooltip
+                                        open={activeCalendarCreatedAtKey === `mobile-${row.date}`}
+                                        onOpenChange={(isOpen) => {
+                                          if (isOpen) {
+                                            setActiveCalendarCreatedAtKey(`mobile-${row.date}`);
+                                            return;
+                                          }
+
+                                          setActiveCalendarCreatedAtKey((prev) =>
+                                            prev === `mobile-${row.date}` ? null : prev
+                                          );
+                                        }}
+                                      >
+                                        <TooltipTrigger asChild>
+                                          <button
+                                            type="button"
+                                            className="inline-flex h-4 w-4 items-center justify-center text-amber-600 hover:text-amber-700"
+                                            aria-label="Show created at timestamp"
+                                            onClick={(event) => {
+                                              event.stopPropagation();
+                                              setActiveCalendarCreatedAtKey((prev) =>
+                                                prev === `mobile-${row.date}`
+                                                  ? null
+                                                  : `mobile-${row.date}`
+                                              );
+                                            }}
+                                          >
+                                            <AlertTriangle className="h-3 w-3" />
+                                          </button>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top">
+                                          <div className="text-xs whitespace-nowrap">
+                                            Created: {formatCreatedAt(dateCreatedAtMap.get(row.date))}
+                                          </div>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
+                                  )}
                                 </p>
                               )}
                             </div>
@@ -3039,17 +3826,31 @@ export default function DashboardPage() {
                             <p className="text-xs text-muted-foreground">
                               Project
                             </p>
-                            <p className="text-sm text-foreground">
-                              {row.project}
-                            </p>
+                            {projectPill ? (
+                              <span className={getProjectPillClassName(projectPill.tone)}>
+                                {projectPill.label}
+                              </span>
+                            ) : (
+                              <p className="text-sm text-foreground">
+                                {row.project}
+                              </p>
+                            )}
                           </div>
                           <div className="space-y-0.5">
                             <p className="text-xs text-muted-foreground">
                               Activities
                             </p>
-                            <p className="text-sm text-foreground">
-                              {row.activities}
-                            </p>
+                            {isEmptyWorkingDayRow ? (
+                              renderEmptyDayActions({
+                                dateApi: row.dateApi,
+                                layout: "stack",
+                                showLabel: false,
+                              })
+                            ) : (
+                              <p className="text-sm text-foreground">
+                                {row.activities}
+                              </p>
+                            )}
                           </div>
                         </div>
                       );

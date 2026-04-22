@@ -90,11 +90,13 @@ const formSchema = z
 interface LeaveApplicationFormProps {
   userEmail: string;
   fetchLeaves: () => Promise<void>;
+  prefilledDate?: string;
 }
 
 export function LeaveApplicationForm({
   userEmail,
   fetchLeaves,
+  prefilledDate,
 }: LeaveApplicationFormProps) {
   // Get mock data from centralized service (duration types)
   const durationTypes = mockDataService.getDurationTypes();
@@ -228,6 +230,17 @@ export function LeaveApplicationForm({
       form.setValue("endDate", dateRange.from);
     }
   }, [dateRange, form]);
+
+  useEffect(() => {
+    if (!prefilledDate) return;
+
+    const parsed = new Date(`${prefilledDate}T00:00:00`);
+    if (Number.isNaN(parsed.getTime())) return;
+
+    setDateRange({ from: parsed, to: parsed });
+    form.setValue("startDate", parsed, { shouldDirty: true, shouldValidate: true });
+    form.setValue("endDate", parsed, { shouldDirty: true, shouldValidate: true });
+  }, [form, prefilledDate]);
 
   useEffect(() => {
     // Debounce validation to avoid excessive API calls

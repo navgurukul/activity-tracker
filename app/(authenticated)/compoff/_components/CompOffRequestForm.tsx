@@ -76,7 +76,10 @@ interface Employee {
   email: string;
 }
 
-export function CompOffRequestForm() {
+interface CompOffRequestFormProps {
+  scope: "my_off_day_work" | "my_reportees" | "all_org";
+}
+export function CompOffRequestForm({ scope }: CompOffRequestFormProps) {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [isLoadingEmployees, setIsLoadingEmployees] = useState(false);
   const [employeeComboboxOpen, setEmployeeComboboxOpen] = useState(false);
@@ -255,43 +258,59 @@ export function CompOffRequestForm() {
           return await fetchAllPages(extraParams);
         };
 
-        if (isAdminOrSuper) {
-          const allUsers = await trySingleRequest();
+        const toEmployeeList = (allUsers: any[]): Employee[] => {
           const employeeList = (allUsers || [])
-            .filter((emp: any) => emp && emp.id) 
+            .filter((emp: any) => emp && emp.id)
             .map((emp: any) => ({
               id: emp.id,
-              name: emp.name || emp.email || `User ${emp.id}`, 
-              email: emp.email || '',
+              name: emp.name || emp.email || `User ${emp.id}`,
+              email: emp.email || "",
             }))
-            .filter((emp: Employee) => emp.name && !emp.name.includes('#'));
-          
-          employeeList.sort((a: Employee, b: Employee) => a.name.localeCompare(b.name));
-          setEmployees(employeeList);
-        } else if (isManager) {
-          const allUsers = await trySingleRequest({ managerId: user.id });
-          const employeeList = (allUsers || [])
-            .filter((emp: any) => emp && emp.id) 
-            .map((emp: any) => ({
-              id: emp.id,
-              name: emp.name || emp.email || `User ${emp.id}`, 
-              email: emp.email || '',
-            }))
-            .filter((emp: Employee) => emp.name && !emp.name.includes('#')); 
-          
-          employeeList.sort((a: Employee, b: Employee) => a.name.localeCompare(b.name));
-          setEmployees(employeeList);
-        } else {
-          // Regular employee: only themselves
-          const self = {
-            id: user.id,
-            name: user.name || user.email,
-            email: user.email,
-          };
-          setEmployees([self]);
-          // Preselect the current user and disable changing
-          form.setValue("userId", user.id);
+            .filter((emp: Employee) => emp.name && !emp.name.includes("#"));
+
+          employeeList.sort((a: Employee, b: Employee) =>
+            a.name.localeCompare(b.name)
+          );
+          return employeeList;
+        };
+
+        const selfEmployee: Employee = {
+          id: user.id,
+          name: user.name || user.email,
+          email: user.email,
+        };
+
+        if (scope === "my_off_day_work") {
+          setEmployees([selfEmployee]);
+          form.setValue("userId", user.id, { shouldValidate: true });
+          return;
         }
+
+        if (scope === "all_org") {
+          if (!isAdminOrSuper) {
+            setEmployees([selfEmployee]);
+            form.setValue("userId", user.id, { shouldValidate: true });
+            return;
+          }
+
+          const allUsers = await trySingleRequest();
+          const employeeList = toEmployeeList(allUsers || []);
+          setEmployees(employeeList);
+          form.resetField("userId");
+          return;
+        }
+
+        // my_reportees scope
+        if (isManager || isAdminOrSuper) {
+          const allUsers = await trySingleRequest({ managerId: user.id });
+          const employeeList = toEmployeeList(allUsers || []);
+          setEmployees(employeeList);
+          form.resetField("userId");
+          return;
+        }
+
+        setEmployees([selfEmployee]);
+        form.resetField("userId");
       } catch (error: any) {
         console.error("Error fetching employees:", error);
         toast.error("Failed to load employees", {
@@ -303,7 +322,7 @@ export function CompOffRequestForm() {
     }
 
     fetchEmployees();
-  }, [user?.id, isAdminOrSuper, isManager]);
+  }, [scope, user?.id, user?.name, user?.email, isAdminOrSuper, isManager, form]);
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsSubmitting(true);
@@ -391,7 +410,7 @@ export function CompOffRequestForm() {
                               )}
                               // Disable selection for regular employees (they can only request for themselves).
                               disabled={
-                                isLoadingEmployees || (!isAdminOrSuper && !isManager)
+                                isLoadingEmployees || employees.length === 0
                               }
                             >
                               <span className="truncate text-left">
@@ -449,10 +468,18 @@ export function CompOffRequestForm() {
                           </Command>
                         </PopoverContent>
                       </Popover>
-                      <FormDescription>
-                        Select the employee for whom this comp-off is being
-                        requested
-                      </FormDescription>
+                      {!(scope === "my_reportees" && !isLoadingEmployees && employees.length === 0) && (
+                        <FormDescription>
+                          Select the employee for whom this comp-off is being requested
+                        </FormDescription>
+                      )}
+                      {scope === "my_reportees" &&
+                        !isLoadingEmployees &&
+                        employees.length === 0 && (
+                          <p className="text-sm text-muted-foreground">
+                            No reportees found. If this seems incorrect, please contact your manager.
+                          </p>
+                        )}
                       <FormMessage />
                     </FormItem>
                   );

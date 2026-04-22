@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 
 import { format } from "date-fns";
 import {
+  CircleHelp,
   Calendar as CalendarIcon,
   Plus,
   Trash2,
@@ -50,6 +51,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AppHeader } from "@/app/_components/AppHeader";
 import { PageWrapper } from "@/app/_components/wrapper";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import apiClient from "@/lib/api-client";
 import {
   API_PATHS,
@@ -68,6 +75,7 @@ import {
 
 export default function TrackerPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   // Get authenticated user data
   const { user, isLoading, refreshUser } = useAuth();
 
@@ -329,6 +337,19 @@ export default function TrackerPage() {
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [hoursInput, setHoursInput] = useState<Record<number, string>>({});
 
+  useEffect(() => {
+    const dateParam = searchParams.get("date");
+    if (!dateParam) return;
+
+    const parsed = new Date(`${dateParam}T00:00:00`);
+    if (Number.isNaN(parsed.getTime())) return;
+
+    form.setValue("activityDate", parsed, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+  }, [form, searchParams]);
+
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsSubmitting(true);
 
@@ -500,26 +521,29 @@ export default function TrackerPage() {
                     <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                       Lifelines
                     </span>
-                    <span
-                      className={cn(
-                        "p-1.5 rounded-md",
-                        (user?.backfill?.remaining ?? 0) > 0
-                          ? "bg-emerald-50"
-                          : "bg-amber-50"
-                      )}
-                    >
-                      <AlertCircle
-                        className={cn(
-                          "h-3.5 w-3.5",
-                          (user?.backfill?.remaining ?? 0) > 0
-                            ? "text-[#748074]"
-                            : "text-amber-600"
-                        )}
-                      />
-                    </span>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:text-foreground"
+                            aria-label="Lifelines information"
+                          >
+                            <CircleHelp className="h-3.5 w-3.5" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent
+                          className="w-72 max-w-[calc(100vw-2rem)] whitespace-normal break-words text-xs leading-relaxed text-left"
+                          side="top"
+                          align="end"
+                        >
+                          You're expected to submit timesheets daily. Lifelines allow you to add missed entries for up to 3 past working days. You can use up to 3 lifelines per cycle. This card shows how many lifelines you have remaining in the current cycle.
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   </div>
                   <p className="text-2xl font-bold text-foreground tabular-nums leading-none">
-                    {(user?.backfill?.remaining ?? 0)}/{user?.backfill?.limit ?? 0}
+                    {user?.backfill?.remaining ?? 0}
                   </p>
                 </div>
               </div>
