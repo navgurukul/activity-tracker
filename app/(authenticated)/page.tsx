@@ -3267,34 +3267,32 @@ export default function DashboardPage() {
                           const isSameDateAsNext =
                             nextRow && nextRow.date === row.date;
 
-                          let bgColor: string | undefined;
+                          let rowBgClass = "timesheet-row-bg-default";
                           let isColored = false;
 
                           if (
                             (row.isLeave && row.leaveStatus === "rejected") ||
                             row.timesheetState === "rejected"
                           ) {
-                            bgColor = "#f6d8dd";
+                            rowBgClass = "timesheet-row-bg-rejected";
                             isColored = true;
                           } else if (
                             row.isLeave &&
                             row.leaveStatus === "pending"
                           ) {
-                            bgColor = "#f8efcc";
+                            rowBgClass = "timesheet-row-bg-pending";
                             isColored = true;
                           } else if (
                             row.isLeave && row.leaveStatus === "approved"
                           ) {
-                            bgColor = "#d9eee2";
+                            rowBgClass = "timesheet-row-bg-approved";
                             isColored = true;
                           } else if (row.isHoliday) {
-                            bgColor = "#d9eee2";
+                            rowBgClass = "timesheet-row-bg-holiday";
                             isColored = true;
                           } else if (row.isWeekend) {
-                            bgColor = "var(--secondary-background)";
+                            rowBgClass = "timesheet-row-bg-weekend";
                             isColored = true;
-                          } else {
-                            bgColor = "var(--background)";
                           }
 
                           const rowKey = getRowKey(row, index);
@@ -3327,7 +3325,6 @@ export default function DashboardPage() {
                               key={`${row.date}-${index}`}
                               data-date-api={row.dateApi ?? undefined}
                               style={{
-                                backgroundColor: bgColor,
                                 borderBottom: isSameDateAsNext
                                   ? "none"
                                   : undefined,
@@ -3339,6 +3336,7 @@ export default function DashboardPage() {
                                   : undefined,
                               }}
                               className={cn(
+                                rowBgClass,
                                 isColored ? "hover:opacity-95" : "",
                                 isTargetDateRow && "animate-[pulse_1s_ease-in-out_3]"
                               )}
@@ -3711,27 +3709,25 @@ export default function DashboardPage() {
                       const isSameDateAsPrev =
                         prevRow && prevRow.date === row.date;
 
-                      let bgColor = undefined;
+                      let cardBgClass = "timesheet-row-bg-default";
                       const projectPill = getProjectPill(row);
 
                       if (
                         (row.isLeave && row.leaveStatus === "rejected") ||
                         row.timesheetState === "rejected"
                       ) {
-                        bgColor = "#f6d8dd";
+                        cardBgClass = "timesheet-row-bg-rejected";
                       } else if (
                         row.isLeave &&
                         row.leaveStatus === "pending"
                       ) {
-                        bgColor = "#f8efcc";
+                        cardBgClass = "timesheet-row-bg-pending";
                       } else if (
                         row.isHoliday ||
                         row.isWeekend ||
                         (row.isLeave && row.leaveStatus === "approved")
                       ) {
-                        bgColor = "#d9eee2";
-                      } else {
-                        bgColor = "var(--background)";
+                        cardBgClass = "timesheet-row-bg-non-working";
                       }
 
                       const isEmptyWorkingDayRow =
@@ -3751,12 +3747,12 @@ export default function DashboardPage() {
                           data-date-api={row.dateApi ?? undefined}
                           className={cn(
                             "border border-border rounded-[4px] p-4 space-y-2",
+                            cardBgClass,
                             highlightedDateApi !== null &&
                             row.dateApi === highlightedDateApi &&
                             "animate-[pulse_1s_ease-in-out_3]"
                           )}
                           style={{
-                            backgroundColor: bgColor,
                             boxShadow:
                               highlightedDateApi !== null &&
                                 row.dateApi === highlightedDateApi

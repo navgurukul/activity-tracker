@@ -76,10 +76,7 @@ interface Employee {
   email: string;
 }
 
-interface CompOffRequestFormProps {
-  scope: "my_off_day_work" | "my_reportees" | "all_org";
-}
-export function CompOffRequestForm({ scope }: CompOffRequestFormProps) {
+export function CompOffRequestForm() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [isLoadingEmployees, setIsLoadingEmployees] = useState(false);
   const [employeeComboboxOpen, setEmployeeComboboxOpen] = useState(false);
@@ -280,19 +277,7 @@ export function CompOffRequestForm({ scope }: CompOffRequestFormProps) {
           email: user.email,
         };
 
-        if (scope === "my_off_day_work") {
-          setEmployees([selfEmployee]);
-          form.setValue("userId", user.id, { shouldValidate: true });
-          return;
-        }
-
-        if (scope === "all_org") {
-          if (!isAdminOrSuper) {
-            setEmployees([selfEmployee]);
-            form.setValue("userId", user.id, { shouldValidate: true });
-            return;
-          }
-
+        if (isAdminOrSuper) {
           const allUsers = await trySingleRequest();
           const employeeList = toEmployeeList(allUsers || []);
           setEmployees(employeeList);
@@ -300,8 +285,7 @@ export function CompOffRequestForm({ scope }: CompOffRequestFormProps) {
           return;
         }
 
-        // my_reportees scope
-        if (isManager || isAdminOrSuper) {
+        if (isManager) {
           const allUsers = await trySingleRequest({ managerId: user.id });
           const employeeList = toEmployeeList(allUsers || []);
           setEmployees(employeeList);
@@ -322,7 +306,7 @@ export function CompOffRequestForm({ scope }: CompOffRequestFormProps) {
     }
 
     fetchEmployees();
-  }, [scope, user?.id, user?.name, user?.email, isAdminOrSuper, isManager, form]);
+  }, [user?.id, user?.name, user?.email, isAdminOrSuper, isManager, form]);
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsSubmitting(true);
@@ -468,12 +452,13 @@ export function CompOffRequestForm({ scope }: CompOffRequestFormProps) {
                           </Command>
                         </PopoverContent>
                       </Popover>
-                      {!(scope === "my_reportees" && !isLoadingEmployees && employees.length === 0) && (
+                      {!(!isAdminOrSuper && isManager && !isLoadingEmployees && employees.length === 0) && (
                         <FormDescription>
                           Select the employee for whom this comp-off is being requested
                         </FormDescription>
                       )}
-                      {scope === "my_reportees" &&
+                      {!isAdminOrSuper &&
+                        isManager &&
                         !isLoadingEmployees &&
                         employees.length === 0 && (
                           <p className="text-sm text-muted-foreground">
@@ -553,7 +538,7 @@ export function CompOffRequestForm({ scope }: CompOffRequestFormProps) {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Duration</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
+                    <Select onValueChange={field.onChange} value={field.value ?? ""}>
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Select duration" />

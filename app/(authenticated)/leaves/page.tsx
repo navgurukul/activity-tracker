@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { format, parseISO } from "date-fns";
 import { useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Search, TreePalm, Clock, CheckCircle2, Calendar as CalendarIcon, X, Pencil, Plus, AlertCircle } from "lucide-react";
 import type { DateRange } from "react-day-picker";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -113,6 +114,11 @@ interface LeaveBalanceItem {
 
 type LeavesMainTab = "leaves" | "my_reportees" | "all_org";
 
+const getDashboardHighlightUrl = (dateApi: string) => {
+  const normalized = dateApi.trim();
+  return normalized ? `/?date=${encodeURIComponent(normalized)}` : "/";
+};
+
 interface PersistedLeavesState {
   activeMainTab?: LeavesMainTab;
   isTeamEmployeeBalanceView?: boolean;
@@ -121,6 +127,7 @@ interface PersistedLeavesState {
 
 export default function LeavesPage() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const { user } = useAuth();
   const canEditTeamPendingRequests = useRole([ROLES.ADMIN, ROLES.SUPER_ADMIN]);
   const canUseLeaveSearch = useRole([
@@ -581,8 +588,13 @@ export default function LeavesPage() {
       try {
         const res = await apiClient.get(API_PATHS.LEAVES_TYPES);
         const types = Array.isArray(res.data?.data) ? res.data.data : Array.isArray(res.data) ? res.data : [];
+        const filteredTypes = types.filter(
+          (type: any) =>
+            String(type?.code ?? "").trim().toUpperCase() !== "CPL" &&
+            String(type?.name ?? "").trim().toLowerCase() !== "compensatory leave"
+        );
         if (isMounted) {
-          setAdminLeaveTypes(types);
+          setAdminLeaveTypes(filteredTypes);
         }
       } catch {
         if (isMounted) {
@@ -596,10 +608,11 @@ export default function LeavesPage() {
     };
   }, [adminApplyLeaveOpen]);
 
-  const handleNewRequestSuccess = useCallback(() => {
+  const handleNewRequestSuccess = useCallback((submittedDate: string) => {
     fetchBalances();
     fetchMyLeaves();
-  }, [fetchBalances, fetchMyLeaves]);
+    router.push(getDashboardHighlightUrl(submittedDate));
+  }, [fetchBalances, fetchMyLeaves, router]);
 
   const handleAdminApplyLeaveSubmit = useCallback(
     async (values: z.infer<typeof adminApplyLeaveFormSchema>) => {
@@ -2251,7 +2264,7 @@ export default function LeavesPage() {
                                     <SelectContent>
                                       {adminLeaveTypes.map((type) => (
                                         <SelectItem key={type.id} value={String(type.id)}>
-                                          {type.name}
+                                          {getDisplayLeaveTypeName(type.name)}
                                         </SelectItem>
                                       ))}
                                     </SelectContent>

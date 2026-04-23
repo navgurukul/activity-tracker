@@ -81,7 +81,7 @@ const formSchema = z
 
 interface NewLeaveRequestDialogProps {
   userEmail: string;
-  onSuccess: () => void;
+  onSuccess: (submittedDate: string) => void;
   forceOpen?: boolean;
   prefilledDate?: string;
 }
@@ -276,6 +276,7 @@ export function NewLeaveRequestDialog({
       );
       if (response.status === 200 || response.status === 201) {
         toast.success("Leave request submitted successfully!");
+        const submittedDate = format(values.startDate, DATE_FORMATS.API);
         invalidateMonthlyTimesheetCache(
           values.startDate.getFullYear(),
           values.startDate.getMonth() + 1
@@ -298,7 +299,7 @@ export function NewLeaveRequestDialog({
         setValidationError(null);
         setDateRange(undefined);
         setOpen(false);
-        onSuccess();
+        onSuccess(submittedDate);
       }
     } catch (error: unknown) {
       const msg =
