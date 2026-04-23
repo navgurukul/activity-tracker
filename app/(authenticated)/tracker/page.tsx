@@ -603,7 +603,7 @@ export default function TrackerPage() {
                           </Popover>
                           <FormDescription>
                             {(user?.backfill?.remaining ?? 0) > 0
-                              ? "Select a date for today or within the last three days (depending on available lifelines for logging activities.)"
+                              ? "You can submit an entry for today, or for any of the past 3 working days within the current salary cycle, if you have lifelines remaining."
                               : "Only today's date can be selected for tracking activities. Your backfill limit has been reached."}
                           </FormDescription>
                           <FormMessage />
@@ -647,9 +647,7 @@ export default function TrackerPage() {
                             name={`projectEntries.${index}.currentWorkingDepartment`}
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>
-                                  Current Working Department
-                                </FormLabel>
+                                <FormLabel>Project Department</FormLabel>
                                 <Select
                                   onValueChange={(value) => {
                                     field.onChange(value);
@@ -667,7 +665,7 @@ export default function TrackerPage() {
                                 >
                                   <FormControl>
                                     <SelectTrigger>
-                                      <SelectValue placeholder="Select department" />
+                                      <SelectValue placeholder="Select the department for this project" />
                                     </SelectTrigger>
                                   </FormControl>
                                   <SelectContent>
@@ -710,14 +708,14 @@ export default function TrackerPage() {
 
                               return (
                                 <FormItem>
-                                  <FormLabel>Project</FormLabel>
+                                  <FormLabel>Project Name</FormLabel>
                                   <Select
                                     onValueChange={field.onChange}
                                     value={field.value}
                                   >
                                     <FormControl>
                                       <SelectTrigger>
-                                        <SelectValue placeholder="Select project" />
+                                        <SelectValue placeholder="Select Project" />
                                       </SelectTrigger>
                                     </FormControl>
                                     <SelectContent>
@@ -820,6 +818,9 @@ export default function TrackerPage() {
                                     }}
                                    />
                                  </FormControl>
+                                   <FormDescription>
+                                     Maximum 12 hours total across all entries for the day.
+                                   </FormDescription>
                                  <FormMessage />
                                </FormItem>
                              );
