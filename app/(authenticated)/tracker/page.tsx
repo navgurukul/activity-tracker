@@ -86,7 +86,7 @@ export default function TrackerPage() {
   >([]);
 
   const [projectsByDept, setProjectsByDept] = useState<
-    Record<string, { id: number; name: string; code: string }[]>
+    Record<string, { id: number; name: string; code: string; status?: string }[]>
   >({});
 
   const [projectSearchQuery, setProjectSearchQuery] = useState<
@@ -177,7 +177,12 @@ export default function TrackerPage() {
     if (!dept?.id) return;
 
     try {
-      let allProjects: { id: number; name: string; code: string }[] = [];
+      let allProjects: {
+        id: number;
+        name: string;
+        code: string;
+        status?: string;
+      }[] = [];
       let page = 1;
       let hasMore = true;
 
@@ -698,12 +703,13 @@ export default function TrackerPage() {
                                 projectSearchQuery[index] || "";
                               const filteredProjects = projectOptions.filter(
                                 (project) =>
-                                  project.name
+                                  project.status?.toLowerCase() === "active" &&
+                                  (project.name
                                     .toLowerCase()
                                     .includes(searchQuery.toLowerCase()) ||
-                                  project.code
-                                    .toLowerCase()
-                                    .includes(searchQuery.toLowerCase())
+                                    project.code
+                                      .toLowerCase()
+                                      .includes(searchQuery.toLowerCase()))
                               );
 
                               return (
