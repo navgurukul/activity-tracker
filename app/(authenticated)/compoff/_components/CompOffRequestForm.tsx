@@ -46,6 +46,21 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import type {
+  ApiErrorLike,
+  CompOffRequestFormProps,
+  CompOffRequestPayload,
+  EmployeeApiRecord,
+  Employee,
+  QueryParams,
+  TimesheetDayRecord,
+} from "@/lib/compofftype";
+import {
+  extractErrorMessage,
+  toEmployeeRecords,
+  toFiniteNumber,
+  toTimesheetDays,
+} from "@/lib/compofftype";
 
 const formSchema = z.object({
   userId: z.number().int().positive("Please select a valid employee."),
@@ -62,21 +77,6 @@ const formSchema = z.object({
       `Please provide at least ${VALIDATION.MIN_LEAVE_REASON_LENGTH} characters for the notes.`
     ),
 });
-
-interface Employee {
-  id: number;
-  name: string;
-  email: string;
-}
-
-interface CompOffRequestFormProps {
-  onSuccess?: () => void;
-  scope?: "my" | "reportees" | "all";
-}
-const toFiniteNumber = (value: unknown): number | null => {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-};
 
 export function CompOffRequestForm({ onSuccess, scope = "reportees" }: CompOffRequestFormProps) {
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -122,10 +122,10 @@ export function CompOffRequestForm({ onSuccess, scope = "reportees" }: CompOffRe
         params: { year, month },
       });
 
-      const days = response.data?.days || response.data?.data?.days || [];
+      const days = toTimesheetDays(response.data?.days || response.data?.data?.days);
       setHolidayDates((prev) => {
         const next = new Set(prev);
-        days.forEach((day: any) => {
+        days.forEach((day) => {
           if (day?.isHoliday !== true) return;
           const normalized = normalizeDateKey(day?.date);
           if (normalized) next.add(normalized);
@@ -137,8 +137,7 @@ export function CompOffRequestForm({ onSuccess, scope = "reportees" }: CompOffRe
         next.add(monthKey);
         return next;
       });
-    } catch (error: any) {
-      console.error("Error loading holidays:", error);
+    } catch (error: unknown) {
     }
   };
   const checkHolidayForDate = async (date: Date): Promise<boolean> => {
@@ -151,8 +150,8 @@ export function CompOffRequestForm({ onSuccess, scope = "reportees" }: CompOffRe
         params: { year, month },
       });
 
-      const days = response.data?.days || response.data?.data?.days || [];
-      return days.some((day: any) => {
+      const days = toTimesheetDays(response.data?.days || response.data?.data?.days);
+      return days.some((day) => {
         if (day?.isHoliday !== true) return false;
         return normalizeDateKey(day?.date) === dateKey;
       });
@@ -201,16 +200,16 @@ export function CompOffRequestForm({ onSuccess, scope = "reportees" }: CompOffRe
 
       setIsLoadingEmployees(true);
       try {
-        const fetchAllPages = async (extraParams: Record<string, any> = {}) => {
+        const fetchAllPages = async (extraParams: QueryParams = {}) => {
           let page = 1;
-          const accumulated: any[] = [];
+          const accumulated: EmployeeApiRecord[] = [];
 
           while (true) {
             const response = await apiClient.get(API_PATHS.EMPLOYEES, {
               params: { ...extraParams, page },
             });
 
-            const pageData = response.data?.data || [];
+            const pageData = toEmployeeRecords(response.data?.data);
             accumulated.push(...pageData);
 
             const total = response.data?.total ?? response.data?.data?.total;
@@ -225,18 +224,19 @@ export function CompOffRequestForm({ onSuccess, scope = "reportees" }: CompOffRe
 
           return accumulated;
         };
-        const trySingleRequest = async (extraParams: Record<string, any> = {}) => {
+        const trySingleRequest = async (extraParams: QueryParams = {}) => {
           try {
             const respAll = await apiClient.get(API_PATHS.EMPLOYEES, {
               params: { ...extraParams, all: true },
             });
-            if (respAll.data && Array.isArray(respAll.data.data)) {
-              const count = respAll.data.data.length;
+            const fullList = toEmployeeRecords(respAll.data?.data);
+            if (fullList.length > 0) {
+              const count = fullList.length;
               const total = respAll.data.total ?? respAll.data.data?.total ?? count;
-              if (count >= total) return respAll.data.data;
+              if (count >= total) return fullList;
 
             }
-          } catch (e) {
+          } catch {
           }
 
           try {
@@ -244,26 +244,26 @@ export function CompOffRequestForm({ onSuccess, scope = "reportees" }: CompOffRe
               params: { ...extraParams, page: 1, limit: 10000 },
             });
 
-            const list = resp.data?.data || [];
+            const list = toEmployeeRecords(resp.data?.data);
             const total = resp.data?.total ?? resp.data?.data?.total ?? list.length;
 
             if (list.length >= total) {
               return list;
             }
-          } catch (e) {
+          } catch {
           }
 
         
           return await fetchAllPages(extraParams);
         };
 
-        const toEmployeeList = (allUsers: any[]): Employee[] => {
+        const toEmployeeList = (allUsers: EmployeeApiRecord[]): Employee[] => {
           const shouldRestrictToReportees = scope === "reportees" && Boolean(user?.id);
           const managerUserId = Number(user?.id);
 
           const employeeList = (allUsers || [])
-            .filter((emp: any) => emp && emp.id)
-            .filter((emp: any) => {
+            .filter((emp) => emp && emp.id !== undefined && emp.id !== null)
+            .filter((emp) => {
               if (!shouldRestrictToReportees) return true;
               const managerId =
                 toFiniteNumber(emp?.managerId) ??
@@ -272,8 +272,8 @@ export function CompOffRequestForm({ onSuccess, scope = "reportees" }: CompOffRe
 
               return managerId !== null && managerId === managerUserId;
             })
-            .map((emp: any) => ({
-              id: emp.id,
+            .map((emp) => ({
+              id: Number(emp.id),
               name: emp.name || emp.email || `User ${emp.id}`,
               email: emp.email || "",
             }))
@@ -309,8 +309,7 @@ export function CompOffRequestForm({ onSuccess, scope = "reportees" }: CompOffRe
 
         setEmployees([selfEmployee]);
         form.resetField("userId");
-      } catch (error: any) {
-        console.error("Error fetching employees:", error);
+      } catch (error: unknown) {
         toast.error("Failed to load employees", {
           description: "Unable to fetch employee list. Please try again.",
         });
@@ -340,7 +339,7 @@ export function CompOffRequestForm({ onSuccess, scope = "reportees" }: CompOffRe
         return;
       }
 
-      const payload = {
+      const payload: CompOffRequestPayload = {
         userId: values.userId,
         workDate: dateKey,
         duration: values.duration,
@@ -354,12 +353,11 @@ export function CompOffRequestForm({ onSuccess, scope = "reportees" }: CompOffRe
         form.reset();
         onSuccess?.();
       }
-    } catch (error: any) {
-      console.error("Error submitting comp-off request:", error);
-      const errorMessage =
-        error.response?.data?.message ||
-        error.message ||
-        "Failed to submit comp-off request. Please try again.";
+    } catch (error: unknown) {
+      const errorMessage = extractErrorMessage(
+        error,
+        "Failed to submit comp-off request. Please try again."
+      );
       toast.error("Submission failed", {
         description: errorMessage,
       });

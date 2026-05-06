@@ -52,6 +52,7 @@
   --dashboard-pill-yellow: #bfa452;
   --dashboard-pill-red: #bb3b1e;
   --dashboard-pill-khaki: #6d5542;
+  --dashboard-pill-text-color: #ffffff;
 }
 
 @theme inline {
@@ -163,7 +164,7 @@ input[data-slot="input"][type="number"] {
 
 .dashboard-status-pill {
   border: none;
-  color: white;
+  color: var(--dashboard-pill-text-color);
   border-radius: 9999px;
   padding: 0.15rem 0.5rem;
   font-size: 0.7rem;

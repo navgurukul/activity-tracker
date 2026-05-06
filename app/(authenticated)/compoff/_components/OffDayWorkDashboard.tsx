@@ -13,33 +13,34 @@ import { useAuth } from "@/hooks/use-auth";
 import { useRole } from "@/hooks/use-role";
 import apiClient from "@/lib/api-client";
 import { API_PATHS } from "@/lib/constants";
+import type {
+  CompOffSummary,
+  CreditsSummaryProps,
+  CreditState,
+  OffDayWorkGroupedUser,
+  OffDayWorkPerson,
+  OffDayWorkResponseItem,
+  OffDayWorkRow,
+  OffDayWorkScope,
+  OffDayWorkTabOption,
+  OffDayWorkTab,
+} from "@/lib/compofftype";
 import { ROLES } from "@/lib/rbac-constants";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { OffDayWorkTable, type CreditState, type OffDayWorkRow } from "./OffDayWorkTable";
-
-type OffDayWorkTab = "my-off-day-work" | "my-reportees" | "all-org";
-type OffDayWorkScope = "my" | "reportees" | "all";
-
-interface OffDayWorkResponseItem {
-  [key: string]: unknown;
-}
-
-interface OffDayWorkGroupedUser {
-  user?: OffDayWorkResponseItem;
-  credits?: OffDayWorkResponseItem[];
-  [key: string]: unknown;
-}
+import { OffDayWorkTable } from "./OffDayWorkTable";
 
 const toFiniteNumber = (value: unknown): number | null => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 };
 const isDirectReporteeRow = (item: OffDayWorkResponseItem, managerId: number): boolean => {
+  const user: OffDayWorkPerson | undefined = item.user;
+  const employee: OffDayWorkPerson | undefined = item.employee;
   const explicitManagerId =
     toFiniteNumber(item.managerId) ??
-    toFiniteNumber((item.user as { managerId?: unknown } | undefined)?.managerId) ??
-    toFiniteNumber((item.employee as { managerId?: unknown } | undefined)?.managerId);
+    toFiniteNumber(user?.managerId) ??
+    toFiniteNumber(employee?.managerId);
 
   if (explicitManagerId !== null) {
     return explicitManagerId === managerId;
@@ -164,16 +165,18 @@ const normalizeState = (raw: OffDayWorkResponseItem): CreditState => {
 };
 
 const normalizeRow = (raw: OffDayWorkResponseItem, index: number): OffDayWorkRow => {
+  const user: OffDayWorkPerson | undefined = raw.user;
+  const employee: OffDayWorkPerson | undefined = raw.employee;
   const employeeName =
     toText(raw.employeeName) ||
-    toText((raw.user as { name?: unknown } | undefined)?.name) ||
-    toText((raw.employee as { name?: unknown } | undefined)?.name) ||
+    toText(user?.name) ||
+    toText(employee?.name) ||
     toText(raw.name) ||
     "—";
   const employeeEmail =
     toText(raw.employeeEmail) ||
-    toText((raw.user as { email?: unknown } | undefined)?.email) ||
-    toText((raw.employee as { email?: unknown } | undefined)?.email) ||
+    toText(user?.email) ||
+    toText(employee?.email) ||
     "";
 
   const workDateSource = raw.workDate ?? raw.date ?? raw.work_date ?? raw.startDate ?? raw.creditDate ?? raw.creditedOn;
@@ -266,17 +269,6 @@ const extractRows = (payload: unknown): OffDayWorkResponseItem[] => {
   return [];
 };
 
-interface CompOffSummary {
-  total: number;
-  active: number;
-  availed: number;
-  expired: number;
-}
-
-interface CreditsSummaryProps {
-  summary: CompOffSummary | null;
-}
-
 function CreditsSummary({ summary }: CreditsSummaryProps) {
   const cards = [
     { label: "Total Credits", className: "offday-summary-card--total", value: summary?.total },
@@ -340,7 +332,7 @@ export function OffDayWorkDashboard() {
   const [allStatus, setAllStatus] = useState<"all" | CreditState>("all");
 
   const tabs = useMemo(() => {
-    const items: Array<{ value: OffDayWorkTab; label: string }> = [
+    const items: OffDayWorkTabOption[] = [
       { value: "my-off-day-work", label: "My Off-Day Work Dashboard" },
     ];
 

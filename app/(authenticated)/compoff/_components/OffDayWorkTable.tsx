@@ -6,52 +6,29 @@ import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import type {
+  CreditStatusMeta,
+  CreditState,
+  OffDayWorkTableProps,
+  StatusOption,
+  StatusFilter,
+} from "@/lib/compofftype";
 import { cn } from "@/lib/utils";
-export type CreditState = "pending" | "granted" | "expired";
-export type StatusFilter = "all" | CreditState;
-export interface OffDayWorkRow {
-  id: string;
-  employeeName?: string;
-  employeeEmail?: string;
-  workDate: string;
-  workDateTs: number | null;
-  holidayType: string;
-  rmRequest: string;
-  timesheet: string;
-  credited: string;
-  availedOn: string | null;
-  availedOnTs: number | null;
-  expiresOn: string;
-  expiresOnTs: number | null;
-  state: CreditState;
-}
 
 const todayStart = startOfDay(new Date()).getTime();
 
-const statusMeta: Record<CreditState, { label: string; className: string }> = {
+const statusMeta: Record<CreditState, CreditStatusMeta> = {
   pending: { label: "Pending", className: "dashboard-status-pill dashboard-status-pill--yellow" },
   granted: { label: "Granted", className: "dashboard-status-pill dashboard-status-pill--green" },
   expired: { label: "Expired", className: "dashboard-status-pill dashboard-status-pill--red" },
 };
 
-const statusOptions: Array<{ value: StatusFilter; label: string }> = [
+const statusOptions: StatusOption[] = [
   { value: "all", label: "All Status" },
   { value: "pending", label: "Pending" },
   { value: "granted", label: "Granted" },
   { value: "expired", label: "Expired" },
 ];
-
-interface OffDayWorkTableProps {
-  rows: OffDayWorkRow[];
-  showEmployee: boolean;
-  searchValue: string;
-  onSearchValueChange: (value: string) => void;
-  statusFilter: StatusFilter;
-  onStatusFilterChange: (value: StatusFilter) => void;
-  searchPlaceholder: string;
-  loading: boolean;
-  error: string | null;
-}
 
 export function OffDayWorkTable({
   rows,
