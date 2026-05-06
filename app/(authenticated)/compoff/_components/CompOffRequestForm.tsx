@@ -1,12 +1,5 @@
 "use client";
 
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-} from "@/components/ui/card";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -76,7 +69,16 @@ interface Employee {
   email: string;
 }
 
-export function CompOffRequestForm() {
+interface CompOffRequestFormProps {
+  onSuccess?: () => void;
+  scope?: "my" | "reportees" | "all";
+}
+const toFiniteNumber = (value: unknown): number | null => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+export function CompOffRequestForm({ onSuccess, scope = "reportees" }: CompOffRequestFormProps) {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [isLoadingEmployees, setIsLoadingEmployees] = useState(false);
   const [employeeComboboxOpen, setEmployeeComboboxOpen] = useState(false);
@@ -256,8 +258,20 @@ export function CompOffRequestForm() {
         };
 
         const toEmployeeList = (allUsers: any[]): Employee[] => {
+          const shouldRestrictToReportees = scope === "reportees" && Boolean(user?.id);
+          const managerUserId = Number(user?.id);
+
           const employeeList = (allUsers || [])
             .filter((emp: any) => emp && emp.id)
+            .filter((emp: any) => {
+              if (!shouldRestrictToReportees) return true;
+              const managerId =
+                toFiniteNumber(emp?.managerId) ??
+                toFiniteNumber(emp?.manager?.id) ??
+                toFiniteNumber(emp?.reportingManagerId);
+
+              return managerId !== null && managerId === managerUserId;
+            })
             .map((emp: any) => ({
               id: emp.id,
               name: emp.name || emp.email || `User ${emp.id}`,
@@ -277,7 +291,7 @@ export function CompOffRequestForm() {
           email: user.email,
         };
 
-        if (isAdminOrSuper) {
+        if (isAdminOrSuper && scope === "all") {
           const allUsers = await trySingleRequest();
           const employeeList = toEmployeeList(allUsers || []);
           setEmployees(employeeList);
@@ -285,7 +299,7 @@ export function CompOffRequestForm() {
           return;
         }
 
-        if (isManager) {
+        if (isManager || scope === "reportees") {
           const allUsers = await trySingleRequest({ managerId: user.id });
           const employeeList = toEmployeeList(allUsers || []);
           setEmployees(employeeList);
@@ -306,7 +320,7 @@ export function CompOffRequestForm() {
     }
 
     fetchEmployees();
-  }, [user?.id, user?.name, user?.email, isAdminOrSuper, isManager, form]);
+  }, [user?.id, user?.name, user?.email, isAdminOrSuper, isManager, form, scope]);
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsSubmitting(true);
@@ -338,6 +352,7 @@ export function CompOffRequestForm() {
       if (response.status === 200 || response.status === 201) {
         toast.success("Comp-Off request submitted successfully!", {});
         form.reset();
+        onSuccess?.();
       }
     } catch (error: any) {
       console.error("Error submitting comp-off request:", error);
@@ -354,17 +369,9 @@ export function CompOffRequestForm() {
   }
 
   return (
-    <Card className="mx-auto w-full min-w-[120px] max-w-[80vw] sm:max-w-xs md:max-w-lg lg:max-w-2xl xl:max-w-3xl">
-      <CardHeader>
-        <CardTitle className="text-2xl mb-2">Comp-Off Request</CardTitle>
-        <CardDescription className="text-muted-foreground">
-          Request compensatory time off for overtime work performed on holidays
-          or non-working days.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+    <div className="w-full">
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
             {/* Employee Selection Section */}
             <div className="space-y-4 pb-4 border-b">
               <h3 className="text-lg font-semibold">Employee Information</h3>
@@ -579,14 +586,13 @@ export function CompOffRequestForm() {
               />
             </div>
 
-            <div className="flex justify-end pt-4">
-              <Button type="submit" size="lg" disabled={isSubmitting}>
-                {isSubmitting ? "Submitting..." : "Submit Comp-Off Request"}
-              </Button>
-            </div>
-          </form>
-        </Form>
-      </CardContent>
-    </Card>
+          <div className="flex justify-end pt-4">
+            <Button type="submit" size="lg" disabled={isSubmitting}>
+              {isSubmitting ? "Submitting..." : "Submit Comp-Off Request"}
+            </Button>
+          </div>
+        </form>
+      </Form>
+    </div>
   );
 }

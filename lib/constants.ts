@@ -49,6 +49,8 @@ export const API_PATHS = {
   EMPLOYEES: "/v1/users",
   MANAGERS: "/v1/users/managers",
   SYNC_GOOGLE_SHEET: "/v1/users/sync/google-sheet",
+  COMPOFF_MY: "/v1/leaves/my-comp-offs",
+  COMPOFF_ALL: "/v1/leaves/comp-offs",
   COMPOFF_REQUEST: "/v1/leaves/comp-offs",
   LEAVES_TYPES: "/v1/leaves/types",
   PROJECTS: "/v1/projects",
