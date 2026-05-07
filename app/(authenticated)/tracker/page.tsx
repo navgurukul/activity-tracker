@@ -58,6 +58,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import apiClient from "@/lib/api-client";
+import { Project } from "@/lib/project-types";
 import {
   API_PATHS,
   DATE_FORMATS,
@@ -86,7 +87,7 @@ export default function TrackerPage() {
   >([]);
 
   const [projectsByDept, setProjectsByDept] = useState<
-    Record<string, { id: number; name: string; code: string }[]>
+    Record<string, Project[]>
   >({});
 
   const [projectSearchQuery, setProjectSearchQuery] = useState<
@@ -177,7 +178,7 @@ export default function TrackerPage() {
     if (!dept?.id) return;
 
     try {
-      let allProjects: { id: number; name: string; code: string }[] = [];
+      let allProjects: Project[] = [];
       let page = 1;
       let hasMore = true;
 
@@ -201,7 +202,10 @@ export default function TrackerPage() {
         page++;
       }
 
-      setProjectsByDept((prev) => ({ ...prev, [deptCode]: allProjects }));
+      const activeProjects = allProjects.filter(
+        (project) => project.status === "active"
+      );
+      setProjectsByDept((prev) => ({ ...prev, [deptCode]: activeProjects }));
     } catch (error: any) {
       console.error("Failed to load projects:", error);
       toast.error("Failed to load projects", {
