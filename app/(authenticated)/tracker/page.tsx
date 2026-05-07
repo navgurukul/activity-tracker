@@ -196,12 +196,16 @@ export default function TrackerPage() {
           : responseData.data || [];
 
         allProjects = [...allProjects, ...projects];
+        const total = res.data?.total || projects.length;
         const limit = res.data?.limit || 100;
-        hasMore = projects.length === limit;
+        hasMore = allProjects.length < total;
         page++;
       }
 
-      setProjectsByDept((prev) => ({ ...prev, [deptCode]: allProjects }));
+      const activeProjects = allProjects.filter(
+        (project) => project.status === "active"
+      );
+      setProjectsByDept((prev) => ({ ...prev, [deptCode]: activeProjects }));
     } catch (error: any) {
       console.error("Failed to load projects:", error);
       toast.error("Failed to load projects", {
