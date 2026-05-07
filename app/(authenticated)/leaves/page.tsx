@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { format, parseISO } from "date-fns";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
 import { Search, TreePalm, Clock, CheckCircle2, Calendar as CalendarIcon, X, Pencil, Plus, AlertCircle } from "lucide-react";
@@ -1297,6 +1298,19 @@ export default function LeavesPage() {
     return name;
   }
 
+  function isCompOffLeaveType(leaveType?: { name?: string; code?: string }) {
+    const normalizedName = String(leaveType?.name ?? "").trim().toLowerCase();
+    const normalizedCode = String(leaveType?.code ?? "").trim().toLowerCase();
+
+    return (
+      normalizedName === "comp off" ||
+      normalizedName === "compensatory leave" ||
+      normalizedCode === "compensatory_leave" ||
+      normalizedCode === "compensatory-leave" ||
+      normalizedCode === "compensatory"
+    );
+  }
+
   const getLeaveCategory = (leaveCode?: string, leaveName?: string) => {
     const normalizedCode = String(leaveCode ?? "")
       .trim()
@@ -1308,6 +1322,7 @@ export default function LeavesPage() {
     const isEarnedLeave =
       normalizedCode === "CL" ||
       normalizedCode === "WL" ||
+      normalizedName === "comp off" ||
       normalizedName === "casual leave" ||
       normalizedName === "wellness leave";
 
@@ -1567,7 +1582,7 @@ export default function LeavesPage() {
                       </TableHeader>
                       <TableBody>
                         {sortedBalances.length === 0 ? (
-                          <TableRow>
+                            <TableRow>
                             <TableCell colSpan={5} className="px-4 py-8 text-center text-sm text-muted-foreground">
                               No leave balance found.
                             </TableCell>
@@ -1578,6 +1593,7 @@ export default function LeavesPage() {
                             const pending = balance.pendingHours / 8;
                             const approved = balance.bookedHours / 8;
                             const remaining = balance.balanceHours / 8;
+                            const isCompOffLeave = isCompOffLeaveType(balance.leaveType);
                             const remainingTone =
                               remaining <= 0
                                 ? "bg-red-50 text-red-700 border-red-200"
@@ -1598,6 +1614,11 @@ export default function LeavesPage() {
                                     >
                                       {getLeaveCategory(balance.leaveType.code, balance.leaveType.name).label}
                                     </span>
+                                    {isCompOffLeave && (
+                                      <Link href="/compoff" className="text-xs font-medium text-primary underline-offset-2 hover:underline ml-2">
+                                        View details
+                                      </Link>
+                                    )}
                                   </div>
                                 </TableCell>
                                 <TableCell className="px-4 py-3.5 text-center tabular-nums text-foreground">
@@ -1610,9 +1631,9 @@ export default function LeavesPage() {
                                   {formatLeaveDaysValue(approved)}
                                 </TableCell>
                                 <TableCell className="px-4 py-3.5 text-center tabular-nums font-semibold">
-                                  <span className={cn("inline-flex min-w-[3rem] items-center justify-center rounded-md border px-2 py-1", remainingTone)}>
-                                    {formatLeaveDaysValue(remaining)}
-                                  </span>
+                                    <span className={cn("inline-flex min-w-[3rem] items-center justify-center rounded-md border px-2 py-1", remainingTone)}>
+                                      {formatLeaveDaysValue(remaining)}
+                                    </span>
                                 </TableCell>
                               </TableRow>
                             );

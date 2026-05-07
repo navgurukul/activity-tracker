@@ -52,6 +52,7 @@
   --dashboard-pill-yellow: #bfa452;
   --dashboard-pill-red: #bb3b1e;
   --dashboard-pill-khaki: #6d5542;
+  --dashboard-pill-text-color: #ffffff;
 }
 
 @theme inline {
@@ -163,12 +164,13 @@ input[data-slot="input"][type="number"] {
 
 .dashboard-status-pill {
   border: none;
-  color: #ffffff;
+  color: var(--dashboard-pill-text-color);
   border-radius: 9999px;
   padding: 0.15rem 0.5rem;
   font-size: 0.7rem;
   font-weight: 600;
   line-height: 1.2;
+   
 }
 .dashboard-status-pill--green {
   background-color: var(--dashboard-pill-green);
@@ -181,6 +183,41 @@ input[data-slot="input"][type="number"] {
 }
 .dashboard-status-pill--khaki {
   background-color: var(--dashboard-pill-khaki);
+}
+
+.offday-summary-card {
+  background-color: var(--background);
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  box-shadow: var(--shadow);
+}
+
+.offday-summary-card--total {
+  border-left-color: var(--color-brown-text);
+}
+
+.offday-summary-card--active {
+  border-left-color: var(--dashboard-pill-green);
+}
+
+.offday-summary-card--availed {
+  border-left-color: var(--dashboard-pill-khaki);
+}
+
+.offday-summary-card--expired {
+  border-left-color: var(--dashboard-pill-red);
+}
+
+.offday-table-shell {
+  background-color: var(--background);
+  border: 1px solid var(--border);
+}
+.offday-table-head {
+  background-color: var(--secondary-background);
+  color: var(--foreground);
+}
+.offday-dashboard-note {
+  color: var(--muted);
 }
 
 .timesheet-row-bg-default {
