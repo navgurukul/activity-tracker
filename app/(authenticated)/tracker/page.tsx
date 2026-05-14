@@ -9,7 +9,6 @@ import { z } from "zod";
 import { format } from "date-fns";
 import { toast } from "sonner";
 
-import { Button } from "@/components/ui/button";
 import {
   Card,
   CardHeader,
@@ -17,12 +16,11 @@ import {
   CardDescription,
   CardContent,
 } from "@/components/ui/card";
-import { Form } from "@/components/ui/form";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AppHeader } from "@/app/_components/AppHeader";
 import { PageWrapper } from "@/app/_components/wrapper";
 import apiClient from "@/lib/api-client";
-import { Project } from "@/lib/project-types";
+import { Project, Department } from "@/lib/tracker-types";
 import {
   API_PATHS,
   DATE_FORMATS,
@@ -40,6 +38,7 @@ import {
 import {
   ActivityDateSection,
   LifelinesCard,
+  TrackerForm,
   ProjectEntriesSection,
 } from "./_components";
 
@@ -555,46 +554,35 @@ export default function TrackerPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <Form {...form}>
-                <form
-                  onSubmit={form.handleSubmit(onSubmit)}
-                  className="space-y-6"
-                >
-                  <ActivityDateSection
-                    form={form}
-                    calendarOpen={calendarOpen}
-                    setCalendarOpen={setCalendarOpen}
-                    disableInvalidDates={disableInvalidDates}
-                    remaining={user?.backfill?.remaining ?? 0}
-                  />
+              <TrackerForm
+                form={form}
+                onSubmit={onSubmit}
+                isSubmitting={isSubmitting}
+              >
+                <ActivityDateSection
+                  form={form}
+                  calendarOpen={calendarOpen}
+                  setCalendarOpen={setCalendarOpen}
+                  disableInvalidDates={disableInvalidDates}
+                  remaining={user?.backfill?.remaining ?? 0}
+                />
 
-                  <ProjectEntriesSection
-                    form={form}
-                    fields={fields}
-                    fieldCount={fields.length}
-                    departments={departments}
-                    projectsByDept={projectsByDept}
-                    projectSearchQuery={projectSearchQuery}
-                    hoursInput={hoursInput}
-                    onDepartmentChange={handleProjectDepartmentChange}
-                    onProjectSearchChange={handleProjectSearchChange}
-                    onHoursInputChange={updateHoursInput}
-                    onHoursBlur={handleHoursBlur}
-                    onRemove={handleRemoveProjectEntry}
-                    onAdd={handleAddProjectEntry}
-                  />
-
-                  <Button
-                    type="submit"
-                    size="lg"
-                    disabled={isSubmitting}
-                    className="w-full"
-                  >
-                    {isSubmitting ? "Submitting..." : "Submit Activity Logger"}
-                  </Button>
-                  {/* </div> */}
-                </form>
-              </Form>
+                <ProjectEntriesSection
+                  form={form}
+                  fields={fields}
+                  fieldCount={fields.length}
+                  departments={departments}
+                  projectsByDept={projectsByDept}
+                  projectSearchQuery={projectSearchQuery}
+                  hoursInput={hoursInput}
+                  onDepartmentChange={handleProjectDepartmentChange}
+                  onProjectSearchChange={handleProjectSearchChange}
+                  onHoursInputChange={updateHoursInput}
+                  onHoursBlur={handleHoursBlur}
+                  onRemove={handleRemoveProjectEntry}
+                  onAdd={handleAddProjectEntry}
+                />
+              </TrackerForm>
             </CardContent>
           </Card>
         </div>

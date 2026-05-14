@@ -21,29 +21,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { VALIDATION } from "@/lib/constants";
-import { Project } from "@/lib/project-types";
-
-interface Department {
-  id: number;
-  name: string;
-  code: string;
-  description?: string | null;
-}
-
-interface ProjectEntryCardProps {
-  form: any;
-  index: number;
-  fieldCount: number;
-  departments: Department[];
-  projectsByDept: Record<string, Project[]>;
-  projectSearchQuery: Record<number, string>;
-  hoursInput: Record<number, string>;
-  onDepartmentChange: (index: number, departmentCode: string) => void;
-  onProjectSearchChange: (index: number, value: string) => void;
-  onHoursInputChange: (index: number, value: string) => void;
-  onHoursBlur: (index: number, perProjectMax: number, isAdHoc: boolean) => void;
-  onRemove: (index: number) => void;
-}
+import type { Project, Department, ProjectEntryCardProps } from "@/lib/tracker-types";
 
 export function ProjectEntryCard({
   form,

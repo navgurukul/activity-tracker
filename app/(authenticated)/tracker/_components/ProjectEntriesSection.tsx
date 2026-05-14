@@ -4,32 +4,9 @@ import { AlertCircle, Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Project } from "@/lib/project-types";
+import type { Project, Department, ProjectEntriesSectionProps } from "@/lib/tracker-types";
 
 import { ProjectEntryCard } from "./ProjectEntryCard";
-
-interface Department {
-  id: number;
-  name: string;
-  code: string;
-  description?: string | null;
-}
-
-interface ProjectEntriesSectionProps {
-  form: any;
-  fields: Array<{ id: string }>;
-  fieldCount: number;
-  departments: Department[];
-  projectsByDept: Record<string, Project[]>;
-  projectSearchQuery: Record<number, string>;
-  hoursInput: Record<number, string>;
-  onDepartmentChange: (index: number, departmentCode: string) => void;
-  onProjectSearchChange: (index: number, value: string) => void;
-  onHoursInputChange: (index: number, value: string) => void;
-  onHoursBlur: (index: number, perProjectMax: number, isAdHoc: boolean) => void;
-  onRemove: (index: number) => void;
-  onAdd: () => void;
-}
 
 export function ProjectEntriesSection({
   form,

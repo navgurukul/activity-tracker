@@ -10,10 +10,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-
-interface LifelinesCardProps {
-  remaining: number;
-}
+import type { LifelinesCardProps } from "@/lib/tracker-types";
 
 export function LifelinesCard({ remaining }: LifelinesCardProps) {
   return (

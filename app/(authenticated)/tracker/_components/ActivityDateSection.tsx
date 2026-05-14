@@ -20,14 +20,7 @@ import {
 } from "@/components/ui/popover";
 import { DATE_FORMATS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
-
-interface ActivityDateSectionProps {
-  form: any;
-  calendarOpen: boolean;
-  setCalendarOpen: (open: boolean) => void;
-  disableInvalidDates: (date: Date) => boolean;
-  remaining: number;
-}
+import type { ActivityDateSectionProps } from "@/lib/tracker-types";
 
 export function ActivityDateSection({
   form,
