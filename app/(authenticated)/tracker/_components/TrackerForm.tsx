@@ -1,16 +1,8 @@
 "use client";
 
-import type { ReactNode } from "react";
-
 import { Button } from "@/components/ui/button";
 import { Form } from "@/components/ui/form";
-
-interface TrackerFormProps {
-  form: any;
-  onSubmit: (values: any) => void | Promise<void>;
-  isSubmitting: boolean;
-  children: ReactNode;
-}
+import type { TrackerFormProps } from "@/lib/tracker-types";
 
 export function TrackerForm({
   form,

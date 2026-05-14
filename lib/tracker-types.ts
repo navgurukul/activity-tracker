@@ -73,3 +73,10 @@ export interface ProjectEntriesSectionProps {
   onRemove: (index: number) => void;
   onAdd: () => void;
 }
+
+export interface TrackerFormProps {
+  form: any;
+  onSubmit: (values: any) => void | Promise<void>;
+  isSubmitting: boolean;
+  children: React.ReactNode;
+}
