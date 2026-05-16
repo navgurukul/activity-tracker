@@ -277,7 +277,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { isLoading: authLoading, user } = useAuth();
-  const targetDateParam = searchParams.get("date");
+  const targetDateParam = searchParams?.get("date") ?? null;
   const [currentMonth, setCurrentMonth] = useState<Date>(() => {
     const today = new Date();
     const cycleStartsOn = 26;
