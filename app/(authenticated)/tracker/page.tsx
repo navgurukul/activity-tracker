@@ -150,7 +150,7 @@ export default function TrackerPage() {
       let page = 1;
       let hasMore = true;
 
-      // Fetch all pages
+      // Fetch all pages    
       while (hasMore) {
         const res = await apiClient.get(API_PATHS.PROJECTS, {
           params: { orgId, departmentId: dept.id, page, limit: 100 },
