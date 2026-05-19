@@ -136,6 +136,8 @@ interface MonthlyTimesheetResponse {
   totals: {
     timesheetHours: number;
     leaveHours: number;
+    paidLeaves: number;
+    totalCompOffLeaveTaken: number;
     totalPayableDays: number;
   };
   days: DayData[];
@@ -1406,8 +1408,11 @@ export default function DashboardPage() {
 
   const leaveDaysDisplay = useMemo(() => {
     if (!monthlyData) return 0;
-    const days = monthlyData.totals.leaveHours / 8;
-    return Number.isInteger(days) ? days : Number(days.toFixed(1));
+    const totalLeaveDays =
+      monthlyData.totals.paidLeaves + monthlyData.totals.totalCompOffLeaveTaken;
+    return Number.isInteger(totalLeaveDays)
+      ? totalLeaveDays
+      : Number(totalLeaveDays.toFixed(1));
   }, [monthlyData]);
 
   // Add new useMemo for total cycle days
