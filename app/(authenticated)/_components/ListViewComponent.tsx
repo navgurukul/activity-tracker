@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { format, parseISO, isValid } from "date-fns";
 import {
-  AlertTriangle,
   Check,
   X,
   Pencil,
@@ -22,12 +21,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import {
   TimesheetEntry,
   LeaveEntry,
   DayData,
@@ -43,8 +36,6 @@ interface ListViewComponentProps {
   timesheetRows: TimesheetRow[];
   isTeamMode: boolean;
   canManageTeamEntries: boolean;
-  activeCalendarCreatedAtKey: string | null;
-  setActiveCalendarCreatedAtKey: (key: string | null | ((prev: string | null) => string | null)) => void;
   editingRowKey: string | null;
   setEditingRowKey: (key: string | null) => void;
   editingForm: any;
@@ -81,8 +72,6 @@ export const ListViewComponent: React.FC<ListViewComponentProps> = ({
   timesheetRows,
   isTeamMode,
   canManageTeamEntries,
-  activeCalendarCreatedAtKey,
-  setActiveCalendarCreatedAtKey,
   editingRowKey,
   setEditingRowKey,
   editingForm,
@@ -238,49 +227,7 @@ export const ListViewComponent: React.FC<ListViewComponentProps> = ({
                         className="h-8 w-36"
                       />
                     ) : !isSameDateAsPrev ? (
-                      <div className="flex items-center justify-center gap-1.5">
-                        <span>{row.date}</span>
-                        {dateCreatedAtMap.get(row.date) && (
-                          <TooltipProvider>
-                            <Tooltip
-                              open={activeCalendarCreatedAtKey === `row-${row.date}`}
-                              onOpenChange={(isOpen) => {
-                                if (isOpen) {
-                                  setActiveCalendarCreatedAtKey(`row-${row.date}`);
-                                  return;
-                                }
-
-                                setActiveCalendarCreatedAtKey((prev) =>
-                                  prev === `row-${row.date}` ? null : prev
-                                );
-                              }}
-                            >
-                              <TooltipTrigger asChild>
-                                <button
-                                  type="button"
-                                  className="inline-flex h-4 w-4 items-center justify-center text-amber-600 hover:text-amber-700"
-                                  aria-label="Show created at timestamp"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    setActiveCalendarCreatedAtKey((prev) =>
-                                      prev === `row-${row.date}`
-                                        ? null
-                                        : `row-${row.date}`
-                                    );
-                                  }}
-                                >
-                                  <AlertTriangle className="h-3 w-3" />
-                                </button>
-                              </TooltipTrigger>
-                              <TooltipContent side="top">
-                                <div className="text-xs whitespace-nowrap">
-                                  Created: {formatCreatedAt(dateCreatedAtMap.get(row.date))}
-                                </div>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        )}
-                      </div>
+                      <span>{row.date}</span>
                     ) : (
                       ""
                     )}
@@ -664,46 +611,6 @@ export const ListViewComponent: React.FC<ListViewComponentProps> = ({
                       <span>
                         {row.date} - {row.day}
                       </span>
-                      {dateCreatedAtMap.get(row.date) && (
-                        <TooltipProvider>
-                          <Tooltip
-                            open={activeCalendarCreatedAtKey === `mobile-${row.date}`}
-                            onOpenChange={(isOpen) => {
-                              if (isOpen) {
-                                setActiveCalendarCreatedAtKey(`mobile-${row.date}`);
-                                return;
-                              }
-
-                              setActiveCalendarCreatedAtKey((prev) =>
-                                prev === `mobile-${row.date}` ? null : prev
-                              );
-                            }}
-                          >
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                className="inline-flex h-4 w-4 items-center justify-center text-amber-600 hover:text-amber-700"
-                                aria-label="Show created at timestamp"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  setActiveCalendarCreatedAtKey((prev) =>
-                                    prev === `mobile-${row.date}`
-                                      ? null
-                                      : `mobile-${row.date}`
-                                  );
-                                }}
-                              >
-                                <AlertTriangle className="h-3 w-3" />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top">
-                              <div className="text-xs whitespace-nowrap">
-                                Created: {formatCreatedAt(dateCreatedAtMap.get(row.date))}
-                              </div>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      )}
                     </p>
                   )}
                 </div>

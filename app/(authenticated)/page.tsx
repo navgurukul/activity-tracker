@@ -2593,8 +2593,6 @@ export default function DashboardPage() {
                   timesheetRows={timesheetRows}
                   isTeamMode={isTeamMode}
                   canManageTeamEntries={canManageTeamEntries}
-                  activeCalendarCreatedAtKey={activeCalendarCreatedAtKey}
-                  setActiveCalendarCreatedAtKey={setActiveCalendarCreatedAtKey}
                   editingRowKey={editingRowKey}
                   setEditingRowKey={setEditingRowKey}
                   editingForm={editingForm}
