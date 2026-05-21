@@ -974,7 +974,12 @@ export default function LeavesPage() {
   ]);
 
   const handleUpdateAllocatedBalance = useCallback(async () => {
-    if (!editingAllocatedBalance || !selectedTeamEmployeeUserId) return;
+    if (!editingAllocatedBalance) return;
+    const userId = selectedTeamEmployeeUserId ?? adminApplyEmployeeUserId;
+    if (!userId) {
+      toast.error("No employee selected");
+      return;
+    }
 
     const newAllocatedHours = parseFloat(editingAllocatedHours);
     if (isNaN(newAllocatedHours) || newAllocatedHours < 0) {
@@ -985,14 +990,13 @@ export default function LeavesPage() {
     setIsUpdatingAllocated(true);
     try {
       await apiClient.patch(API_PATHS.LEAVES_ADMIN_BALANCES_UPDATE, {
-        userId: selectedTeamEmployeeUserId,
+        userId,
         leaveTypeId: editingAllocatedBalance.leaveTypeId,
         allocatedHours: newAllocatedHours * 8,
       });
 
       toast.success("Allocated balance updated successfully");
 
-      // Update the local state with the new balance
       setTeamEmployeeBalances((prev) =>
         prev.map((balance) =>
           balance.id === editingAllocatedBalance.id
@@ -1001,6 +1005,13 @@ export default function LeavesPage() {
         )
       );
 
+      setAdminEmployeeBalances((prev) =>
+        prev.map((balance) =>
+          balance.id === editingAllocatedBalance.id
+            ? { ...balance, allocatedHours: newAllocatedHours * 8 }
+            : balance
+        )
+      );
       setEditingAllocatedBalance(null);
       setEditingAllocatedHours("");
     } catch {
@@ -1008,7 +1019,12 @@ export default function LeavesPage() {
     } finally {
       setIsUpdatingAllocated(false);
     }
-  }, [editingAllocatedBalance, editingAllocatedHours, selectedTeamEmployeeUserId])
+  }, [
+    editingAllocatedBalance,
+    editingAllocatedHours,
+    selectedTeamEmployeeUserId,
+    adminApplyEmployeeUserId,
+  ]);
 
   const visibleBalances = useMemo(() => {
     return balances.filter((balance) => {
@@ -1977,7 +1993,8 @@ export default function LeavesPage() {
                                           disabled={isUpdatingAllocated}
                                         />
                                         <button
-                                          onClick={() => void handleUpdateAllocatedBalance()}
+                                          type="button"
+                                          onClick={(e) => { e.stopPropagation(); void handleUpdateAllocatedBalance(); }}
                                           disabled={isUpdatingAllocated}
                                           className="p-1 text-emerald-600 hover:bg-emerald-50 rounded transition-colors disabled:opacity-50"
                                           title="Confirm"
@@ -1985,10 +2002,8 @@ export default function LeavesPage() {
                                           <CheckCircle2 className="h-4 w-4" />
                                         </button>
                                         <button
-                                          onClick={() => {
-                                            setEditingAllocatedBalance(null);
-                                            setEditingAllocatedHours("");
-                                          }}
+                                          type="button"
+                                          onClick={(e) => { e.stopPropagation(); setEditingAllocatedBalance(null); setEditingAllocatedHours(""); }}
                                           disabled={isUpdatingAllocated}
                                           className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-50"
                                           title="Cancel"
@@ -1999,12 +2014,10 @@ export default function LeavesPage() {
                                     ) : (
                                       <div className="flex items-center justify-center gap-2">
                                         <span>{formatLeaveDaysValue(balance.allocatedHours / 8)}</span>
-                                        {canEditTeamPendingRequests && (
+                                        {canEditTeamPendingRequests && !isCompOffLeaveType(balance.leaveType) && (
                                           <button
-                                            onClick={() => {
-                                              setEditingAllocatedBalance(balance);
-                                              setEditingAllocatedHours(String(balance.allocatedHours / 8));
-                                            }}
+                                            type="button"
+                                            onClick={(e) => { e.stopPropagation(); setEditingAllocatedBalance(balance); setEditingAllocatedHours(String(balance.allocatedHours / 8)); }}
                                             className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
                                             title="Edit allocated balance"
                                           >
@@ -2252,7 +2265,54 @@ export default function LeavesPage() {
                                               </span>
                                             </div>
                                           </TableCell>
-                                          <TableCell className="px-3 py-2.5 text-center tabular-nums">{formatLeaveDaysValue(allocated)}</TableCell>
+                                          <TableCell className="px-3 py-2.5 text-center tabular-nums">
+                                            {editingAllocatedBalance?.id === balance.id ? (
+                                              <div className="flex items-center justify-center gap-1">
+                                                <Input
+                                                  type="number"
+                                                  inputMode="decimal"
+                                                  step="0.5"
+                                                  min="0"
+                                                  value={editingAllocatedHours}
+                                                  onChange={(e) => setEditingAllocatedHours(e.target.value)}
+                                                  className="h-7 w-16 text-center text-sm"
+                                                  disabled={isUpdatingAllocated}
+                                                />
+                                                <button
+                                                  type="button"
+                                                  onClick={(e) => { e.stopPropagation(); void handleUpdateAllocatedBalance(); }}
+                                                  disabled={isUpdatingAllocated}
+                                                  className="p-1 text-emerald-600 hover:bg-emerald-50 rounded transition-colors disabled:opacity-50"
+                                                  title="Confirm"
+                                                >
+                                                  <CheckCircle2 className="h-4 w-4" />
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={(e) => { e.stopPropagation(); setEditingAllocatedBalance(null); setEditingAllocatedHours(""); }}
+                                                  disabled={isUpdatingAllocated}
+                                                  className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-50"
+                                                  title="Cancel"
+                                                >
+                                                  <X className="h-4 w-4" />
+                                                </button>
+                                              </div>
+                                            ) : (
+                                              <div className="flex items-center justify-center gap-2">
+                                                <span>{formatLeaveDaysValue(allocated)}</span>
+                                                {canEditTeamPendingRequests && !isCompOffLeaveType(balance.leaveType) && (
+                                                  <button
+                                                    type="button"
+                                                    onClick={(e) => { e.stopPropagation(); setEditingAllocatedBalance(balance); setEditingAllocatedHours(String(balance.allocatedHours / 8)); }}
+                                                    className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+                                                    title="Edit allocated balance"
+                                                  >
+                                                    <Pencil className="h-4 w-4" />
+                                                  </button>
+                                                )}
+                                              </div>
+                                            )}
+                                          </TableCell>
                                           <TableCell className="px-3 py-2.5 text-center tabular-nums">{formatLeaveDaysValue(pending)}</TableCell>
                                           <TableCell className="px-3 py-2.5 text-center tabular-nums">{formatLeaveDaysValue(taken)}</TableCell>
                                           <TableCell className={cn("px-3 py-2.5 text-center tabular-nums font-semibold", remainingTone)}>
