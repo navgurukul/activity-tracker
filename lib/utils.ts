@@ -18,3 +18,25 @@ import { twMerge } from "tailwind-merge";
 export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(inputs));
 }
+
+export function getLeaveDurationLabel(entry: {
+  durationType?: string;
+  hours?: number;
+}): string {
+  const duration = (entry.durationType ?? "").toLowerCase();
+  if (duration.includes("half")) return "Half Day";
+  if (duration.includes("full")) return "Full Day";
+  return (entry.hours ?? 0) <= 4 ? "Half Day" : "Full Day";
+}
+
+// Calendar helpers
+export function getMondayOfWeek(date: Date): Date {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  return new Date(d.setDate(diff));
+}
+export function getDayOfWeekIndex(date: Date): number {
+  const day = date.getDay();
+  return day === 0 ? 6 : day - 1;
+}
