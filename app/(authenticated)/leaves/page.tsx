@@ -660,7 +660,7 @@ export default function LeavesPage() {
           payload
         );
         if (response.status === 200 || response.status === 201) {
-          toast.success(`Leave applied and auto-approved for ${adminApplyEmployeeEmail || "employee"}`);
+          toast.success(`Leave request submitted successfully for ${adminApplyEmployeeEmail || "employee"}`);
           invalidateMonthlyTimesheetCache(
             values.startDate.getFullYear(),
             values.startDate.getMonth() + 1
