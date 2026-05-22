@@ -448,7 +448,7 @@ export async function checkTimesheetConflictWithLeave(
           message: `Cannot submit timesheet. You have a ${stateValue} full-day leave for ${format(
             activityDate,
             DATE_FORMATS.DISPLAY
-          )}. Please cancel the leave before submitting timesheet entries.`,
+          )}.`,
         };
       } else if (leave.durationType === "half_day") {
         // For half-day leave, check if total hours exceed allowed limit

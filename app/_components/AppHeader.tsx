@@ -24,10 +24,11 @@ export type Crumb = {
 interface AppHeaderProps {
   crumbs: Crumb[];
   className?: string;
+  left?: React.ReactNode;
   right?: React.ReactNode;
 }
 
-export function AppHeader({ crumbs, className, right }: AppHeaderProps) {
+export function AppHeader({ crumbs, className, left, right }: AppHeaderProps) {
   const { logout } = useAuth();
   const handleLogout = async () => {
     try {
@@ -49,32 +50,36 @@ export function AppHeader({ crumbs, className, right }: AppHeaderProps) {
       <div className="flex items-center gap-1 px-2">
         <SidebarTrigger className="-ml-1 text-muted-foreground hover:text-foreground" />
         <div className="w-px h-4 bg-border mx-1" />
-        <Breadcrumb>
-          <BreadcrumbList className="gap-1">
-            {crumbs.map((crumb, i) => {
-              const isLast = i === lastIndex;
-              return (
-                <Fragment key={`${crumb.label}-${i}`}>
-                  <BreadcrumbItem>
-                    {isLast ? (
-                      <BreadcrumbPage className="text-sm font-medium text-foreground">
-                        {crumb.label}
-                      </BreadcrumbPage>
-                    ) : (
-                      <BreadcrumbLink
-                        href={crumb.href ?? "#"}
-                        className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-                      >
-                        {crumb.label}
-                      </BreadcrumbLink>
-                    )}
-                  </BreadcrumbItem>
-                  {!isLast && <BreadcrumbSeparator className="text-border" />}
-                </Fragment>
-              );
-            })}
-          </BreadcrumbList>
-        </Breadcrumb>
+        {left ? (
+          <div>{left}</div>
+        ) : (
+          <Breadcrumb>
+            <BreadcrumbList className="gap-1">
+              {crumbs.map((crumb, i) => {
+                const isLast = i === lastIndex;
+                return (
+                  <Fragment key={`${crumb.label}-${i}`}>
+                    <BreadcrumbItem>
+                      {isLast ? (
+                        <BreadcrumbPage className="text-sm font-medium text-foreground">
+                          {crumb.label}
+                        </BreadcrumbPage>
+                      ) : (
+                        <BreadcrumbLink
+                          href={crumb.href ?? "#"}
+                          className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          {crumb.label}
+                        </BreadcrumbLink>
+                      )}
+                    </BreadcrumbItem>
+                    {!isLast && <BreadcrumbSeparator className="text-border" />}
+                  </Fragment>
+                );
+              })}
+            </BreadcrumbList>
+          </Breadcrumb>
+        )}
       </div>
       <div className="ml-auto px-3 flex items-center gap-2">
         {right && <div>{right}</div>}

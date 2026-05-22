@@ -1,12 +1,5 @@
 "use client";
 
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-} from "@/components/ui/card";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -53,6 +46,21 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import type {
+  ApiErrorLike,
+  CompOffRequestFormProps,
+  CompOffRequestPayload,
+  EmployeeApiRecord,
+  Employee,
+  QueryParams,
+  TimesheetDayRecord,
+} from "@/lib/compofftype";
+import {
+  extractErrorMessage,
+  toEmployeeRecords,
+  toFiniteNumber,
+  toTimesheetDays,
+} from "@/lib/compofftype";
 
 const formSchema = z.object({
   userId: z.number().int().positive("Please select a valid employee."),
@@ -70,13 +78,7 @@ const formSchema = z.object({
     ),
 });
 
-interface Employee {
-  id: number;
-  name: string;
-  email: string;
-}
-
-export function CompOffRequestForm() {
+export function CompOffRequestForm({ onSuccess, scope = "reportees" }: CompOffRequestFormProps) {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [isLoadingEmployees, setIsLoadingEmployees] = useState(false);
   const [employeeComboboxOpen, setEmployeeComboboxOpen] = useState(false);
@@ -120,10 +122,10 @@ export function CompOffRequestForm() {
         params: { year, month },
       });
 
-      const days = response.data?.days || response.data?.data?.days || [];
+      const days = toTimesheetDays(response.data?.days || response.data?.data?.days);
       setHolidayDates((prev) => {
         const next = new Set(prev);
-        days.forEach((day: any) => {
+        days.forEach((day) => {
           if (day?.isHoliday !== true) return;
           const normalized = normalizeDateKey(day?.date);
           if (normalized) next.add(normalized);
@@ -135,8 +137,7 @@ export function CompOffRequestForm() {
         next.add(monthKey);
         return next;
       });
-    } catch (error: any) {
-      console.error("Error loading holidays:", error);
+    } catch (error: unknown) {
     }
   };
   const checkHolidayForDate = async (date: Date): Promise<boolean> => {
@@ -149,8 +150,8 @@ export function CompOffRequestForm() {
         params: { year, month },
       });
 
-      const days = response.data?.days || response.data?.data?.days || [];
-      return days.some((day: any) => {
+      const days = toTimesheetDays(response.data?.days || response.data?.data?.days);
+      return days.some((day) => {
         if (day?.isHoliday !== true) return false;
         return normalizeDateKey(day?.date) === dateKey;
       });
@@ -199,16 +200,16 @@ export function CompOffRequestForm() {
 
       setIsLoadingEmployees(true);
       try {
-        const fetchAllPages = async (extraParams: Record<string, any> = {}) => {
+        const fetchAllPages = async (extraParams: QueryParams = {}) => {
           let page = 1;
-          const accumulated: any[] = [];
+          const accumulated: EmployeeApiRecord[] = [];
 
           while (true) {
             const response = await apiClient.get(API_PATHS.EMPLOYEES, {
               params: { ...extraParams, page },
             });
 
-            const pageData = response.data?.data || [];
+            const pageData = toEmployeeRecords(response.data?.data);
             accumulated.push(...pageData);
 
             const total = response.data?.total ?? response.data?.data?.total;
@@ -223,18 +224,19 @@ export function CompOffRequestForm() {
 
           return accumulated;
         };
-        const trySingleRequest = async (extraParams: Record<string, any> = {}) => {
+        const trySingleRequest = async (extraParams: QueryParams = {}) => {
           try {
             const respAll = await apiClient.get(API_PATHS.EMPLOYEES, {
               params: { ...extraParams, all: true },
             });
-            if (respAll.data && Array.isArray(respAll.data.data)) {
-              const count = respAll.data.data.length;
+            const fullList = toEmployeeRecords(respAll.data?.data);
+            if (fullList.length > 0) {
+              const count = fullList.length;
               const total = respAll.data.total ?? respAll.data.data?.total ?? count;
-              if (count >= total) return respAll.data.data;
+              if (count >= total) return fullList;
 
             }
-          } catch (e) {
+          } catch {
           }
 
           try {
@@ -242,58 +244,72 @@ export function CompOffRequestForm() {
               params: { ...extraParams, page: 1, limit: 10000 },
             });
 
-            const list = resp.data?.data || [];
+            const list = toEmployeeRecords(resp.data?.data);
             const total = resp.data?.total ?? resp.data?.data?.total ?? list.length;
 
             if (list.length >= total) {
               return list;
             }
-          } catch (e) {
+          } catch {
           }
 
         
           return await fetchAllPages(extraParams);
         };
 
-        if (isAdminOrSuper) {
+        const toEmployeeList = (allUsers: EmployeeApiRecord[]): Employee[] => {
+          const shouldRestrictToReportees = scope === "reportees" && Boolean(user?.id);
+          const managerUserId = Number(user?.id);
+
+          const employeeList = (allUsers || [])
+            .filter((emp) => emp && emp.id !== undefined && emp.id !== null)
+            .filter((emp) => {
+              if (!shouldRestrictToReportees) return true;
+              const managerId =
+                toFiniteNumber(emp?.managerId) ??
+                toFiniteNumber(emp?.manager?.id) ??
+                toFiniteNumber(emp?.reportingManagerId);
+
+              return managerId !== null && managerId === managerUserId;
+            })
+            .map((emp) => ({
+              id: Number(emp.id),
+              name: emp.name || emp.email || `User ${emp.id}`,
+              email: emp.email || "",
+            }))
+            .filter((emp: Employee) => emp.name && !emp.name.includes("#"));
+
+          employeeList.sort((a: Employee, b: Employee) =>
+            a.name.localeCompare(b.name)
+          );
+          return employeeList;
+        };
+
+        const selfEmployee: Employee = {
+          id: user.id,
+          name: user.name || user.email,
+          email: user.email,
+        };
+
+        if (isAdminOrSuper && scope === "all") {
           const allUsers = await trySingleRequest();
-          const employeeList = (allUsers || [])
-            .filter((emp: any) => emp && emp.id) 
-            .map((emp: any) => ({
-              id: emp.id,
-              name: emp.name || emp.email || `User ${emp.id}`, 
-              email: emp.email || '',
-            }))
-            .filter((emp: Employee) => emp.name && !emp.name.includes('#'));
-          
-          employeeList.sort((a: Employee, b: Employee) => a.name.localeCompare(b.name));
+          const employeeList = toEmployeeList(allUsers || []);
           setEmployees(employeeList);
-        } else if (isManager) {
-          const allUsers = await trySingleRequest({ managerId: user.id });
-          const employeeList = (allUsers || [])
-            .filter((emp: any) => emp && emp.id) 
-            .map((emp: any) => ({
-              id: emp.id,
-              name: emp.name || emp.email || `User ${emp.id}`, 
-              email: emp.email || '',
-            }))
-            .filter((emp: Employee) => emp.name && !emp.name.includes('#')); 
-          
-          employeeList.sort((a: Employee, b: Employee) => a.name.localeCompare(b.name));
-          setEmployees(employeeList);
-        } else {
-          // Regular employee: only themselves
-          const self = {
-            id: user.id,
-            name: user.name || user.email,
-            email: user.email,
-          };
-          setEmployees([self]);
-          // Preselect the current user and disable changing
-          form.setValue("userId", user.id);
+          form.resetField("userId");
+          return;
         }
-      } catch (error: any) {
-        console.error("Error fetching employees:", error);
+
+        if (isManager || scope === "reportees") {
+          const allUsers = await trySingleRequest({ managerId: user.id });
+          const employeeList = toEmployeeList(allUsers || []);
+          setEmployees(employeeList);
+          form.resetField("userId");
+          return;
+        }
+
+        setEmployees([selfEmployee]);
+        form.resetField("userId");
+      } catch (error: unknown) {
         toast.error("Failed to load employees", {
           description: "Unable to fetch employee list. Please try again.",
         });
@@ -303,7 +319,7 @@ export function CompOffRequestForm() {
     }
 
     fetchEmployees();
-  }, [user?.id, isAdminOrSuper, isManager]);
+  }, [user?.id, user?.name, user?.email, isAdminOrSuper, isManager, form, scope]);
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsSubmitting(true);
@@ -323,7 +339,7 @@ export function CompOffRequestForm() {
         return;
       }
 
-      const payload = {
+      const payload: CompOffRequestPayload = {
         userId: values.userId,
         workDate: dateKey,
         duration: values.duration,
@@ -335,13 +351,13 @@ export function CompOffRequestForm() {
       if (response.status === 200 || response.status === 201) {
         toast.success("Comp-Off request submitted successfully!", {});
         form.reset();
+        onSuccess?.();
       }
-    } catch (error: any) {
-      console.error("Error submitting comp-off request:", error);
-      const errorMessage =
-        error.response?.data?.message ||
-        error.message ||
-        "Failed to submit comp-off request. Please try again.";
+    } catch (error: unknown) {
+      const errorMessage = extractErrorMessage(
+        error,
+        "Failed to submit comp-off request. Please try again."
+      );
       toast.error("Submission failed", {
         description: errorMessage,
       });
@@ -351,17 +367,9 @@ export function CompOffRequestForm() {
   }
 
   return (
-    <Card className="mx-auto w-full min-w-[120px] max-w-[80vw] sm:max-w-xs md:max-w-lg lg:max-w-2xl xl:max-w-3xl">
-      <CardHeader>
-        <CardTitle className="text-2xl mb-2">Comp-Off Request</CardTitle>
-        <CardDescription className="text-muted-foreground">
-          Request compensatory time off for overtime work performed on holidays
-          or non-working days.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+    <div className="w-full">
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
             {/* Employee Selection Section */}
             <div className="space-y-4 pb-4 border-b">
               <h3 className="text-lg font-semibold">Employee Information</h3>
@@ -391,7 +399,7 @@ export function CompOffRequestForm() {
                               )}
                               // Disable selection for regular employees (they can only request for themselves).
                               disabled={
-                                isLoadingEmployees || (!isAdminOrSuper && !isManager)
+                                isLoadingEmployees || employees.length === 0
                               }
                             >
                               <span className="truncate text-left">
@@ -449,10 +457,19 @@ export function CompOffRequestForm() {
                           </Command>
                         </PopoverContent>
                       </Popover>
-                      <FormDescription>
-                        Select the employee for whom this comp-off is being
-                        requested
-                      </FormDescription>
+                      {!(!isAdminOrSuper && isManager && !isLoadingEmployees && employees.length === 0) && (
+                        <FormDescription>
+                          Select the employee for whom this comp-off is being requested
+                        </FormDescription>
+                      )}
+                      {!isAdminOrSuper &&
+                        isManager &&
+                        !isLoadingEmployees &&
+                        employees.length === 0 && (
+                          <p className="text-sm text-muted-foreground">
+                            No reportees found. If this seems incorrect, please contact your manager.
+                          </p>
+                        )}
                       <FormMessage />
                     </FormItem>
                   );
@@ -526,7 +543,7 @@ export function CompOffRequestForm() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Duration</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
+                    <Select onValueChange={field.onChange} value={field.value ?? ""}>
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Select duration" />
@@ -567,14 +584,13 @@ export function CompOffRequestForm() {
               />
             </div>
 
-            <div className="flex justify-end pt-4">
-              <Button type="submit" size="lg" disabled={isSubmitting}>
-                {isSubmitting ? "Submitting..." : "Submit Comp-Off Request"}
-              </Button>
-            </div>
-          </form>
-        </Form>
-      </CardContent>
-    </Card>
+          <div className="flex justify-end pt-4">
+            <Button type="submit" size="lg" disabled={isSubmitting}>
+              {isSubmitting ? "Submitting..." : "Submit Comp-Off Request"}
+            </Button>
+          </div>
+        </form>
+      </Form>
+    </div>
   );
 }

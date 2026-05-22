@@ -81,12 +81,16 @@ const formSchema = z
 
 interface NewLeaveRequestDialogProps {
   userEmail: string;
-  onSuccess: () => void;
+  onSuccess: (submittedDate: string) => void;
+  forceOpen?: boolean;
+  prefilledDate?: string;
 }
 
 export function NewLeaveRequestDialog({
   userEmail,
   onSuccess,
+  forceOpen = false,
+  prefilledDate,
 }: NewLeaveRequestDialogProps) {
   const [open, setOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -107,6 +111,11 @@ export function NewLeaveRequestDialog({
         .replace(/\.0+$/, "")
         .replace(/(\.\d*[1-9])0+$/, "$1");
   };
+
+  useEffect(() => {
+    if (!forceOpen) return;
+    setOpen(true);
+  }, [forceOpen]);
 
   useEffect(() => {
     if (!open) return;
@@ -149,6 +158,23 @@ export function NewLeaveRequestDialog({
       halfDaySegment: "",
     },
   });
+
+  useEffect(() => {
+    if (!open || !prefilledDate) return;
+
+    const parsed = new Date(`${prefilledDate}T00:00:00`);
+    if (Number.isNaN(parsed.getTime())) return;
+
+    setDateRange({ from: parsed, to: parsed });
+    form.setValue("startDate", parsed, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+    form.setValue("endDate", parsed, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+  }, [form, open, prefilledDate]);
 
   const validateLeaveConflict = useCallback(
     async (startDate?: Date, endDate?: Date, durationType?: string) => {
@@ -250,6 +276,7 @@ export function NewLeaveRequestDialog({
       );
       if (response.status === 200 || response.status === 201) {
         toast.success("Leave request submitted successfully!");
+        const submittedDate = format(values.startDate, DATE_FORMATS.API);
         invalidateMonthlyTimesheetCache(
           values.startDate.getFullYear(),
           values.startDate.getMonth() + 1
@@ -272,7 +299,7 @@ export function NewLeaveRequestDialog({
         setValidationError(null);
         setDateRange(undefined);
         setOpen(false);
-        onSuccess();
+        onSuccess(submittedDate);
       }
     } catch (error: unknown) {
       const msg =

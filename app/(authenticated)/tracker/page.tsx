@@ -1,22 +1,14 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 
 import { format } from "date-fns";
-import {
-  Calendar as CalendarIcon,
-  Plus,
-  Trash2,
-  AlertCircle,
-} from "lucide-react";
 import { toast } from "sonner";
 
-import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
 import {
   Card,
   CardHeader,
@@ -24,33 +16,11 @@ import {
   CardDescription,
   CardContent,
 } from "@/components/ui/card";
-import {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AppHeader } from "@/app/_components/AppHeader";
 import { PageWrapper } from "@/app/_components/wrapper";
 import apiClient from "@/lib/api-client";
+import { Project, Department } from "@/lib/tracker-types";
 import {
   API_PATHS,
   DATE_FORMATS,
@@ -65,9 +35,16 @@ import {
   invalidateMonthlyTimesheetCache,
   isNonWorkingDay,
 } from "@/lib/leave-timesheet-validator";
+import {
+  ActivityDateSection,
+  LifelinesCard,
+  TrackerForm,
+  ProjectEntriesSection,
+} from "./_components";
 
 export default function TrackerPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   // Get authenticated user data
   const { user, isLoading, refreshUser } = useAuth();
 
@@ -78,7 +55,7 @@ export default function TrackerPage() {
   >([]);
 
   const [projectsByDept, setProjectsByDept] = useState<
-    Record<string, { id: number; name: string; code: string }[]>
+    Record<string, Project[]>
   >({});
 
   const [projectSearchQuery, setProjectSearchQuery] = useState<
@@ -169,11 +146,11 @@ export default function TrackerPage() {
     if (!dept?.id) return;
 
     try {
-      let allProjects: { id: number; name: string; code: string }[] = [];
+      let allProjects: Project[] = [];
       let page = 1;
       let hasMore = true;
 
-      // Fetch all pages
+      // Fetch all pages    
       while (hasMore) {
         const res = await apiClient.get(API_PATHS.PROJECTS, {
           params: { orgId, departmentId: dept.id, page, limit: 100 },
@@ -193,7 +170,10 @@ export default function TrackerPage() {
         page++;
       }
 
-      setProjectsByDept((prev) => ({ ...prev, [deptCode]: allProjects }));
+      const activeProjects = allProjects.filter(
+        (project) => project.status === "active"
+      );
+      setProjectsByDept((prev) => ({ ...prev, [deptCode]: activeProjects }));
     } catch (error: any) {
       console.error("Failed to load projects:", error);
       toast.error("Failed to load projects", {
@@ -328,6 +308,19 @@ export default function TrackerPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [hoursInput, setHoursInput] = useState<Record<number, string>>({});
+
+  useEffect(() => {
+    const dateParam = searchParams.get("date");
+    if (!dateParam) return;
+
+    const parsed = new Date(`${dateParam}T00:00:00`);
+    if (Number.isNaN(parsed.getTime())) return;
+
+    form.setValue("activityDate", parsed, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+  }, [form, searchParams]);
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsSubmitting(true);
@@ -474,6 +467,75 @@ export default function TrackerPage() {
     return { num, display: num === 0 ? "" : String(num) };
   }
 
+  function updateHoursInput(index: number, value: string) {
+    setHoursInput((prev) => ({ ...prev, [index]: value }));
+  }
+
+  function handleHoursBlur(index: number, perProjectMax: number, isAdHoc: boolean) {
+    const { num, display } = sanitizeHoursDisplay(hoursInput[index], perProjectMax, isAdHoc);
+    form.setValue(`projectEntries.${index}.hoursSpent`, num, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+    updateHoursInput(index, display);
+  }
+
+  function handleProjectSearchChange(index: number, value: string) {
+    setProjectSearchQuery((prev) => ({
+      ...prev,
+      [index]: value,
+    }));
+  }
+
+  function handleProjectDepartmentChange(index: number, departmentCode: string) {
+    form.setValue(`projectEntries.${index}.projectId`, "");
+    handleProjectSearchChange(index, "");
+    fetchProjectsForDepartment(departmentCode);
+  }
+
+  function handleRemoveProjectEntry(index: number) {
+    remove(index);
+    setHoursInput((prev) => {
+      const next = { ...prev };
+      delete next[index];
+      return next;
+    });
+    setProjectSearchQuery((prev) => {
+      const next = { ...prev };
+      delete next[index];
+      return next;
+    });
+  }
+
+  function handleAddProjectEntry() {
+    const lastIndex = fields.length - 1;
+    const lastEntry = form.getValues(`projectEntries.${lastIndex}`);
+    const isLastEntryComplete =
+      lastEntry.currentWorkingDepartment &&
+      lastEntry.projectId &&
+      lastEntry.hoursSpent > 0 &&
+      lastEntry.taskDescription.trim().length >=
+        VALIDATION.MIN_TASK_DESCRIPTION_LENGTH;
+
+    if (!isLastEntryComplete) {
+      toast.error("Incomplete Entry", {
+        description:
+          "Please complete the current project entry before adding a new one.",
+      });
+      return;
+    }
+
+    const inheritedDept = lastEntry.currentWorkingDepartment || "";
+    if (inheritedDept) fetchProjectsForDepartment(inheritedDept);
+
+    append({
+      currentWorkingDepartment: inheritedDept,
+      hoursSpent: 0,
+      projectId: "",
+      taskDescription: "",
+    });
+  }
+
   return (
     <>
       <AppHeader crumbs={[{ label: "Activity Logger" }]} />
@@ -488,376 +550,39 @@ export default function TrackerPage() {
                     Log your daily activities and manage your time effectively.
                   </CardDescription>
                 </div>
-                <div
-                  className={cn(
-                    "w-full sm:w-auto min-w-[170px] bg-background border border-border rounded-lg p-3 border-l-4",
-                    (user?.backfill?.remaining ?? 0) > 0
-                      ? "border-l-[#748074]"
-                      : "border-l-amber-400"
-                  )}
-                >
-                  <div className="flex items-start justify-between mb-2">
-                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                      Lifelines
-                    </span>
-                    <span
-                      className={cn(
-                        "p-1.5 rounded-md",
-                        (user?.backfill?.remaining ?? 0) > 0
-                          ? "bg-emerald-50"
-                          : "bg-amber-50"
-                      )}
-                    >
-                      <AlertCircle
-                        className={cn(
-                          "h-3.5 w-3.5",
-                          (user?.backfill?.remaining ?? 0) > 0
-                            ? "text-[#748074]"
-                            : "text-amber-600"
-                        )}
-                      />
-                    </span>
-                  </div>
-                  <p className="text-2xl font-bold text-foreground tabular-nums leading-none">
-                    {(user?.backfill?.remaining ?? 0)}/{user?.backfill?.limit ?? 0}
-                  </p>
-                </div>
+                <LifelinesCard remaining={user?.backfill?.remaining ?? 0} />
               </div>
             </CardHeader>
             <CardContent>
-              <Form {...form}>
-                <form
-                  onSubmit={form.handleSubmit(onSubmit)}
-                  className="space-y-6"
-                >
-                  {/* Activity Date Section */}
-                  <div className="space-y-4">
-                    <FormField
-                      control={form.control}
-                      name="activityDate"
-                      render={({ field }) => (
-                        <FormItem className="flex flex-col">
-                          <FormLabel>Activity Date</FormLabel>
-                          <Popover
-                            open={calendarOpen}
-                            onOpenChange={setCalendarOpen}
-                          >
-                            <PopoverTrigger asChild>
-                              <FormControl>
-                                <Button
-                                  variant="noShadow"
-                                  className={cn(
-                                    "w-full md:w-[280px] justify-start text-left font-normal",
-                                    !field.value && "text-muted-foreground"
-                                  )}
-                                >
-                                  <CalendarIcon className="mr-2 h-4 w-4" />
-                                  {field.value ? (
-                                    format(field.value, DATE_FORMATS.DISPLAY)
-                                  ) : (
-                                    <span>Pick a date</span>
-                                  )}
-                                </Button>
-                              </FormControl>
-                            </PopoverTrigger>
-                            <PopoverContent
-                              className="w-auto border-0! p-0"
-                              align="start"
-                            >
-                              <Calendar
-                                mode="single"
-                                selected={field.value}
-                                onSelect={(date) => {
-                                  if (!date) return;
-                                  field.onChange(date);
-                                  setCalendarOpen(false);
-                                }}
-                                disabled={disableInvalidDates}
-                                initialFocus
-                              />
-                            </PopoverContent>
-                          </Popover>
-                          <FormDescription>
-                            {(user?.backfill?.remaining ?? 0) > 0
-                              ? "Select a date for today or within the last three days (depending on available lifelines for logging activities.)"
-                              : "Only today's date can be selected for tracking activities. Your backfill limit has been reached."}
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
+              <TrackerForm
+                form={form}
+                onSubmit={onSubmit}
+                isSubmitting={isSubmitting}
+              >
+                <ActivityDateSection
+                  form={form}
+                  calendarOpen={calendarOpen}
+                  setCalendarOpen={setCalendarOpen}
+                  disableInvalidDates={disableInvalidDates}
+                  remaining={user?.backfill?.remaining ?? 0}
+                />
 
-                  {/* Project Entries Section */}
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-lg font-semibold">
-                        Project Activities
-                      </h3>
-                    </div>
-
-                    {fields.map((field, index) => (
-                      <div
-                        key={field.id}
-                        className="p-4 border-2 border-border rounded-base space-y-4"
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <h4 className="font-medium">
-                            Project Entry #{index + 1}
-                          </h4>
-                          {fields.length > 1 && (
-                            <Button
-                              type="button"
-                              variant="noShadow"
-                              size="sm"
-                              onClick={() => remove(index)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          )}
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <FormField
-                            control={form.control}
-                            name={`projectEntries.${index}.currentWorkingDepartment`}
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>
-                                  Current Working Department
-                                </FormLabel>
-                                <Select
-                                  onValueChange={(value) => {
-                                    field.onChange(value);
-                                    form.setValue(
-                                      `projectEntries.${index}.projectId`,
-                                      ""
-                                    );
-                                    setProjectSearchQuery((prev) => ({
-                                      ...prev,
-                                      [index]: "",
-                                    }));
-                                    fetchProjectsForDepartment(value);
-                                  }}
-                                  defaultValue={field.value}
-                                >
-                                  <FormControl>
-                                    <SelectTrigger>
-                                      <SelectValue placeholder="Select department" />
-                                    </SelectTrigger>
-                                  </FormControl>
-                                  <SelectContent>
-                                    {departments.map((dept) => (
-                                      <SelectItem
-                                        key={dept.id}
-                                        value={dept.code}
-                                      >
-                                        {dept.name}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-
-                          <FormField
-                            control={form.control}
-                            name={`projectEntries.${index}.projectId`}
-                            render={({ field }) => {
-                              const selectedDeptCode = form.watch(
-                                `projectEntries.${index}.currentWorkingDepartment`
-                              );
-                              const projectOptions =
-                                projectsByDept[selectedDeptCode] || [];
-
-                              const searchQuery =
-                                projectSearchQuery[index] || "";
-                              const filteredProjects = projectOptions.filter(
-                                (project) =>
-                                  project.name
-                                    .toLowerCase()
-                                    .includes(searchQuery.toLowerCase()) ||
-                                  project.code
-                                    .toLowerCase()
-                                    .includes(searchQuery.toLowerCase())
-                              );
-
-                              return (
-                                <FormItem>
-                                  <FormLabel>Project</FormLabel>
-                                  <Select
-                                    onValueChange={field.onChange}
-                                    value={field.value}
-                                  >
-                                    <FormControl>
-                                      <SelectTrigger>
-                                        <SelectValue placeholder="Select project" />
-                                      </SelectTrigger>
-                                    </FormControl>
-                                    <SelectContent>
-                                      <div className="px-2 pb-2">
-                                        <Input
-                                          placeholder="Search projects..."
-                                          value={searchQuery}
-                                          onChange={(e) => {
-                                            setProjectSearchQuery((prev) => ({
-                                              ...prev,
-                                              [index]: e.target.value,
-                                            }));
-                                          }}
-                                          onClick={(e) => e.stopPropagation()}
-                                          className="h-8"
-                                        />
-                                      </div>
-                                      {filteredProjects.length === 0 ? (
-                                        <div className="py-6 text-center text-sm text-muted-foreground">
-                                          No projects found
-                                        </div>
-                                      ) : (
-                                        filteredProjects.map((project) => (
-                                          <SelectItem
-                                            key={project.id}
-                                            value={project.id.toString()}
-                                          >
-                                            {project.name}
-                                          </SelectItem>
-                                        ))
-                                      )}
-                                    </SelectContent>
-                                  </Select>
-                                  <FormMessage />
-                                </FormItem>
-                              );
-                            }}
-                          />
-                        </div>
-
-                        <FormField
-                          control={form.control}
-                          name={`projectEntries.${index}.hoursSpent`}
-                          render={({ field }) => {
-                            const selectedDeptCode = form.watch(
-                              `projectEntries.${index}.currentWorkingDepartment`
-                            );
-                            const selectedProjId = form.watch(
-                              `projectEntries.${index}.projectId`
-                            );
-                            const projectOptionsLocal =
-                              projectsByDept[selectedDeptCode] || [];
-                            const selectedProject = projectOptionsLocal.find(
-                              (p) => p.id.toString() === selectedProjId
-                            );
-                            const isAdHoc =
-                              selectedProject?.name === "Ad-hoc tasks";
-                            const perProjectMax = isAdHoc
-                              ? 2
-                              : VALIDATION.MAX_HOURS_PER_ENTRY;
-
-                            const display = hoursInput[index] ?? (
-                              field.value === undefined || field.value === null
-                                ? ""
-                                : String(field.value)
-                            );
-                            const maxIntLen = String(perProjectMax).length;
-                             return (
-                               <FormItem>
-                                 <FormLabel>Hours Spent</FormLabel>
-                                 <FormControl>
-                                   <Input
-                                    type="text"
-                                    placeholder="0.0"
-                                    value={display}
-                                    onChange={(e) => {
-                                      let v = e.target.value.replace(/[^0-9.]/g, "");
-                                      const dot = v.indexOf(".");
-                                      if (dot !== -1) {
-                                        v = v.slice(0, dot + 1) + v.slice(dot + 1).replace(/\./g, "");
-                                      }
-                                      v = v.replace(/^0+(?=\d)/, "");
-                                      const parts = v.split(".");
-                                      if (parts[0].length > maxIntLen) {
-                                        parts[0] = parts[0].slice(0, maxIntLen);
-                                        v = parts.join(".");
-                                      }
-                                      const intVal = parseInt(parts[0] || "0", 10);
-                                      if (!Number.isNaN(intVal) && intVal >= perProjectMax) {
-                                        v = String(perProjectMax);
-                                      } else if (parts[1]) {
-                                        v = `${parts[0]}.${parts[1].slice(0, 1)}`;
-                                      }
-                                      setHoursInput((prev) => ({ ...prev, [index]: v }));
-                                    }}
-                                    onBlur={() => {
-                                      const { num, display } = sanitizeHoursDisplay(hoursInput[index], perProjectMax, isAdHoc);
-                                      field.onChange(num);
-                                      setHoursInput((prev) => ({ ...prev, [index]: display }));
-                                    }}
-                                   />
-                                 </FormControl>
-                                 <FormMessage />
-                               </FormItem>
-                             );
-                           }}
-                         />
-
-                        <FormField
-                          control={form.control}
-                          name={`projectEntries.${index}.taskDescription`}
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Task Description</FormLabel>
-                              <FormControl>
-                                <Textarea
-                                  placeholder="Describe your task, achievements, and progress made..."
-                                  className="min-h-[100px] resize-none"
-                                  {...field}
-                                />
-                              </FormControl>
-                              <FormDescription>
-                                Provide a detailed description of your work
-                              </FormDescription>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                  {/* Total Hours Validation Error */}
-                  {form.formState.errors.projectEntries?.root && (
-                    <Alert variant="destructive">
-                      <AlertCircle className="h-4 w-4" />
-                      <AlertTitle>Validation Error</AlertTitle>
-                      <AlertDescription>
-                        {form.formState.errors.projectEntries.root.message}
-                      </AlertDescription>
-                    </Alert>
-                  )}
-
-                  {/* <div className="flex flex-col gap-3 pb-4"> */}
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="lg"
-                    onClick={addProjectEntry}
-                    className="self-start"
-                  >
-                    <Plus className="mr-2 h-4 w-4" />
-                    Add Another Project Activity
-                  </Button>
-                  <Button
-                    type="submit"
-                    size="lg"
-                    disabled={isSubmitting}
-                    className="w-full"
-                  >
-                    {isSubmitting ? "Submitting..." : "Submit Activity Logger"}
-                  </Button>
-                  {/* </div> */}
-                </form>
-              </Form>
+                <ProjectEntriesSection
+                  form={form}
+                  fields={fields}
+                  fieldCount={fields.length}
+                  departments={departments}
+                  projectsByDept={projectsByDept}
+                  projectSearchQuery={projectSearchQuery}
+                  hoursInput={hoursInput}
+                  onDepartmentChange={handleProjectDepartmentChange}
+                  onProjectSearchChange={handleProjectSearchChange}
+                  onHoursInputChange={updateHoursInput}
+                  onHoursBlur={handleHoursBlur}
+                  onRemove={handleRemoveProjectEntry}
+                  onAdd={handleAddProjectEntry}
+                />
+              </TrackerForm>
             </CardContent>
           </Card>
         </div>
