@@ -2617,6 +2617,8 @@ export default function DashboardPage() {
                   dateCreatedAtMap={dateCreatedAtMap}
                   getRowKey={getRowKey}
                   highlightedDateApi={highlightedDateApi}
+                  activeCalendarCreatedAtKey={null} 
+                  setActiveCalendarCreatedAtKey={() => {}}
                 />
               )}
             </div>
