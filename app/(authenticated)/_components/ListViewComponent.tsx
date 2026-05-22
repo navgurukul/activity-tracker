@@ -65,6 +65,8 @@ interface ListViewComponentProps {
   dateCreatedAtMap: Map<string, string | undefined>;
   getRowKey: (row: TimesheetRow, index: number) => string;
   highlightedDateApi: string | null;
+  activeCalendarCreatedAtKey: string | null;
+  setActiveCalendarCreatedAtKey: (key: string | null) => void;
 }
 
 export const ListViewComponent: React.FC<ListViewComponentProps> = ({
