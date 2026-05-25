@@ -20,6 +20,7 @@ const todayStart = startOfDay(new Date()).getTime();
 const statusMeta: Record<CreditState, CreditStatusMeta> = {
   pending: { label: "Pending", className: "dashboard-status-pill dashboard-status-pill--yellow" },
   granted: { label: "Granted", className: "dashboard-status-pill dashboard-status-pill--green" },
+  availed: { label: "Availed", className: "dashboard-status-pill dashboard-status-pill--khaki" },
   expired: { label: "Expired", className: "dashboard-status-pill dashboard-status-pill--red" },
 };
 
@@ -27,6 +28,7 @@ const statusOptions: StatusOption[] = [
   { value: "all", label: "All Status" },
   { value: "pending", label: "Pending" },
   { value: "granted", label: "Granted" },
+  { value: "availed", label: "Availed" },
   { value: "expired", label: "Expired" },
 ];
 

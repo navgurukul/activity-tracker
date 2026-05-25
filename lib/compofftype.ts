@@ -51,7 +51,7 @@ export interface EmployeeApiRecord {
   [key: string]: unknown;
 }
 
-export type CreditState = "pending" | "granted" | "expired";
+export type CreditState = "pending" | "granted" | "availed" | "expired";
 export type StatusFilter = "all" | CreditState;
 
 export interface CreditStatusMeta {
