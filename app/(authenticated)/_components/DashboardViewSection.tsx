@@ -3,51 +3,7 @@
 import { CalendarViewComponent } from "@/app/(authenticated)/_components/CalendarViewComponent";
 import { ListViewComponent } from "@/app/(authenticated)/_components/ListViewComponent";
 import { Button } from "@/components/ui/button";
-import { MonthlyTimesheetResponse, TimesheetRow, ProjectPillTone, ProjectOption, DepartmentOption, DayData } from "@/lib/dashboard-type";
-
-interface DashboardViewSectionProps {
-  viewMode: "grid" | "table";
-  monthlyData: MonthlyTimesheetResponse | null;
-  timesheetRows: TimesheetRow[];
-  isTeamMode: boolean;
-  canManageTeamEntries: boolean;
-  activeCalendarCreatedAtKey: string | null;
-  setActiveCalendarCreatedAtKey: (key: string | null | ((prev: string | null) => string | null)) => void;
-  setSelectedDay: (day: DayData) => void;
-  setIsDaySheetOpen: (open: boolean) => void;
-  editingRowKey: string | null;
-  setEditingRowKey: (key: string | null) => void;
-  editingForm: any;
-  setEditingForm: (form: any) => void;
-  savingRowKey: string | null;
-  deletingRowKey: string | null;
-  confirmDeleteRowKey: string | null;
-  setConfirmDeleteRowKey: (key: string | null) => void;
-  teamDepartments: DepartmentOption[];
-  teamProjectsByDepartment: Record<string, ProjectOption[]>;
-  teamLoggerProjectsLoading: boolean;
-  fetchTeamLoggerProjectsForDepartment: (departmentId: string) => void;
-  handleStartEdit: (row: TimesheetRow, index: number) => void;
-  handleCancelEdit: () => void;
-  handleSaveEdit: (row: TimesheetRow, index: number) => void;
-  handleDeleteEntry: (row: TimesheetRow, index: number) => void;
-  renderEmptyDayActions: (options: {
-    dateApi?: string;
-    layout?: "inline" | "stack";
-    stopPropagation?: boolean;
-    showLabel?: boolean;
-  }) => React.ReactNode;
-  getProjectPill: (row: TimesheetRow) => { label: string; tone: ProjectPillTone } | null;
-  getProjectPillClassName: (tone: ProjectPillTone) => string;
-  formatCreatedAt: (value?: string | null) => string;
-  dailyTotals: Map<string, number>;
-  dateCreatedAtMap: Map<string, string | undefined>;
-  getRowKey: (row: TimesheetRow, index: number) => string;
-  highlightedDateApi: string | null;
-  isLoading: boolean;
-  error: string | null;
-  onRetry: () => void;
-}
+import { DashboardViewSectionProps } from "@/lib/dashboard-type";
 
 export const DashboardViewSection = ({
   viewMode,
@@ -141,6 +97,8 @@ export const DashboardViewSection = ({
       isTeamMode={isTeamMode}
       canManageTeamEntries={canManageTeamEntries}
       editingRowKey={editingRowKey}
+      activeCalendarCreatedAtKey={activeCalendarCreatedAtKey}
+      setActiveCalendarCreatedAtKey={setActiveCalendarCreatedAtKey}
       setEditingRowKey={setEditingRowKey}
       editingForm={editingForm}
       setEditingForm={setEditingForm}
