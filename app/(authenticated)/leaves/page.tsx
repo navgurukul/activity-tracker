@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { format, parseISO } from "date-fns";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -172,6 +172,9 @@ export default function LeavesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isTeamLoading, setIsTeamLoading] = useState(true);
   const [isBalancesLoading, setIsBalancesLoading] = useState(true);
+  const [shouldScrollToLeaveHistory, setShouldScrollToLeaveHistory] =
+    useState(false);
+  const leaveHistorySectionRef = useRef<HTMLDivElement | null>(null);
 
   // Filter state
   const [statusFilter, setStatusFilter] = useState("all");
@@ -253,6 +256,26 @@ export default function LeavesPage() {
   const durationTypes = mockDataService.getDurationTypes();
 
   const leavesPageSize = 10;
+
+  const handleViewLeaveHistory = useCallback(() => {
+    setActiveMainTab("leaves");
+    setShouldScrollToLeaveHistory(true);
+  }, []);
+
+  useEffect(() => {
+    if (!shouldScrollToLeaveHistory || activeMainTab !== "leaves") {
+      return;
+    }
+    const timeoutId = window.setTimeout(() => {
+      leaveHistorySectionRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+      setShouldScrollToLeaveHistory(false);
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [shouldScrollToLeaveHistory, activeMainTab]);
 
   const fetchBalances = useCallback(async () => {
     setIsBalancesLoading(true);
@@ -1099,9 +1122,29 @@ export default function LeavesPage() {
 
   const myReporteeTeamLeaves = useMemo(() => {
     if (!user?.id) return [] as TeamLeaveRequest[];
-    return teamLeaveHistory.filter(
-      (leave) => Number(leave.managerId) === Number(user.id)
-    );
+
+    const resolveManagerId = (leave: TeamLeaveRequest) => {
+      const flatManagerId = Number(
+        (leave as TeamLeaveRequest & { managerId?: unknown }).managerId
+      );
+
+      if (Number.isFinite(flatManagerId)) {
+        return flatManagerId;
+      }
+
+      const nestedManagerId = Number(
+        (
+          leave as TeamLeaveRequest & { manager?: { id?: unknown } }
+        ).manager?.id
+      );
+
+      return Number.isFinite(nestedManagerId) ? nestedManagerId : null;
+    };
+
+    return teamLeaveHistory.filter((leave) => {
+      const managerId = resolveManagerId(leave);
+      return managerId !== null && managerId === Number(user.id);
+    });
   }, [teamLeaveHistory, user?.id]);
 
   const scopedTeamLeaves = useMemo(() => {
@@ -1454,6 +1497,14 @@ export default function LeavesPage() {
         crumbs={[{ label: "Leaves" }]}
         right={
           <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleViewLeaveHistory}
+              className="my-1 h-9 px-3 text-sm font-medium whitespace-nowrap"
+            >
+              View Leave History
+            </Button>
             <a
               href={leavePolicyUrl}
               target="_blank"
@@ -1662,7 +1713,7 @@ export default function LeavesPage() {
               </div>
 
               {/* Leave History */}
-              <div className="rounded-lg border border-border overflow-hidden bg-background">
+              <div ref={leaveHistorySectionRef} className="rounded-lg border border-border overflow-hidden bg-background">
                 <div className="px-4 py-3 border-b border-border bg-secondary-background flex items-center justify-between gap-3">
                   <span className="text-sm font-medium text-foreground">Leave History</span>
                   {!isLoading && (
