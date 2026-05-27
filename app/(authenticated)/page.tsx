@@ -1259,15 +1259,10 @@ export default function DashboardPage() {
 
   const resolvedBackfill = useMemo(() => {
     if (isTeamMode) {
-      return (
-        (teamUser as any)?.backfill ??
-        (monthlyData as any)?.backfill ??
-        (monthlyData as any)?.user?.backfill ??
-        null
-      );
+      return (teamUser as any)?.backfill ?? null;
     }
     return (user as any)?.backfill ?? null;
-  }, [isTeamMode, teamUser, monthlyData, user]);
+  }, [isTeamMode, teamUser, user]);
 
   const getTeamTargetUserId = () => {
     const teamSelectedId = Number(teamUser?.id);
@@ -1392,11 +1387,7 @@ export default function DashboardPage() {
 
   const handleStartLifelineEdit = () => {
     if (!isTeamMode || !teamUser || !canEditTeamLifeline) return;
-    const currentValue = Number(
-      (teamUser as any)?.backfill?.remaining ??
-      (monthlyData as any)?.backfill?.remaining ??
-      0
-    );
+    const currentValue = Number((teamUser as any)?.backfill?.remaining ?? 0);
     setLifelineDraft(String(Number.isFinite(currentValue) ? currentValue : 0));
     setIsEditingLifeline(true);
   };
@@ -2262,20 +2253,12 @@ export default function DashboardPage() {
               {
                 label: "Lifelines",
                 display: (() => {
-                  const todayIST = getISTBusinessDate();
-                  const period = monthlyData?.period;
-                  let isCurrentCycle = false;
-                  if (period) {
-                    const start = new Date(period.start);
-                    const end = new Date(period.end);
-                    isCurrentCycle = todayIST >= start && todayIST <= end;
-                  }
-                  const remaining = isCurrentCycle ? (resolvedBackfill?.remaining ?? 0) : 0;
+                  const remaining = Number(resolvedBackfill?.remaining ?? 0);
                   return String(remaining);
                 })(),
                 unit: "",
                 sub: "",
-                accent: (resolvedBackfill?.remaining ?? 0) > 0 ? "border-l-emerald-400" : "border-l-amber-400",
+                accent: Number(resolvedBackfill?.remaining ?? 0) > 0 ? "border-l-emerald-400" : "border-l-amber-400",
               },
               {
                 label: "Payable Days",

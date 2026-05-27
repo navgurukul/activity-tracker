@@ -150,12 +150,13 @@ const normalizeState = (raw: OffDayWorkResponseItem): CreditState => {
   const explicit = toText(raw.state ?? raw.status ?? raw.creditStatus ?? raw.lifecycleState).toLowerCase();
   if (explicit.includes("expired")) return "expired";
   if (explicit.includes("pending")) return "pending";
-  if (explicit.includes("granted") || explicit.includes("approved") || explicit.includes("credited") || explicit.includes("availed")) {
+  if (explicit.includes("availed")) return "availed";
+  if (explicit.includes("granted") || explicit.includes("approved") || explicit.includes("credited")) {
     return "granted";
   }
 
   const availedOn = raw.availedOn ?? raw.availedDate ?? raw.leaveTakenOn ?? raw.usedOn;
-  if (availedOn) return "granted";
+  if (availedOn) return "availed";
 
   const expiresOn = getDateTs(raw.expiresOn ?? raw.expiryDate ?? raw.validUntil);
   if (expiresOn !== null && expiresOn < todayStart) return "expired";
@@ -271,9 +272,9 @@ const extractRows = (payload: unknown): OffDayWorkResponseItem[] => {
 
 function CreditsSummary({ summary }: CreditsSummaryProps) {
   const cards = [
-    { label: "Total Credits", className: "offday-summary-card--total", value: summary?.total },
-    { label: "Pending", className: "offday-summary-card--active", value: summary?.active },
-    { label: "Granted", className: "offday-summary-card--availed", value: summary?.availed },
+    { label: "Total", className: "offday-summary-card--total", value: summary?.total },
+    { label: "Active", className: "offday-summary-card--active", value: summary?.active },
+    { label: "Availed", className: "offday-summary-card--availed", value: summary?.availed },
     { label: "Expired", className: "offday-summary-card--expired", value: summary?.expired },
   ];
 

@@ -1,5 +1,7 @@
 // Dashboard Types - Centralized type definitions for dashboard components
 
+import type { ReactNode } from "react";
+
 export interface TimesheetEntry {
   id?: number | string;
   entryId?: number | string;
@@ -102,3 +104,47 @@ export interface DepartmentOption {
 export type TeamVisibilityScope = "my_reportees" | "all_org";
 
 export type ProjectPillTone = "green" | "yellow" | "red" | "khaki";
+
+export interface DashboardViewSectionProps {
+  viewMode: "grid" | "table";
+  monthlyData: MonthlyTimesheetResponse | null;
+  timesheetRows: TimesheetRow[];
+  isTeamMode: boolean;
+  canManageTeamEntries: boolean;
+  activeCalendarCreatedAtKey: string | null;
+  setActiveCalendarCreatedAtKey: (key: string | null | ((prev: string | null) => string | null)) => void;
+  setSelectedDay: (day: DayData) => void;
+  setIsDaySheetOpen: (open: boolean) => void;
+  editingRowKey: string | null;
+  setEditingRowKey: (key: string | null) => void;
+  editingForm: any;
+  setEditingForm: (form: any) => void;
+  savingRowKey: string | null;
+  deletingRowKey: string | null;
+  confirmDeleteRowKey: string | null;
+  setConfirmDeleteRowKey: (key: string | null) => void;
+  teamDepartments: DepartmentOption[];
+  teamProjectsByDepartment: Record<string, ProjectOption[]>;
+  teamLoggerProjectsLoading: boolean;
+  fetchTeamLoggerProjectsForDepartment: (departmentId: string) => void;
+  handleStartEdit: (row: TimesheetRow, index: number) => void;
+  handleCancelEdit: () => void;
+  handleSaveEdit: (row: TimesheetRow, index: number) => void;
+  handleDeleteEntry: (row: TimesheetRow, index: number) => void;
+  renderEmptyDayActions: (options: {
+    dateApi?: string;
+    layout?: "inline" | "stack";
+    stopPropagation?: boolean;
+    showLabel?: boolean;
+  }) => ReactNode;
+  getProjectPill: (row: TimesheetRow) => { label: string; tone: ProjectPillTone } | null;
+  getProjectPillClassName: (tone: ProjectPillTone) => string;
+  formatCreatedAt: (value?: string | null) => string;
+  dailyTotals: Map<string, number>;
+  dateCreatedAtMap: Map<string, string | undefined>;
+  getRowKey: (row: TimesheetRow, index: number) => string;
+  highlightedDateApi: string | null;
+  isLoading: boolean;
+  error: string | null;
+  onRetry: () => void;
+}
