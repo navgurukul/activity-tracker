@@ -21,7 +21,12 @@ import {
   Loader2,
   AlertTriangle,
 } from "lucide-react";
-import { cn, getISTBusinessDate, getLeaveDurationLabel } from "@/lib/utils";
+import {
+  cn,
+  getCurrentSalaryCycleStart,
+  getISTBusinessDate,
+  getLeaveDurationLabel,
+} from "@/lib/utils";
 
 import { AppHeader } from "@/app/_components/AppHeader";
 import { PageWrapper } from "@/app/_components/wrapper";
@@ -385,6 +390,10 @@ export default function DashboardPage() {
       today.setHours(0, 0, 0, 0);
       if (targetDate.getTime() > today.getTime()) return false;
 
+      const currentCycleStart = getCurrentSalaryCycleStart();
+      currentCycleStart.setHours(0, 0, 0, 0);
+      if (targetDate.getTime() < currentCycleStart.getTime()) return false;
+
       const earliestTrackableDate = getEarliestTrackableDate();
       return targetDate.getTime() >= earliestTrackableDate.getTime();
     },
@@ -393,7 +402,15 @@ export default function DashboardPage() {
 
   const isLeaveEligibleDate = useCallback(
     (dateApi?: string) => {
-      return Boolean(dateApi) && !isTeamMode;
+      if (!dateApi || isTeamMode) return false;
+
+      const targetDate = parseISO(dateApi);
+      if (!isValid(targetDate)) return false;
+      targetDate.setHours(0, 0, 0, 0);
+
+      const currentCycleStart = getCurrentSalaryCycleStart();
+      currentCycleStart.setHours(0, 0, 0, 0);
+      return targetDate.getTime() >= currentCycleStart.getTime();
     },
     [isTeamMode]
   );

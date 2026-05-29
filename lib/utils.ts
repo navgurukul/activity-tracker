@@ -12,6 +12,30 @@ export function getISTBusinessDate(nowUTC: Date = new Date()): Date {
   businessDate.setHours(0, 0, 0, 0);
   return businessDate;
 }
+
+export function getISTDateTime(nowUTC: Date = new Date()): Date {
+  const utc = nowUTC.getTime() + nowUTC.getTimezoneOffset() * 60000;
+  const istOffset = 5.5 * 60 * 60000;
+  return new Date(utc + istOffset);
+}
+
+export function getCurrentSalaryCycleStart(nowUTC: Date = new Date()): Date {
+  const istNow = getISTDateTime(nowUTC);
+  const cycleStartsOn = 26;
+  const cutoffHour = 7;
+
+  const cycleStart = new Date(istNow);
+  if (
+    istNow.getDate() < cycleStartsOn ||
+    (istNow.getDate() === cycleStartsOn && istNow.getHours() < cutoffHour)
+  ) {
+    cycleStart.setMonth(cycleStart.getMonth() - 1);
+  }
+
+  cycleStart.setDate(cycleStartsOn);
+  cycleStart.setHours(0, 0, 0, 0);
+  return cycleStart;
+}
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
