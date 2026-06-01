@@ -22,6 +22,8 @@ const statusMeta: Record<CreditState, CreditStatusMeta> = {
   granted: { label: "Granted", className: "dashboard-status-pill dashboard-status-pill--green" },
   availed: { label: "Availed", className: "dashboard-status-pill dashboard-status-pill--khaki" },
   expired: { label: "Expired", className: "dashboard-status-pill dashboard-status-pill--red" },
+  partial_availed: { label: "Partial Availed", className: "dashboard-status-pill dashboard-status-pill--orange" },
+  warning: { label: "Warning", className: "dashboard-status-pill dashboard-status-pill--warning" },
 };
 
 const statusOptions: StatusOption[] = [
@@ -30,6 +32,8 @@ const statusOptions: StatusOption[] = [
   { value: "granted", label: "Granted" },
   { value: "availed", label: "Availed" },
   { value: "expired", label: "Expired" },
+  { value: "partial_availed", label: "Partial Availed" },
+  { value: "warning", label: "Warning" },
 ];
 
 export function OffDayWorkTable({
