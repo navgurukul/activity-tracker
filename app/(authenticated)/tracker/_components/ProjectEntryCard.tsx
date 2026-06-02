@@ -210,7 +210,9 @@ export function ProjectEntryCard({
                 />
               </FormControl>
               <FormDescription>
-                Maximum 12 hours total across all entries for the day.
+                {isAdHoc
+                  ? "Ad hoc task entries are limited to a maximum of 2 hours per day."
+                  : "Maximum 12 hours total across all entries for the day."}
               </FormDescription>
               {(fieldState.isTouched || fieldState.isDirty) && <FormMessage />}
             </FormItem>
