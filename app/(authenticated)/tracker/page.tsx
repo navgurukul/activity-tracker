@@ -487,6 +487,15 @@ export default function TrackerPage() {
 
   function handleProjectDepartmentChange(index: number, departmentCode: string) {
     form.setValue(`projectEntries.${index}.projectId`, "");
+    form.setValue(`projectEntries.${index}.hoursSpent`, 0, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+    form.setValue(`projectEntries.${index}.taskDescription`, "", {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+    updateHoursInput(index, "");
     handleProjectSearchChange(index, "");
     fetchProjectsForDepartment(departmentCode);
   }
