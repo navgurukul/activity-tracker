@@ -87,6 +87,9 @@ function ActionsCell({
   hasMultipleSelectedRows?: boolean;
 }) {
   const [isApproving, setIsApproving] = useState(false);
+  const [isApproveDialogOpen, setIsApproveDialogOpen] = useState(false);
+  const [isPolicyAcknowledged, setIsPolicyAcknowledged] = useState(false);
+  const leavePolicyUrl = process.env.NEXT_PUBLIC_LEAVE_POLICY_URL?.trim() ?? "";
   const [isRejecting, setIsRejecting] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
@@ -178,11 +181,13 @@ function ActionsCell({
       if (onUpdate) {
         onUpdate();
       }
+      return true;
     } catch (error) {
       console.error("Error approving leave request:", error);
       toast.error("Failed to approve leave request", {
         description: "Unable to approve the leave request. Please try again.",
       });
+      return false;
     } finally {
       setIsApproving(false);
     }
@@ -534,15 +539,89 @@ function ActionsCell({
           </DialogContent>
         </Dialog>
       )}
-      <Button
-        variant="default"
-        onClick={handleApprove}
-        disabled={isDisabled}
-        size="xs"
-        title={isBulkOperationInProgress ? "Bulk operation in progress" : ""}
+      <Dialog
+        open={isApproveDialogOpen}
+        onOpenChange={(open) => {
+          setIsApproveDialogOpen(open);
+          if (!open) {
+            setIsPolicyAcknowledged(false);
+          }
+        }}
       >
-        {isApproving ? <Spinner /> : <Check />}
-      </Button>
+        <DialogTrigger asChild>
+          <Button
+            variant="default"
+            disabled={isDisabled}
+            size="xs"
+            title={isBulkOperationInProgress ? "Bulk operation in progress" : ""}
+          >
+            {isApproving ? <Spinner /> : <Check />}
+          </Button>
+        </DialogTrigger>
+        <DialogContent className="sm:max-w-[460px] [&_[data-slot=dialog-close]>svg]:text-red-600">
+          <DialogTitle className="sr-only">Approve Leave Request</DialogTitle>
+
+          <div className="flex items-start gap-3 py-1">
+            <Checkbox
+              id={`leave-policy-ack-${leave.id}`}
+              checked={isPolicyAcknowledged}
+              onCheckedChange={(checked) => setIsPolicyAcknowledged(checked === true)}
+              disabled={isApproving}
+            />
+            <Label
+              htmlFor={`leave-policy-ack-${leave.id}`}
+              className="text-sm font-normal leading-relaxed text-muted-foreground"
+            >
+              <span>
+                I confirm that I have read the{' '}
+                {leavePolicyUrl ? (
+                  <a
+                    href={leavePolicyUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-700 underline"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    Leave Policy
+                  </a>
+                ) : (
+                  'Leave Policy'
+                )}
+                {' '}and that this leave request complies with the organisation's Leave Policy.
+              </span>
+            </Label>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="neutral"
+              onClick={() => setIsApproveDialogOpen(false)}
+              disabled={isApproving}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="default"
+              disabled={!isPolicyAcknowledged || isApproving}
+              onClick={async () => {
+                const isApproved = await handleApprove();
+                if (isApproved) {
+                  setIsApproveDialogOpen(false);
+                  setIsPolicyAcknowledged(false);
+                }
+              }}
+            >
+              {isApproving ? (
+                <>
+                  <Spinner className="mr-2 h-4 w-4" /> Approving...
+                </>
+              ) : (
+                "Approve"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Button
         variant="neutral"
         onClick={handleReject}
