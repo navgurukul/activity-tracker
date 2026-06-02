@@ -28,7 +28,11 @@ import {
   VALIDATION,
   WORK_DAYS_NEEDED,
 } from "@/lib/constants";
-import { cn, getISTBusinessDate } from "@/lib/utils";
+import {
+  cn,
+  getCurrentSalaryCycleStart,
+  getISTBusinessDate,
+} from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import {
   checkTimesheetConflictWithLeave,
@@ -90,24 +94,14 @@ export default function TrackerPage() {
 
   const disableInvalidDates = (date: Date) => {
     const istToday = getISTBusinessDate();
-    const cutoffDay = 26;
+    const currentCycleStart = getCurrentSalaryCycleStart();
 
     // Convert input date to IST 00:00:00
     const d = new Date(date);
     d.setHours(0, 0, 0, 0);
 
-    // Use getISTBusinessDate for IST time
-    const istNow = getISTBusinessDate();
-    const isAfterCutoff =
-      (istNow.getDate() > cutoffDay) ||
-      (istNow.getDate() === cutoffDay && istNow.getHours() >= 7);
-    if (isAfterCutoff) {
-      const cycleStart = new Date(istNow.getFullYear(), istNow.getMonth(), cutoffDay);
-      cycleStart.setHours(0, 0, 0, 0);
-      if (d < cycleStart) return true;
-    }
-
     if (d.getTime() > istToday.getTime()) return true;
+    if (d.getTime() < currentCycleStart.getTime()) return true;
 
     const backfillRemaining = user?.backfill?.remaining ?? 0;
     if (backfillRemaining === 0) {
@@ -204,6 +198,7 @@ export default function TrackerPage() {
           const istToday = getISTBusinessDate();
           const selectedDate = new Date(date);
           selectedDate.setHours(0, 0, 0, 0);
+          const currentCycleStart = getCurrentSalaryCycleStart();
 
           // If backfill remaining is zero, only allow IST business date
           const backfillRemaining = user?.backfill?.remaining ?? 0;
@@ -228,6 +223,9 @@ export default function TrackerPage() {
 
           const earliestAllowed = new Date(cursor);
           earliestAllowed.setHours(0, 0, 0, 0);
+          const minimumAllowed = new Date(
+            Math.max(earliestAllowed.getTime(), currentCycleStart.getTime())
+          );
 
           const d = new Date(date);
           d.setHours(0, 0, 0, 0);
@@ -237,7 +235,7 @@ export default function TrackerPage() {
 
           if (isISTToday) return true;
           return (
-            d.getTime() >= earliestAllowed.getTime() &&
+            d.getTime() >= minimumAllowed.getTime() &&
             d.getTime() <= dayBeforeToday.getTime()
           );
         },
