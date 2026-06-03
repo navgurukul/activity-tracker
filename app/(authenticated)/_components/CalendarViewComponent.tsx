@@ -134,25 +134,15 @@ export const CalendarViewComponent: React.FC<CalendarViewComponentProps> = ({
       const leaveEntries = day.leaves?.entries ?? [];
       const totalHours =
         timesheetEntries.reduce((s, e) => s + e.hours, 0);
-      const dayCreatedAt =
-        timesheetEntries.reduce<string | undefined>(
-        (latest, entry) => {
-          if (!entry.createdAt) return latest;
-          if (!latest) return entry.createdAt;
+      const lifelineUsed = (() => {
+        const submittedAt = (day.timesheet as any)?.submittedAt;
+        if (!submittedAt) return false;
 
-          const latestDate = parseISO(latest);
-          const entryDate = parseISO(entry.createdAt);
-          if (
-            isValid(entryDate) &&
-            (!isValid(latestDate) || entryDate.getTime() > latestDate.getTime())
-          ) {
-            return entry.createdAt;
-          }
+        const submittedDate = parseISO(submittedAt);
+        if (!isValid(submittedDate)) return false;
 
-          return latest;
-        },
-        undefined
-      ) ?? day.timesheet?.createdAt;
+        return format(submittedDate, "yyyy-MM-dd") > day.date;
+      })();
 
       let status:
         | "off"
@@ -185,7 +175,7 @@ export const CalendarViewComponent: React.FC<CalendarViewComponentProps> = ({
         totalHours,
         status,
         timesheetEntries,
-        dayCreatedAt,
+        lifelineUsed,
         leaveEntries,
         isHoliday: day.isHoliday,
         holidayName: day.holidayName,
@@ -357,48 +347,29 @@ export const CalendarViewComponent: React.FC<CalendarViewComponentProps> = ({
                             {dayData.dayShort}
                           </span>
                         </div>
-                        {dayData.dayCreatedAt && (
+                        {dayData.lifelineUsed && (
                           <div className="flex items-center gap-1">
-                            {dayData.dayCreatedAt && (
-                              <TooltipProvider>
-                                <Tooltip
-                                  open={activeCalendarCreatedAtKey === `day-${dayData.day.date}`}
-                                  onOpenChange={(isOpen) => {
-                                    if (isOpen) {
-                                      setActiveCalendarCreatedAtKey(`day-${dayData.day.date}`);
-                                      return;
-                                    }
-
-                                    setActiveCalendarCreatedAtKey((prev) =>
-                                      prev === `day-${dayData.day.date}` ? null : prev
-                                    );
-                                  }}
-                                >
-                                  <TooltipTrigger asChild>
-                                    <button
-                                      type="button"
-                                      className="inline-flex h-4 w-4 items-center justify-center text-amber-600 hover:text-amber-700"
-                                      aria-label="Show created at timestamp"
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        setActiveCalendarCreatedAtKey((prev) =>
-                                          prev === `day-${dayData.day.date}`
-                                            ? null
-                                            : `day-${dayData.day.date}`
-                                        );
-                                      }}
-                                    >
-                                      <AlertTriangle className="h-3 w-3" />
-                                    </button>
-                                  </TooltipTrigger>
-                                  <TooltipContent side="top">
-                                    <div className="text-xs whitespace-nowrap">
-                                      Created: {format(parseISO(dayData.dayCreatedAt), "dd/MM/yyyy HH:mm")}
-                                    </div>
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                            )}
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    type="button"
+                                    className="inline-flex h-4 w-4 items-center justify-center text-amber-600 hover:text-amber-700"
+                                    aria-label="Lifeline used"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                    }}
+                                  >
+                                    <AlertTriangle className="h-3 w-3" />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top">
+                                  <div className="text-xs whitespace-nowrap">
+                                    Lifeline used
+                                  </div>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
                             <span
                               className="text-xs font-semibold px-1.5 py-0.5 rounded-[3px]"
                               style={{

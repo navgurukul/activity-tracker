@@ -38,6 +38,7 @@ export interface DayData {
     totalHours: number;
     notes: string;
     createdAt?: string;
+    submittedAt?: string;
     entries: TimesheetEntry[];
   } | null;
   leaves: {

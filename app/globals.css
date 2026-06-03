@@ -52,6 +52,8 @@
   --dashboard-pill-yellow: #bfa452;
   --dashboard-pill-red: #bb3b1e;
   --dashboard-pill-khaki: #6d5542;
+  --dashboard-pill-orange: #c87a3d;
+  --dashboard-pill-warning: #bfa452;
   --dashboard-pill-text-color: #ffffff;
 }
 
@@ -183,6 +185,12 @@ input[data-slot="input"][type="number"] {
 }
 .dashboard-status-pill--khaki {
   background-color: var(--dashboard-pill-khaki);
+}
+.dashboard-status-pill--orange {
+  background-color: var(--dashboard-pill-orange);
+}
+.dashboard-status-pill--warning {
+  background-color: var(--dashboard-pill-warning);
 }
 
 .offday-summary-card {
