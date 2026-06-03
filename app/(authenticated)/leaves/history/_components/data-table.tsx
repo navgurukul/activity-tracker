@@ -15,6 +15,15 @@ import * as React from "react";
 import { Check, Ban } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogTrigger,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 // import {
 //   DropdownMenu,
 //   DropdownMenuCheckboxItem,
@@ -56,6 +65,12 @@ export function DataTable<TData, TValue>({
   const [rowSelection, setRowSelection] = React.useState({});
   const [isBulkApproving, setIsBulkApproving] = React.useState(false);
   const [isBulkRejecting, setIsBulkRejecting] = React.useState(false);
+  const [isBulkApproveDialogOpen, setIsBulkApproveDialogOpen] =
+    React.useState(false);
+  const [isBulkPolicyAcknowledged, setIsBulkPolicyAcknowledged] =
+    React.useState(false);
+
+  const leavePolicyUrl = process.env.NEXT_PUBLIC_LEAVE_POLICY_URL?.trim() ?? "";
 
   const isBulkLoading = React.useMemo(
     () => isBulkApproving || isBulkRejecting,
@@ -96,7 +111,7 @@ export function DataTable<TData, TValue>({
       toast.error("No requests selected", {
         description: "Please select at least one leave request to approve.",
       });
-      return;
+      return false;
     }
 
     setIsBulkApproving(true);
@@ -116,12 +131,14 @@ export function DataTable<TData, TValue>({
       if (onUpdate) {
         onUpdate();
       }
+      return true;
     } catch (error) {
       console.error("Error bulk approving leave requests:", error);
       toast.error("Failed to approve leave requests", {
         description:
           "Unable to approve the selected requests. Please try again.",
       });
+      return false;
     } finally {
       setIsBulkApproving(false);
     }
@@ -176,23 +193,99 @@ export function DataTable<TData, TValue>({
             selected
           </div>
           <div className="flex gap-2">
-            <Button
-              variant="default"
-              onClick={handleBulkApprove}
-              disabled={isBulkLoading}
-              size="sm"
-              className="bg-[#a5b68c] text-white hover:bg-[#8f9f76]"
+            <Dialog
+              open={isBulkApproveDialogOpen}
+              onOpenChange={(open) => {
+                setIsBulkApproveDialogOpen(open);
+                if (!open) {
+                  setIsBulkPolicyAcknowledged(false);
+                }
+              }}
             >
-              {isBulkApproving ? (
-                <>
-                  <Spinner className="mr-2 h-4 w-4" /> Approving...
-                </>
-              ) : (
-                <>
-                  <Check className="mr-2 h-4 w-4" /> Approve Selected
-                </>
-              )}
-            </Button>
+              <DialogTrigger asChild>
+                <Button
+                  variant="default"
+                  disabled={isBulkLoading}
+                  size="sm"
+                  className="bg-[#a5b68c] text-white hover:bg-[#8f9f76]"
+                >
+                  {isBulkApproving ? (
+                    <>
+                      <Spinner className="mr-2 h-4 w-4" /> Approving...
+                    </>
+                  ) : (
+                    <>
+                      <Check className="mr-2 h-4 w-4" /> Approve Selected
+                    </>
+                  )}
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[460px] [&_[data-slot=dialog-close]>svg]:text-red-600">
+                <DialogTitle className="sr-only">Approve Selected Leave Requests</DialogTitle>
+
+                <div className="flex items-start gap-3 py-1">
+                  <Checkbox
+                    id="bulk-leave-policy-ack"
+                    checked={isBulkPolicyAcknowledged}
+                    onCheckedChange={(checked) =>
+                      setIsBulkPolicyAcknowledged(checked === true)
+                    }
+                    disabled={isBulkApproving}
+                  />
+                  <Label
+                    htmlFor="bulk-leave-policy-ack"
+                    className="text-sm font-normal leading-relaxed text-muted-foreground"
+                  >
+                    <span>
+                      I confirm that I have read the{' '}
+                      {leavePolicyUrl ? (
+                        <a
+                          href={leavePolicyUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-700 underline"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          Leave Policy
+                        </a>
+                      ) : (
+                        'Leave Policy'
+                      )}
+                      {' '}and that these leave requests comply with the organisation's Leave Policy.
+                    </span>
+                  </Label>
+                </div>
+
+                <DialogFooter>
+                  <Button
+                    variant="neutral"
+                    onClick={() => setIsBulkApproveDialogOpen(false)}
+                    disabled={isBulkApproving}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="default"
+                    disabled={!isBulkPolicyAcknowledged || isBulkApproving}
+                    onClick={async () => {
+                      const isApproved = await handleBulkApprove();
+                      if (isApproved) {
+                        setIsBulkApproveDialogOpen(false);
+                        setIsBulkPolicyAcknowledged(false);
+                      }
+                    }}
+                  >
+                    {isBulkApproving ? (
+                      <>
+                        <Spinner className="mr-2 h-4 w-4" /> Approving...
+                      </>
+                    ) : (
+                      "Approve Selected"
+                    )}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
             <Button
               variant="default"
               onClick={handleBulkReject}
