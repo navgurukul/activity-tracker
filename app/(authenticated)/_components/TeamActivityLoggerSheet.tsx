@@ -56,6 +56,13 @@ export const TeamActivityLoggerSheet = ({
   fetchTeamLoggerProjectsForDepartment,
   onSubmit,
 }: TeamActivityLoggerSheetProps) => {
+  const selectedProject = (teamProjectsByDepartment[teamLoggerForm.departmentId] || []).find(
+    (project) => String(project.id) === teamLoggerForm.projectId
+  );
+  const isAdHocTaskSelected = Boolean(
+    selectedProject?.name && /ad[- ]?hoc task/i.test(selectedProject.name)
+  );
+
   return (
     <Sheet open={isOpen} onOpenChange={setIsOpen}>
       <SheetContent side="right" className="w-full sm:w-[520px] p-0">
@@ -93,25 +100,6 @@ export const TeamActivityLoggerSheet = ({
                       workDate: e.target.value,
                     }))
                   }
-                  required
-                />
-              </div>
-
-              <div className="space-y-2.5">
-                <Label htmlFor="team-activity-hours">Hours</Label>
-                <Input
-                  id="team-activity-hours"
-                  type="text"
-                  inputMode="decimal"
-                  placeholder="0.0"
-                  value={teamLoggerForm.hours}
-                  onChange={(e) => {
-                    const val = e.target.value.replace(/[^0-9.]/g, "");
-                    setTeamLoggerForm((prev) => ({
-                      ...prev,
-                      hours: val,
-                    }));
-                  }}
                   required
                 />
               </div>
@@ -180,6 +168,31 @@ export const TeamActivityLoggerSheet = ({
                   )}
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="space-y-2.5">
+              <Label htmlFor="team-activity-hours">Hours</Label>
+              <Input
+                id="team-activity-hours"
+                type="text"
+                inputMode="decimal"
+                placeholder="0.0"
+                value={teamLoggerForm.hours}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/[^0-9.]/g, "");
+                  setTeamLoggerForm((prev) => ({
+                    ...prev,
+                    hours: val,
+                  }));
+                }}
+                disabled={!teamLoggerForm.projectId || teamLoggerProjectsLoading}
+                required
+              />
+              {isAdHocTaskSelected && (
+                <p className="text-sm text-muted-foreground">
+                  Ad hoc task entries are limited to a maximum of 2 hours per day.
+                </p>
+              )}
             </div>
 
             <div className="space-y-2.5">

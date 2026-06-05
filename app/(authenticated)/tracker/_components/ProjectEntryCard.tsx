@@ -37,6 +37,13 @@ export function ProjectEntryCard({
   onHoursBlur,
   onRemove,
 }: ProjectEntryCardProps) {
+  const selectedDeptCode = form.watch(
+    `projectEntries.${index}.currentWorkingDepartment`
+  );
+  const selectedProjectId = form.watch(`projectEntries.${index}.projectId`);
+  const isProjectEnabled = Boolean(selectedDeptCode);
+  const isHoursAndDescriptionEnabled = Boolean(selectedProjectId);
+
   return (
     <div className="p-4 border-2 border-border rounded-base space-y-4">
       <div className="flex items-center justify-between mb-2">
@@ -89,9 +96,6 @@ export function ProjectEntryCard({
           control={form.control}
           name={`projectEntries.${index}.projectId`}
           render={({ field }) => {
-            const selectedDeptCode = form.watch(
-              `projectEntries.${index}.currentWorkingDepartment`
-            );
             const projectOptions = projectsByDept[selectedDeptCode] || [];
             const searchQuery = projectSearchQuery[index] || "";
             const filteredProjects = projectOptions.filter(
@@ -105,9 +109,13 @@ export function ProjectEntryCard({
             return (
               <FormItem>
                 <FormLabel>Project Name</FormLabel>
-                <Select onValueChange={field.onChange} value={field.value}>
+                <Select
+                  onValueChange={field.onChange}
+                  value={field.value}
+                  disabled={!isProjectEnabled}
+                >
                   <FormControl>
-                    <SelectTrigger>
+                    <SelectTrigger disabled={!isProjectEnabled}>
                       <SelectValue placeholder="Select Project" />
                     </SelectTrigger>
                   </FormControl>
@@ -146,14 +154,10 @@ export function ProjectEntryCard({
       <FormField
         control={form.control}
         name={`projectEntries.${index}.hoursSpent`}
-        render={({ field }) => {
-          const selectedDeptCode = form.watch(
-            `projectEntries.${index}.currentWorkingDepartment`
-          );
-          const selectedProjId = form.watch(`projectEntries.${index}.projectId`);
+        render={({ field, fieldState }) => {
           const projectOptionsLocal = projectsByDept[selectedDeptCode] || [];
           const selectedProject = projectOptionsLocal.find(
-            (p) => p.id.toString() === selectedProjId
+            (p) => p.id.toString() === selectedProjectId
           );
           const isAdHoc = selectedProject?.name === "Ad-hoc tasks";
           const perProjectMax = isAdHoc
@@ -174,6 +178,7 @@ export function ProjectEntryCard({
                 <Input
                   type="text"
                   placeholder="0.0"
+                  disabled={!isHoursAndDescriptionEnabled}
                   value={display}
                   onChange={(e) => {
                     let value = e.target.value.replace(/[^0-9.]/g, "");
@@ -197,13 +202,19 @@ export function ProjectEntryCard({
                     }
                     onHoursInputChange(index, value);
                   }}
-                  onBlur={() => onHoursBlur(index, perProjectMax, isAdHoc)}
+                  onBlur={async () => {
+                    field.onBlur();
+                    onHoursBlur(index, perProjectMax, isAdHoc);
+                    await form.trigger(`projectEntries.${index}.hoursSpent`);
+                  }}
                 />
               </FormControl>
               <FormDescription>
-                Maximum 12 hours total across all entries for the day.
+                {isAdHoc
+                  ? "Ad hoc task entries are limited to a maximum of 2 hours per day."
+                  : "Maximum 12 hours total across all entries for the day."}
               </FormDescription>
-              <FormMessage />
+              {(fieldState.isTouched || fieldState.isDirty) && <FormMessage />}
             </FormItem>
           );
         }}
@@ -212,20 +223,21 @@ export function ProjectEntryCard({
       <FormField
         control={form.control}
         name={`projectEntries.${index}.taskDescription`}
-        render={({ field }) => (
+        render={({ field, fieldState }) => (
           <FormItem>
             <FormLabel>Task Description</FormLabel>
             <FormControl>
               <Textarea
                 placeholder="Describe your task, achievements, and progress made..."
                 className="min-h-[100px] resize-none"
+                disabled={!isHoursAndDescriptionEnabled}
                 {...field}
               />
             </FormControl>
             <FormDescription>
               Provide a detailed description of your work
             </FormDescription>
-            <FormMessage />
+            {(fieldState.isTouched || fieldState.isDirty) && <FormMessage />}
           </FormItem>
         )}
       />
