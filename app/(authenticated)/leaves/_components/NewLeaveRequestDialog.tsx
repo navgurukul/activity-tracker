@@ -1,15 +1,16 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { format } from "date-fns";
-import { Calendar as CalendarIcon, AlertCircle, Plus } from "lucide-react";
+import { Calendar as CalendarIcon, AlertCircle, Plus, Upload, Trash2, FileText } from "lucide-react";
 import { DateRange } from "react-day-picker";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -40,14 +41,14 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import apiClient from "@/lib/api-client";
-import { API_PATHS, DATE_FORMATS, VALIDATION } from "@/lib/constants";
+import { API_PATHS, DATE_FORMATS } from "@/lib/constants";
 import { mockDataService } from "@/lib/mock-data";
 import {
   checkLeaveConflictWithTimesheet,
   invalidateMonthlyTimesheetCache,
+  calculateLeaveDays,
 } from "@/lib/leave-timesheet-validator";
 import { cn } from "@/lib/utils";
 
@@ -57,27 +58,260 @@ interface LeaveTypeWithBalance {
   name: string;
   paid: boolean;
   requiresApproval: boolean;
+  description?: string;
+  maxPerRequestHours?: number;
   balanceHours: number;
 }
 
 const formSchema = z
   .object({
+    employeeEmail: z.string().email(),
     leaveType: z.string().min(1, "Please select a leave type."),
-    reason: z
-      .string()
-      .min(
-        VALIDATION.MIN_LEAVE_REASON_LENGTH,
-        `Please provide at least ${VALIDATION.MIN_LEAVE_REASON_LENGTH} characters.`
-      ),
-    startDate: z.date({ message: "Start date is required." }),
-    endDate: z.date({ message: "End date is required." }),
+    startDate: z.date({
+      message: "Start date is required.",
+    }),
+    endDate: z.date({
+      message: "End date is required.",
+    }),
     durationType: z.string().min(1, "Please select a duration type."),
     halfDaySegment: z.string().optional(),
+    
+    // Bereavement fields
+    bereavementRelationship: z.string().optional(),
+    bereavementRelationshipOther: z.string().optional(),
+    
+    // Wedding fields
+    weddingCardImage: z.any().optional(),
+    
+    // Election fields
+    voterIdImage: z.any().optional(),
+    
+    // Exam / L&D fields
+    examCourseName: z.string().optional(),
+    examHallTicket: z.any().optional(),
+    
+    // Vipassana fields
+    vipassanaDocuments: z.array(z.any()).optional(),
   })
-  .refine((data) => data.endDate >= data.startDate, {
-    message: "End date must be on or after the start date.",
-    path: ["endDate"],
+  .superRefine((data, ctx) => {
+    const code = (data.leaveType || "").toLowerCase().trim();
+
+    const isBereavement = code.includes("bereavement") || code === "bl";
+    const isWedding = code.includes("wedding") || code === "wd" || code === "wdl";
+    const isExam = code.includes("exam") || code === "ex" || code === "exl";
+    const isElection = (code.includes("election") || code === "el") && !isExam;
+    const isLAndD = code.includes("lnd") || code.includes("l&d") || code.includes("learning") || code === "ld" || code === "ldl";
+    const isVipassanaCourse = code.includes("vipassana_course") || code.includes("vipassana-course") || code.includes("vipassana course") || code === "vcl";
+    const isVipassanaSeva = code.includes("vipassana_seva") || code.includes("vipassana-seva") || code.includes("vipassana seva") || code === "vsl";
+
+    // 1. Date Range
+    if (data.startDate && data.endDate && data.endDate < data.startDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "End date must be on or after the start date.",
+        path: ["endDate"],
+      });
+    }
+
+    // 2. Duration Type & Half Day Segment
+    if (data.durationType === "half_day" && !data.halfDaySegment) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Please select a half day segment.",
+        path: ["halfDaySegment"],
+      });
+    }
+
+    // 3. Bereavement Validation
+    if (isBereavement) {
+      if (!data.bereavementRelationship) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Relationship is required.",
+          path: ["bereavementRelationship"],
+        });
+      }
+      if (
+        data.bereavementRelationship === "Other Immediate Family Member" &&
+        !data.bereavementRelationshipOther?.trim()
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Please mention your relationship with them.",
+          path: ["bereavementRelationshipOther"],
+        });
+      }
+    }
+
+    // 4. Wedding Validation
+    if (isWedding && !data.weddingCardImage) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Wedding card invitation is required.",
+        path: ["weddingCardImage"],
+      });
+    }
+
+    // 5. Election Validation
+    if (isElection && !data.voterIdImage) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Voter ID card is required.",
+        path: ["voterIdImage"],
+      });
+    }
+
+    // 6. Exam / L&D Validation
+    if (isExam || isLAndD) {
+      if (!data.examCourseName?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Course or Exam name is required.",
+          path: ["examCourseName"],
+        });
+      }
+      if (!data.examHallTicket) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Hall ticket or exam schedule image is required.",
+          path: ["examHallTicket"],
+        });
+      }
+    }
+
+    // 7. Vipassana Validation
+    if (isVipassanaCourse || isVipassanaSeva) {
+      if (!data.vipassanaDocuments || data.vipassanaDocuments.length === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "At least one booking confirmation or completion certificate is required.",
+          path: ["vipassanaDocuments"],
+        });
+      }
+    }
   });
+
+interface FileUploadFieldProps {
+  label: string;
+  accept: string;
+  multiple?: boolean;
+  value: any;
+  onChange: (value: any) => void;
+  error?: string;
+}
+
+export function FileUploadField({
+  label,
+  accept,
+  multiple = false,
+  value,
+  onChange,
+  error,
+}: FileUploadFieldProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files) return;
+    const selectedFiles = Array.from(e.target.files);
+
+    if (multiple) {
+      const currentFiles = Array.isArray(value) ? value : [];
+      const newFiles = [...currentFiles, ...selectedFiles];
+      onChange(newFiles);
+    } else {
+      onChange(selectedFiles[0] || undefined);
+    }
+  };
+
+  const removeFile = (indexToRemove: number) => {
+    if (multiple && Array.isArray(value)) {
+      const newFiles = value.filter((_, idx) => idx !== indexToRemove);
+      onChange(newFiles.length > 0 ? newFiles : undefined);
+    } else {
+      onChange(undefined);
+    }
+  };
+
+  const filesList =
+    multiple && Array.isArray(value)
+      ? value
+      : value instanceof File
+        ? [value]
+        : [];
+
+  return (
+    <div className="space-y-2">
+      <FormLabel className="text-sm font-semibold text-foreground">
+        {label}
+      </FormLabel>
+      <div
+        onClick={() => fileInputRef.current?.click()}
+        className={cn(
+          "border-2 border-dashed border-input rounded-lg p-6 text-center cursor-pointer hover:bg-accent/50 hover:border-primary/50 transition duration-200",
+          error && "border-destructive hover:border-destructive"
+        )}
+      >
+        <input
+          type="file"
+          ref={fileInputRef}
+          accept={accept}
+          multiple={multiple}
+          onChange={handleFileChange}
+          className="hidden"
+        />
+        <div className="flex flex-col items-center justify-center space-y-2">
+          <div className="p-3 bg-muted rounded-full text-muted-foreground">
+            <Upload className="h-5 w-5" />
+          </div>
+          <div className="text-sm font-medium">
+            Click to upload {multiple ? "files" : "a file"}
+          </div>
+          <div className="text-xs text-muted-foreground">
+            {accept.includes("pdf")
+              ? "Allowed formats: PDF, Images"
+              : "Allowed formats: Images only"}
+          </div>
+        </div>
+      </div>
+
+      {filesList.length > 0 && (
+        <div className="mt-3 space-y-2">
+          {filesList.map((file, idx) => (
+            <div
+              key={idx}
+              className="flex items-center justify-between p-2.5 bg-muted/30 rounded-md border text-sm"
+            >
+              <div className="flex items-center space-x-2.5 truncate">
+                <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                <span className="font-medium truncate max-w-[200px] sm:max-w-xs">
+                  {file.name}
+                </span>
+                <span className="text-xs text-muted-foreground flex-shrink-0">
+                  ({(file.size / (1024 * 1024)).toFixed(2)} MB)
+                </span>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  removeFile(idx);
+                }}
+                className="h-8 w-8 p-0 text-destructive hover:bg-destructive/10 hover:text-destructive flex-shrink-0"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+      {error && (
+        <p className="text-[0.8rem] font-medium text-destructive">{error}</p>
+      )}
+    </div>
+  );
+}
 
 interface NewLeaveRequestDialogProps {
   userEmail: string;
@@ -125,20 +359,50 @@ export function NewLeaveRequestDialog({
         const res = await apiClient.get(API_PATHS.LEAVES_BALANCES);
         const balances = Array.isArray(res.data?.balances)
           ? res.data.balances
-          : [];
-        const mapped = balances
+          : Array.isArray(res.data)
+            ? res.data
+            : [];
+        const filtered = balances
           .filter((b: any) => (b.balanceHours ?? 0) > 0)
-          .map((b: any) => ({
-            id: b.leaveType?.id ?? b.leaveTypeId,
-            code: b.leaveType?.code,
-            name: b.leaveType?.name,
-            paid: b.leaveType?.paid,
-            requiresApproval: b.leaveType?.requiresApproval,
-            balanceHours: b.balanceHours ?? 0,
-          }));
-        if (isMounted) setLeaveTypes(mapped);
-      } catch {
-        if (isMounted) setLeaveTypes([]);
+          .map((b: any) => {
+            const lt = b.leaveType || {};
+            return {
+              id: lt.id ?? b.leaveTypeId,
+              code: lt.code,
+              name: lt.name,
+              paid: lt.paid,
+              requiresApproval: lt.requiresApproval,
+              description: lt.description,
+              maxPerRequestHours: lt.maxPerRequestHours,
+              balanceHours: b.balanceHours ?? 0,
+            } as LeaveTypeWithBalance;
+          });
+
+        if (isMounted) {
+          setLeaveTypes(filtered);
+        }
+      } catch (error) {
+        try {
+          const res2 = await apiClient.get(API_PATHS.LEAVES_TYPES);
+          const types = Array.isArray(res2.data) ? res2.data : [];
+          if (isMounted) {
+            setLeaveTypes(
+              types.map((lt: any) => ({
+                id: lt.id,
+                code: lt.code,
+                name: lt.name,
+                paid: lt.paid,
+                requiresApproval: lt.requiresApproval,
+                description: lt.description,
+                maxPerRequestHours: lt.maxPerRequestHours,
+                balanceHours: 0,
+              }))
+            );
+          }
+        } catch (err) {
+          console.error("Error fetching leave types/balances:", error, err);
+          if (isMounted) setLeaveTypes([]);
+        }
       }
     }
     fetchLeaveTypes();
@@ -150,14 +414,47 @@ export function NewLeaveRequestDialog({
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
+      employeeEmail: userEmail,
       leaveType: "",
-      reason: "",
       startDate: undefined,
       endDate: undefined,
       durationType: "",
       halfDaySegment: "",
+      bereavementRelationship: "",
+      bereavementRelationshipOther: "",
+      weddingCardImage: undefined,
+      voterIdImage: undefined,
+      examCourseName: "",
+      examHallTicket: undefined,
+      vipassanaDocuments: [],
     },
   });
+
+  const watchLeaveType = form.watch("leaveType");
+  const watchBereavementRelationship = form.watch("bereavementRelationship");
+
+  const selectedType = leaveTypes.find((t) => t.code === watchLeaveType);
+  const typeName = selectedType?.name.toLowerCase().trim() || "";
+  const typeCode = selectedType?.code.toLowerCase().trim() || "";
+
+  const isBereavement = typeName.includes("bereavement") || typeCode === "bl";
+  const isWedding = typeName.includes("wedding") || typeCode === "wd" || typeCode === "wdl";
+  const isExam = typeName.includes("exam") || typeCode === "ex" || typeCode === "exl";
+  const isElection = (typeName.includes("election") || typeCode === "el") && !isExam;
+  const isLAndD = typeName.includes("lnd") || typeName.includes("l&d") || typeName.includes("learning") || typeCode === "ld" || typeCode === "ldl";
+  const isVipassanaCourse = typeName.includes("vipassana_course") || typeName.includes("vipassana-course") || typeName.includes("vipassana course") || typeCode === "vcl";
+  const isVipassanaSeva = typeName.includes("vipassana_seva") || typeName.includes("vipassana-seva") || typeName.includes("vipassana seva") || typeCode === "vsl";
+
+  // Reset leave type specific fields whenever leaveType changes
+  useEffect(() => {
+    form.setValue("bereavementRelationship", "");
+    form.setValue("bereavementRelationshipOther", "");
+    form.setValue("weddingCardImage", undefined);
+    form.setValue("voterIdImage", undefined);
+    form.setValue("examCourseName", "");
+    form.setValue("examHallTicket", undefined);
+    form.setValue("vipassanaDocuments", []);
+  }, [watchLeaveType, form]);
 
   useEffect(() => {
     if (!open || !prefilledDate) return;
@@ -209,14 +506,15 @@ export function NewLeaveRequestDialog({
   const watchDurationType = form.watch("durationType");
 
   useEffect(() => {
+    if (isElection) return; // Managed separately for single date picker
     if (dateRange?.from && dateRange?.to) {
-      form.setValue("startDate", dateRange.from);
-      form.setValue("endDate", dateRange.to);
+      form.setValue("startDate", dateRange.from, { shouldValidate: true });
+      form.setValue("endDate", dateRange.to, { shouldValidate: true });
     } else if (dateRange?.from && !dateRange?.to) {
-      form.setValue("startDate", dateRange.from);
-      form.setValue("endDate", dateRange.from);
+      form.setValue("startDate", dateRange.from, { shouldValidate: true });
+      form.setValue("endDate", dateRange.from, { shouldValidate: true });
     }
-  }, [dateRange, form]);
+  }, [dateRange, form, isElection]);
 
   useEffect(() => {
     const id = setTimeout(() => {
@@ -224,6 +522,24 @@ export function NewLeaveRequestDialog({
     }, 500);
     return () => clearTimeout(id);
   }, [watchStartDate, watchEndDate, watchDurationType, validateLeaveConflict]);
+
+  const handleSingleDateSelect = (date: Date | undefined) => {
+    if (date) {
+      setDateRange({ from: date, to: date });
+      form.setValue("startDate", date, { shouldValidate: true, shouldDirty: true });
+      form.setValue("endDate", date, { shouldValidate: true, shouldDirty: true });
+      setDateRangeOpen(false);
+    } else {
+      setDateRange(undefined);
+      form.setValue("startDate", undefined as any, { shouldValidate: true, shouldDirty: true });
+      form.setValue("endDate", undefined as any, { shouldValidate: true, shouldDirty: true });
+    }
+  };
+
+  const disabledDates = (date: Date) => {
+    if (date < new Date(1900, 0, 1)) return true;
+    return false;
+  };
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsSubmitting(true);
@@ -250,20 +566,34 @@ export function NewLeaveRequestDialog({
         return;
       }
 
-      const start = new Date(values.startDate);
-      const end = new Date(values.endDate);
-      const days =
-        Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) +
-        1;
-      const hours =
-        values.durationType === "full_day" ? days * 8 : days * 4;
+      // Calculate working hours excluding off-days and holidays
+      const netDays = await calculateLeaveDays(values.startDate, values.endDate);
 
-      const payload: Record<string, unknown> = {
+      if (netDays === 0) {
+        toast.error("Selected date range consists only of non-working days or holidays");
+        setIsSubmitting(false);
+        return;
+      }
+
+      let hours = 0;
+      if (values.durationType === "full_day") {
+        hours = netDays * 8;
+      } else if (values.durationType === "half_day") {
+        hours = netDays * 4;
+      }
+
+      const payload: {
+        leaveTypeId: number;
+        startDate: string;
+        endDate: string;
+        hours: number;
+        durationType: string;
+        halfDaySegment?: string;
+      } = {
         leaveTypeId: selectedLeaveType.id,
         startDate: format(values.startDate, DATE_FORMATS.API),
         endDate: format(values.endDate, DATE_FORMATS.API),
         hours,
-        reason: values.reason,
         durationType: values.durationType,
       };
       if (values.durationType === "half_day" && values.halfDaySegment) {
@@ -288,12 +618,19 @@ export function NewLeaveRequestDialog({
           );
         }
         form.reset({
+          employeeEmail: userEmail,
           leaveType: "",
-          reason: "",
           startDate: undefined,
           endDate: undefined,
           durationType: "",
           halfDaySegment: "",
+          bereavementRelationship: "",
+          bereavementRelationshipOther: "",
+          weddingCardImage: undefined,
+          voterIdImage: undefined,
+          examCourseName: "",
+          examHallTicket: undefined,
+          vipassanaDocuments: [],
         });
         setSelectedDurationType("");
         setValidationError(null);
@@ -383,30 +720,189 @@ export function NewLeaveRequestDialog({
               )}
             />
 
-            <FormField
-              control={form.control}
-              name="reason"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Reason for Leave</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      placeholder="Please provide a reason for your leave request..."
-                      className="min-h-[80px] resize-none"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            {/* Conditional Bereavement Fields */}
+            {isBereavement && (
+              <div className="space-y-4 border-l-2 border-primary/20 pl-4 py-1">
+                <FormField
+                  control={form.control}
+                  name="bereavementRelationship"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        Deepest condolences for your loss. Please describe your relationship to the deceased
+                      </FormLabel>
+                      <Select
+                        value={field.value || ""}
+                        onValueChange={field.onChange}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select relationship" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="Parent">Parent</SelectItem>
+                          <SelectItem value="Child">Child</SelectItem>
+                          <SelectItem value="Other Immediate Family Member">
+                            Other Immediate Family Member
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
+                {watchBereavementRelationship === "Other Immediate Family Member" && (
+                  <FormField
+                    control={form.control}
+                    name="bereavementRelationshipOther"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Please mention your relationship with them</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="Describe your relationship"
+                            {...field}
+                            value={field.value || ""}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+              </div>
+            )}
+
+            {/* Conditional Wedding Fields */}
+            {isWedding && (
+              <div className="space-y-4 border-l-2 border-primary/20 pl-4 py-1">
+                <Alert className="bg-primary/5 border-primary/20">
+                  <AlertCircle className="h-4 w-4 text-primary" />
+                  <AlertTitle className="text-primary font-semibold">
+                    Wedding Congratulations!
+                  </AlertTitle>
+                  <AlertDescription className="text-foreground">
+                    Heartiest congratulations from NavGurukul! We wish you a lifetime of happiness and love! ❤️
+                  </AlertDescription>
+                </Alert>
+
+                <FormField
+                  control={form.control}
+                  name="weddingCardImage"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <FileUploadField
+                          label="Upload an image of your wedding card invitation"
+                          accept="image/*"
+                          value={field.value}
+                          onChange={field.onChange}
+                          error={form.formState.errors.weddingCardImage?.message as string}
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+              </div>
+            )}
+
+            {/* Conditional Election Fields */}
+            {isElection && (
+              <div className="space-y-4 border-l-2 border-primary/20 pl-4 py-1">
+                <FormField
+                  control={form.control}
+                  name="voterIdImage"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <FileUploadField
+                          label="Upload your Voter ID card"
+                          accept="image/*"
+                          value={field.value}
+                          onChange={field.onChange}
+                          error={form.formState.errors.voterIdImage?.message as string}
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+              </div>
+            )}
+
+            {/* Conditional Exam & L&D Fields */}
+            {(isExam || isLAndD) && (
+              <div className="space-y-4 border-l-2 border-primary/20 pl-4 py-1">
+                <FormField
+                  control={form.control}
+                  name="examCourseName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Course or Exam Name</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="Enter course or exam name"
+                          {...field}
+                          value={field.value || ""}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="examHallTicket"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <FileUploadField
+                          label="Upload your hall ticket or exam schedule image with the university’s letterhead"
+                          accept="image/*,application/pdf"
+                          value={field.value}
+                          onChange={field.onChange}
+                          error={form.formState.errors.examHallTicket?.message as string}
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+              </div>
+            )}
+
+            {/* Conditional Vipassana Fields */}
+            {(isVipassanaCourse || isVipassanaSeva) && (
+              <div className="space-y-4 border-l-2 border-primary/20 pl-4 py-1">
+                <FormField
+                  control={form.control}
+                  name="vipassanaDocuments"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <FileUploadField
+                          label="Upload your booking confirmation and/or completion certificate"
+                          accept="image/*,application/pdf"
+                          multiple
+                          value={field.value}
+                          onChange={field.onChange}
+                          error={form.formState.errors.vipassanaDocuments?.message as string}
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+              </div>
+            )}
+
+            {/* Date Selection */}
             <FormField
               control={form.control}
               name="startDate"
               render={() => (
                 <FormItem className="flex flex-col">
-                  <FormLabel>Leave Date Range</FormLabel>
+                  <FormLabel>{isElection ? "Leave Date" : "Leave Date Range"}</FormLabel>
                   <Popover
                     modal
                     open={dateRangeOpen}
@@ -423,17 +919,21 @@ export function NewLeaveRequestDialog({
                       >
                         <CalendarIcon className="mr-2 h-4 w-4" />
                         {dateRange?.from ? (
-                          dateRange.to ? (
+                          isElection ||
+                          !dateRange.to ||
+                          format(dateRange.from, DATE_FORMATS.DISPLAY) ===
+                            format(dateRange.to, DATE_FORMATS.DISPLAY) ? (
+                            format(dateRange.from, DATE_FORMATS.DISPLAY)
+                          ) : (
                             <>
                               {format(dateRange.from, DATE_FORMATS.DISPLAY)}{" "}
-                              –{" "}
-                              {format(dateRange.to, DATE_FORMATS.DISPLAY)}
+                              – {format(dateRange.to, DATE_FORMATS.DISPLAY)}
                             </>
-                          ) : (
-                            format(dateRange.from, DATE_FORMATS.DISPLAY)
                           )
                         ) : (
-                          <span>Pick a date range</span>
+                          <span>
+                            {isElection ? "Pick a date" : "Pick a date range"}
+                          </span>
                         )}
                       </Button>
                     </PopoverTrigger>
@@ -444,22 +944,38 @@ export function NewLeaveRequestDialog({
                       sideOffset={8}
                       style={{ zIndex: 9999 }}
                     >
-                      <Calendar
-                        mode="range"
-                        defaultMonth={dateRange?.from}
-                        selected={dateRange}
-                        onSelect={(range) => {
-                          setDateRange(range);
-                          if (range?.from && range?.to) {
-                            setDateRangeOpen(false);
-                          }
-                        }}
-                        numberOfMonths={2}
-                        disabled={(date) => date < new Date(1900, 0, 1)}
-                        initialFocus
-                      />
+                      {isElection ? (
+                        <Calendar
+                          mode="single"
+                          defaultMonth={dateRange?.from}
+                          selected={dateRange?.from}
+                          onSelect={handleSingleDateSelect}
+                          disabled={disabledDates}
+                          initialFocus
+                        />
+                      ) : (
+                        <Calendar
+                          mode="range"
+                          defaultMonth={dateRange?.from}
+                          selected={dateRange}
+                          onSelect={(range) => {
+                            setDateRange(range);
+                            if (range?.from && range?.to) {
+                              setDateRangeOpen(false);
+                            }
+                          }}
+                          numberOfMonths={2}
+                          disabled={disabledDates}
+                          initialFocus
+                        />
+                      )}
                     </PopoverContent>
                   </Popover>
+                  <FormDescription>
+                    {isElection
+                      ? "Click to select the date of your election leave"
+                      : "Click to select start date, then click end date for range"}
+                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
