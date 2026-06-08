@@ -880,8 +880,8 @@ export function NewLeaveRequestDialog({
               </div>
             )}
 
-            {/* Conditional Exam & L&D Fields */}
-            {(isExam || isLAndD) && (
+            {/* Conditional Exam Fields */}
+            {isExam && (
               <div className="space-y-4 border-primary/20 py-1">
                 <FormField
                   control={form.control}
@@ -909,6 +909,47 @@ export function NewLeaveRequestDialog({
                       <FormControl>
                         <FileUploadField
                           label="Upload your hall ticket or exam schedule image with the university’s letterhead"
+                          accept="image/*,application/pdf"
+                          value={field.value}
+                          onChange={field.onChange}
+                          error={form.formState.errors.examHallTicket?.message as string}
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+              </div>
+            )}
+
+            {/* Conditional L&D Fields */}
+            {isLAndD && (
+              <div className="space-y-4 border-primary/20 py-1">
+                <FormField
+                  control={form.control}
+                  name="examCourseName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Learning program, course, workshop, or event name</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="Enter learning program, course, workshop, or event name"
+                          {...field}
+                          value={field.value || ""}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="examHallTicket"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <FileUploadField
+                          label="Upload supporting document"
                           accept="image/*,application/pdf"
                           value={field.value}
                           onChange={field.onChange}
