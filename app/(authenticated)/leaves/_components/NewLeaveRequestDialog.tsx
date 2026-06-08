@@ -334,6 +334,7 @@ export function NewLeaveRequestDialog({
   const [selectedDurationType, setSelectedDurationType] = useState("");
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [dateRangeOpen, setDateRangeOpen] = useState(false);
+  const previousLeaveTypeRef = useRef("");
 
   const durationTypes = mockDataService.getDurationTypes();
 
@@ -445,8 +446,27 @@ export function NewLeaveRequestDialog({
   const isVipassanaCourse = typeName.includes("vipassana_course") || typeName.includes("vipassana-course") || typeName.includes("vipassana course") || typeCode === "vcl";
   const isVipassanaSeva = typeName.includes("vipassana_seva") || typeName.includes("vipassana-seva") || typeName.includes("vipassana seva") || typeCode === "vsl";
 
-  // Reset leave type specific fields whenever leaveType changes
+  // Reset all fields whenever leaveType changes (on selecting leave type)
   useEffect(() => {
+    if (!open) {
+      previousLeaveTypeRef.current = "";
+      return;
+    }
+
+    if (!watchLeaveType) return;
+
+    const isFirstSelection = previousLeaveTypeRef.current === "";
+    const hasPrefilledDate = !!prefilledDate;
+    const shouldResetDates = !isFirstSelection || !hasPrefilledDate;
+
+    if (shouldResetDates) {
+      form.setValue("startDate", undefined as unknown as Date);
+      form.setValue("endDate", undefined as unknown as Date);
+      setDateRange(undefined);
+    }
+
+    form.setValue("durationType", "");
+    form.setValue("halfDaySegment", "");
     form.setValue("bereavementRelationship", "");
     form.setValue("bereavementRelationshipOther", "");
     form.setValue("weddingCardImage", undefined);
@@ -454,7 +474,11 @@ export function NewLeaveRequestDialog({
     form.setValue("examCourseName", "");
     form.setValue("examHallTicket", undefined);
     form.setValue("vipassanaDocuments", []);
-  }, [watchLeaveType, form]);
+    setSelectedDurationType("");
+    setValidationError(null);
+
+    previousLeaveTypeRef.current = watchLeaveType;
+  }, [watchLeaveType, open, prefilledDate, form]);
 
   useEffect(() => {
     if (!open || !prefilledDate) return;
@@ -472,6 +496,31 @@ export function NewLeaveRequestDialog({
       shouldValidate: true,
     });
   }, [form, open, prefilledDate]);
+
+  useEffect(() => {
+    if (!open) {
+      form.reset({
+        employeeEmail: userEmail,
+        leaveType: "",
+        startDate: undefined,
+        endDate: undefined,
+        durationType: "",
+        halfDaySegment: "",
+        bereavementRelationship: "",
+        bereavementRelationshipOther: "",
+        weddingCardImage: undefined,
+        voterIdImage: undefined,
+        examCourseName: "",
+        examHallTicket: undefined,
+        vipassanaDocuments: [],
+      });
+      setSelectedDurationType("");
+      setValidationError(null);
+      setDateRange(undefined);
+      setDateRangeOpen(false);
+    }
+  }, [open, userEmail, form]);
+
 
   const validateLeaveConflict = useCallback(
     async (startDate?: Date, endDate?: Date, durationType?: string) => {
@@ -722,7 +771,7 @@ export function NewLeaveRequestDialog({
 
             {/* Conditional Bereavement Fields */}
             {isBereavement && (
-              <div className="space-y-4 border-l-2 border-primary/20 pl-4 py-1">
+              <div className="space-y-4  border-primary/20 py-1">
                 <FormField
                   control={form.control}
                   name="bereavementRelationship"
@@ -777,10 +826,10 @@ export function NewLeaveRequestDialog({
 
             {/* Conditional Wedding Fields */}
             {isWedding && (
-              <div className="space-y-4 border-l-2 border-primary/20 pl-4 py-1">
+              <div className="space-y-4 border-primary/20 py-1">
                 <Alert className="bg-primary/5 border-primary/20">
-                  <AlertCircle className="h-4 w-4 text-primary" />
-                  <AlertTitle className="text-primary font-semibold">
+                  <AlertCircle className="h-4 w-4 !text-foreground" />
+                  <AlertTitle className="text-foreground font-semibold">
                     Wedding Congratulations!
                   </AlertTitle>
                   <AlertDescription className="text-foreground">
@@ -810,7 +859,7 @@ export function NewLeaveRequestDialog({
 
             {/* Conditional Election Fields */}
             {isElection && (
-              <div className="space-y-4 border-l-2 border-primary/20 pl-4 py-1">
+              <div className="space-y-4  border-primary/20 py-1">
                 <FormField
                   control={form.control}
                   name="voterIdImage"
@@ -833,7 +882,7 @@ export function NewLeaveRequestDialog({
 
             {/* Conditional Exam & L&D Fields */}
             {(isExam || isLAndD) && (
-              <div className="space-y-4 border-l-2 border-primary/20 pl-4 py-1">
+              <div className="space-y-4 border-primary/20 py-1">
                 <FormField
                   control={form.control}
                   name="examCourseName"
@@ -874,7 +923,7 @@ export function NewLeaveRequestDialog({
 
             {/* Conditional Vipassana Fields */}
             {(isVipassanaCourse || isVipassanaSeva) && (
-              <div className="space-y-4 border-l-2 border-primary/20 pl-4 py-1">
+              <div className="space-y-4 border-primary/20 py-1">
                 <FormField
                   control={form.control}
                   name="vipassanaDocuments"
