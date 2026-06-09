@@ -95,14 +95,13 @@ const formSchema = z
   })
   .superRefine((data, ctx) => {
     const code = (data.leaveType || "").toLowerCase().trim();
-
     const isBereavement = code.includes("bereavement") || code === "bl";
     const isWedding = code.includes("wedding") || code === "wd" || code === "wdl";
-    const isExam = code.includes("exam") || code === "ex" || code === "exl";
-    const isElection = (code.includes("election") || code === "el") && !isExam;
+    const isExam = code.includes("exam") || code === "ex" || code === "el";
+    const isElection = (code.includes("election") || code === "ecl") && !isExam;
     const isLAndD = code.includes("lnd") || code.includes("l&d") || code.includes("learning") || code === "ld" || code === "ldl";
     const isVipassanaCourse = code.includes("vipassana_course") || code.includes("vipassana-course") || code.includes("vipassana course") || code === "vcl";
-    const isVipassanaSeva = code.includes("vipassana_seva") || code.includes("vipassana-seva") || code.includes("vipassana seva") || code === "vsl";
+    const isVipassanaSeva = code.includes("vipassana_seva") || code.includes("vipassana-seva") || code.includes("vipassana seva") || code === "vs";
 
     // 1. Date Range
     if (data.startDate && data.endDate && data.endDate < data.startDate) {
@@ -440,11 +439,11 @@ export function NewLeaveRequestDialog({
 
   const isBereavement = typeName.includes("bereavement") || typeCode === "bl";
   const isWedding = typeName.includes("wedding") || typeCode === "wd" || typeCode === "wdl";
-  const isExam = typeName.includes("exam") || typeCode === "ex" || typeCode === "exl";
-  const isElection = (typeName.includes("election") || typeCode === "el") && !isExam;
+  const isExam = typeName.includes("exam") || typeCode === "ex" || typeCode === "el";
+  const isElection = (typeName.includes("election") || typeCode === "ecl") && !isExam;
   const isLAndD = typeName.includes("lnd") || typeName.includes("l&d") || typeName.includes("learning") || typeCode === "ld" || typeCode === "ldl";
   const isVipassanaCourse = typeName.includes("vipassana_course") || typeName.includes("vipassana-course") || typeName.includes("vipassana course") || typeCode === "vcl";
-  const isVipassanaSeva = typeName.includes("vipassana_seva") || typeName.includes("vipassana-seva") || typeName.includes("vipassana seva") || typeCode === "vsl";
+  const isVipassanaSeva = typeName.includes("vipassana_seva") || typeName.includes("vipassana-seva") || typeName.includes("vipassana seva") || typeCode === "vs";
 
   // Reset all fields whenever leaveType changes (on selecting leave type)
   useEffect(() => {
@@ -631,27 +630,85 @@ export function NewLeaveRequestDialog({
         hours = netDays * 4;
       }
 
-      const payload: {
-        leaveTypeId: number;
-        startDate: string;
-        endDate: string;
-        hours: number;
-        durationType: string;
-        halfDaySegment?: string;
-      } = {
-        leaveTypeId: selectedLeaveType.id,
-        startDate: format(values.startDate, DATE_FORMATS.API),
-        endDate: format(values.endDate, DATE_FORMATS.API),
-        hours,
-        durationType: values.durationType,
-      };
+      const code = (selectedLeaveType.code || "").toLowerCase().trim();
+
+      const isBereavement = code.includes("bereavement") || code === "bl";
+      const isWedding = code.includes("wedding") || code === "wd" || code === "wdl";
+      const isExam = code.includes("exam") || code === "ex" || code === "el";
+      const isElection = (code.includes("election") || code === "ecl") && !isExam;
+      const isLAndD = code.includes("lnd") || code.includes("l&d") || code.includes("learning") || code === "ld" || code === "ldl";
+      const isVipassanaCourse = code.includes("vipassana_course") || code.includes("vipassana-course") || code.includes("vipassana course") || code === "vcl";
+      const isVipassanaSeva = code.includes("vipassana_seva") || code.includes("vipassana-seva") || code.includes("vipassana seva") || code === "vs";
+
+      const formData = new FormData();
+      formData.append("leaveTypeId", String(selectedLeaveType.id));
+      formData.append("startDate", format(values.startDate, DATE_FORMATS.API));
+      formData.append("endDate", format(values.endDate, DATE_FORMATS.API));
+      formData.append("hours", String(hours));
+      formData.append("durationType", values.durationType);
+      
       if (values.durationType === "half_day" && values.halfDaySegment) {
-        payload.halfDaySegment = values.halfDaySegment;
+        formData.append("halfDaySegment", values.halfDaySegment);
       }
+
+      if (isBereavement) {
+        if (values.bereavementRelationship) {
+          formData.append("relationship", values.bereavementRelationship);
+        }
+        if (values.bereavementRelationshipOther) {
+          formData.append("relationshipDetails", values.bereavementRelationshipOther);
+        }
+      }
+
+      if (isWedding && values.weddingCardImage) {
+        formData.append("document", values.weddingCardImage);
+      }
+
+      if (isElection && values.voterIdImage) {
+        formData.append("document", values.voterIdImage);
+
+      }
+
+      if (isExam) {
+        if (values.examCourseName) {
+          formData.append("courseOrProgrammeName", values.examCourseName);
+        }
+        if (values.examHallTicket) {
+          formData.append("document", values.examHallTicket);
+        }
+      }
+
+      if (isLAndD) {
+        if (values.examCourseName) {
+          formData.append("courseOrProgrammeName", values.examCourseName);
+        }
+        if (values.examHallTicket) {
+          formData.append("document", values.examHallTicket);
+        }
+      }
+
+      if ((isVipassanaCourse || isVipassanaSeva) && values.vipassanaDocuments && values.vipassanaDocuments.length > 0) {
+        values.vipassanaDocuments.forEach((file: any) => {
+          formData.append("document", file);
+        });
+      }
+
+      // Verify that files are present in the final payload before submission
+      const filesInPayload: string[] = [];
+      formData.forEach((value, key) => {
+        if (value instanceof File) {
+          filesInPayload.push(`${key}: File(${value.name}, ${value.size} bytes)`);
+        }
+      });
 
       const response = await apiClient.post(
         API_PATHS.LEAVES_REQUESTS_POST,
-        payload
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
       );
       if (response.status === 200 || response.status === 201) {
         toast.success("Leave request submitted successfully!");
@@ -790,9 +847,9 @@ export function NewLeaveRequestDialog({
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="Parent">Parent</SelectItem>
-                          <SelectItem value="Child">Child</SelectItem>
-                          <SelectItem value="Other Immediate Family Member">
+                          <SelectItem value="parent">Parent</SelectItem>
+                          <SelectItem value="child">Child</SelectItem>
+                          <SelectItem value="other_immediate_family_member">
                             Other Immediate Family Member
                           </SelectItem>
                         </SelectContent>
@@ -802,7 +859,7 @@ export function NewLeaveRequestDialog({
                   )}
                 />
 
-                {watchBereavementRelationship === "Other Immediate Family Member" && (
+                {watchBereavementRelationship === "other_immediate_family_member" && (
                   <FormField
                     control={form.control}
                     name="bereavementRelationshipOther"

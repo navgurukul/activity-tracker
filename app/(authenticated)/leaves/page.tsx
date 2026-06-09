@@ -256,11 +256,11 @@ export default function LeavesPage() {
 
       const isBereavement = typeName.includes("bereavement") || typeCode === "bl";
       const isWedding = typeName.includes("wedding") || typeCode === "wd" || typeCode === "wdl";
-      const isExam = typeName.includes("exam") || typeCode === "ex" || typeCode === "exl";
-      const isElection = (typeName.includes("election") || typeCode === "el") && !isExam;
+      const isExam = typeName.includes("exam") || typeCode === "ex" || typeCode === "el";
+      const isElection = (typeName.includes("election") || typeCode === "ecl") && !isExam;
       const isLAndD = typeName.includes("lnd") || typeName.includes("l&d") || typeName.includes("learning") || typeCode === "ld" || typeCode === "ldl";
       const isVipassanaCourse = typeName.includes("vipassana_course") || typeName.includes("vipassana-course") || typeName.includes("vipassana course") || typeCode === "vcl";
-      const isVipassanaSeva = typeName.includes("vipassana_seva") || typeName.includes("vipassana-seva") || typeName.includes("vipassana seva") || typeCode === "vsl";
+      const isVipassanaSeva = typeName.includes("vipassana_seva") || typeName.includes("vipassana-seva") || typeName.includes("vipassana seva") || typeCode === "vs";
 
       // 1. Date Range
       if (data.startDate && data.endDate && data.endDate < data.startDate) {
@@ -378,11 +378,11 @@ export default function LeavesPage() {
 
   const isAdminBereavement = adminTypeName.includes("bereavement") || adminTypeCode === "bl";
   const isAdminWedding = adminTypeName.includes("wedding") || adminTypeCode === "wd" || adminTypeCode === "wdl";
-  const isAdminExam = adminTypeName.includes("exam") || adminTypeCode === "ex" || adminTypeCode === "exl";
-  const isAdminElection = (adminTypeName.includes("election") || adminTypeCode === "el") && !isAdminExam;
+  const isAdminExam = adminTypeName.includes("exam") || adminTypeCode === "ex" || adminTypeCode === "el";
+  const isAdminElection = (adminTypeName.includes("election") || adminTypeCode === "ecl") && !isAdminExam;
   const isAdminLAndD = adminTypeName.includes("lnd") || adminTypeName.includes("l&d") || adminTypeName.includes("learning") || adminTypeCode === "ld" || adminTypeCode === "ldl";
   const isAdminVipassanaCourse = adminTypeName.includes("vipassana_course") || adminTypeName.includes("vipassana-course") || adminTypeName.includes("vipassana course") || adminTypeCode === "vcl";
-  const isAdminVipassanaSeva = adminTypeName.includes("vipassana_seva") || adminTypeName.includes("vipassana-seva") || adminTypeName.includes("vipassana seva") || adminTypeCode === "vsl";
+  const isAdminVipassanaSeva = adminTypeName.includes("vipassana_seva") || adminTypeName.includes("vipassana-seva") || adminTypeName.includes("vipassana seva") || adminTypeCode === "vs";
 
   useEffect(() => {
     if (!adminApplyLeaveOpen) {
