@@ -488,6 +488,26 @@ export default function LeavesPage() {
     }
   }, [adminApplyLeaveOpen, adminApplyLeaveForm]);
 
+  useEffect(() => {
+    adminApplyLeaveForm.reset({
+      leaveType: "",
+      startDate: undefined,
+      endDate: undefined,
+      durationType: "",
+      halfDaySegment: "",
+      bereavementRelationship: "",
+      bereavementRelationshipOther: "",
+      weddingCardImage: undefined,
+      voterIdImage: undefined,
+      examCourseName: "",
+      examHallTicket: undefined,
+      vipassanaDocuments: [],
+    });
+    setAdminLeaveDateRange(undefined);
+    setAdminLeaveValidationError(null);
+    setIsAdminDatePickerOpen(false);
+  }, [adminApplyEmployeeUserId, adminApplyLeaveForm]);
+
   const durationTypes = mockDataService.getDurationTypes();
 
   const leavesPageSize = 10;
@@ -916,21 +936,68 @@ export default function LeavesPage() {
         const hours =
           values.durationType === "full_day" ? netDays * 8 : netDays * 4;
 
-        const payload: Record<string, unknown> = {
-          userId: adminApplyEmployeeUserId,
-          leaveTypeId: selectedLeaveType.id,
-          startDate: format(values.startDate, DATE_FORMATS.API),
-          endDate: format(values.endDate, DATE_FORMATS.API),
-          hours,
-          durationType: values.durationType,
-        };
+        const typeName = (selectedLeaveType.name || "").toLowerCase().trim();
+        const typeCode = (selectedLeaveType.code || "").toLowerCase().trim();
+
+        const isBereavement = typeName.includes("bereavement") || typeCode === "bl";
+        const isWedding = typeName.includes("wedding") || typeCode === "wd" || typeCode === "wdl";
+        const isExam = typeName.includes("exam") || typeCode === "ex" || typeCode === "el";
+        const isElection = (typeName.includes("election") || typeCode === "ecl") && !isExam;
+        const isLAndD = typeName.includes("lnd") || typeName.includes("l&d") || typeName.includes("learning") || typeCode === "ld" || typeCode === "ldl";
+        const isVipassanaCourse = typeName.includes("vipassana_course") || typeName.includes("vipassana-course") || typeName.includes("vipassana course") || typeCode === "vcl";
+        const isVipassanaSeva = typeName.includes("vipassana_seva") || typeName.includes("vipassana-seva") || typeName.includes("vipassana seva") || typeCode === "vs";
+
+        const formData = new FormData();
+        formData.append("userId", String(adminApplyEmployeeUserId));
+        formData.append("leaveTypeId", String(selectedLeaveType.id));
+        formData.append("startDate", format(values.startDate, DATE_FORMATS.API));
+        formData.append("endDate", format(values.endDate, DATE_FORMATS.API));
+        formData.append("hours", String(hours));
+        formData.append("durationType", values.durationType);
         if (values.durationType === "half_day" && values.halfDaySegment) {
-          payload.halfDaySegment = values.halfDaySegment;
+          formData.append("halfDaySegment", values.halfDaySegment);
+        }
+
+        if (isBereavement) {
+          if (values.bereavementRelationship) {
+            formData.append("relationship", values.bereavementRelationship);
+          }
+          if (values.bereavementRelationshipOther) {
+            formData.append("relationshipDetails", values.bereavementRelationshipOther);
+          }
+        }
+
+        if (isWedding && values.weddingCardImage) {
+          formData.append("document", values.weddingCardImage);
+        }
+
+        if (isElection && values.voterIdImage) {
+          formData.append("document", values.voterIdImage);
+        }
+
+        if (isExam || isLAndD) {
+          if (values.examCourseName) {
+            formData.append("courseOrProgrammeName", values.examCourseName);
+          }
+          if (values.examHallTicket) {
+            formData.append("document", values.examHallTicket);
+          }
+        }
+
+        if ((isVipassanaCourse || isVipassanaSeva) && values.vipassanaDocuments && values.vipassanaDocuments.length > 0) {
+          values.vipassanaDocuments.forEach((file: any) => {
+            formData.append("document", file);
+          });
         }
 
         const response = await apiClient.post(
           API_PATHS.LEAVES_ADMIN_APPLY,
-          payload
+          formData,
+          {
+            headers: {
+              "Content-Type": "multipart/form-data",
+            },
+          }
         );
         if (response.status === 200 || response.status === 201) {
           toast.success(`Leave request submitted successfully for ${adminApplyEmployeeEmail || "employee"}`);
@@ -950,6 +1017,13 @@ export default function LeavesPage() {
             endDate: undefined,
             durationType: "",
             halfDaySegment: "",
+            bereavementRelationship: "",
+            bereavementRelationshipOther: "",
+            weddingCardImage: undefined,
+            voterIdImage: undefined,
+            examCourseName: "",
+            examHallTicket: undefined,
+            vipassanaDocuments: [],
           });
           setAdminLeaveDateRange(undefined);
           setIsAdminDatePickerOpen(false);
@@ -1015,11 +1089,11 @@ export default function LeavesPage() {
   useEffect(() => {
     if (isAdminElection) return; // Managed separately for single date picker
     if (adminLeaveDateRange?.from && adminLeaveDateRange?.to) {
-      adminApplyLeaveForm.setValue("startDate", adminLeaveDateRange.from);
-      adminApplyLeaveForm.setValue("endDate", adminLeaveDateRange.to);
+      adminApplyLeaveForm.setValue("startDate", adminLeaveDateRange.from, { shouldValidate: true, shouldDirty: true });
+      adminApplyLeaveForm.setValue("endDate", adminLeaveDateRange.to, { shouldValidate: true, shouldDirty: true });
     } else if (adminLeaveDateRange?.from && !adminLeaveDateRange?.to) {
-      adminApplyLeaveForm.setValue("startDate", adminLeaveDateRange.from);
-      adminApplyLeaveForm.setValue("endDate", adminLeaveDateRange.from);
+      adminApplyLeaveForm.setValue("startDate", adminLeaveDateRange.from, { shouldValidate: true, shouldDirty: true });
+      adminApplyLeaveForm.setValue("endDate", adminLeaveDateRange.from, { shouldValidate: true, shouldDirty: true });
     }
   }, [adminLeaveDateRange, adminApplyLeaveForm, isAdminElection]);
 
