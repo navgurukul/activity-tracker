@@ -247,7 +247,7 @@ export default function LeavesPage() {
       examHallTicket: z.any().optional(),
       
       // Vipassana fields
-      vipassanaDocuments: z.array(z.any()).optional(),
+      vipassanaDocuments: z.any().optional(),
     })
     .superRefine((data, ctx) => {
       const selectedType = adminLeaveTypes.find((t) => String(t.id) === data.leaveType);
@@ -328,6 +328,8 @@ export default function LeavesPage() {
             path: ["examCourseName"],
           });
         }
+      }
+      if (isExam) {
         if (!data.examHallTicket) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
@@ -339,10 +341,16 @@ export default function LeavesPage() {
 
       // 7. Vipassana Validation
       if (isVipassanaCourse || isVipassanaSeva) {
-        if (!data.vipassanaDocuments || data.vipassanaDocuments.length === 0) {
+        if (!data.vipassanaDocuments) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
             message: "At least one booking confirmation or completion certificate is required.",
+            path: ["vipassanaDocuments"],
+          });
+        } else if (data.vipassanaDocuments instanceof File && data.vipassanaDocuments.size > 10 * 1024 * 1024) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "File size must not exceed 10 MB.",
             path: ["vipassanaDocuments"],
           });
         }
@@ -363,7 +371,7 @@ export default function LeavesPage() {
       voterIdImage: undefined,
       examCourseName: "",
       examHallTicket: undefined,
-      vipassanaDocuments: [],
+      vipassanaDocuments: undefined,
     },
   });
 
@@ -408,7 +416,7 @@ export default function LeavesPage() {
     adminApplyLeaveForm.setValue("voterIdImage", undefined);
     adminApplyLeaveForm.setValue("examCourseName", "");
     adminApplyLeaveForm.setValue("examHallTicket", undefined);
-    adminApplyLeaveForm.setValue("vipassanaDocuments", []);
+    adminApplyLeaveForm.setValue("vipassanaDocuments", undefined);
     setAdminLeaveValidationError(null);
 
     previousAdminLeaveTypeRef.current = watchAdminLeaveType;
@@ -480,7 +488,7 @@ export default function LeavesPage() {
         voterIdImage: undefined,
         examCourseName: "",
         examHallTicket: undefined,
-        vipassanaDocuments: [],
+        vipassanaDocuments: undefined,
       });
       setAdminLeaveDateRange(undefined);
       setAdminLeaveValidationError(null);
@@ -501,7 +509,7 @@ export default function LeavesPage() {
       voterIdImage: undefined,
       examCourseName: "",
       examHallTicket: undefined,
-      vipassanaDocuments: [],
+      vipassanaDocuments: undefined,
     });
     setAdminLeaveDateRange(undefined);
     setAdminLeaveValidationError(null);
@@ -984,10 +992,8 @@ export default function LeavesPage() {
           }
         }
 
-        if ((isVipassanaCourse || isVipassanaSeva) && values.vipassanaDocuments && values.vipassanaDocuments.length > 0) {
-          values.vipassanaDocuments.forEach((file: any) => {
-            formData.append("document", file);
-          });
+        if ((isVipassanaCourse || isVipassanaSeva) && values.vipassanaDocuments) {
+          formData.append("document", values.vipassanaDocuments);
         }
 
         const response = await apiClient.post(
@@ -1023,7 +1029,7 @@ export default function LeavesPage() {
             voterIdImage: undefined,
             examCourseName: "",
             examHallTicket: undefined,
-            vipassanaDocuments: [],
+            vipassanaDocuments: undefined,
           });
           setAdminLeaveDateRange(undefined);
           setIsAdminDatePickerOpen(false);
@@ -2881,46 +2887,28 @@ export default function LeavesPage() {
                               </div>
                             )}
 
-                            {/* Conditional L&D Fields */}
-                            {isAdminLAndD && (
-                              <div className="space-y-4 border-primary/20 py-1">
-                                <FormField
-                                  control={adminApplyLeaveForm.control}
-                                  name="examCourseName"
-                                  render={({ field }) => (
-                                    <FormItem>
-                                      <FormLabel>Learning program, course, workshop, or event name</FormLabel>
-                                      <FormControl>
-                                        <Input
-                                          placeholder="Enter learning program, course, workshop, or event name"
-                                          {...field}
-                                          value={field.value || ""}
-                                        />
-                                      </FormControl>
-                                      <FormMessage />
-                                    </FormItem>
-                                  )}
-                                />
-
-                                <FormField
-                                  control={adminApplyLeaveForm.control}
-                                  name="examHallTicket"
-                                  render={({ field }) => (
-                                    <FormItem>
-                                      <FormControl>
-                                        <FileUploadField
-                                          label="Upload supporting document"
-                                          accept="image/*,application/pdf"
-                                          value={field.value}
-                                          onChange={field.onChange}
-                                          error={adminApplyLeaveForm.formState.errors.examHallTicket?.message as string}
-                                        />
-                                      </FormControl>
-                                    </FormItem>
-                                  )}
-                                />
-                              </div>
-                            )}
+                             {/* Conditional L&D Fields */}
+                             {isAdminLAndD && (
+                               <div className="space-y-4 border-primary/20 py-1">
+                                 <FormField
+                                   control={adminApplyLeaveForm.control}
+                                   name="examCourseName"
+                                   render={({ field }) => (
+                                     <FormItem>
+                                       <FormLabel>Learning program, course, workshop, or event name</FormLabel>
+                                       <FormControl>
+                                         <Input
+                                           placeholder="Enter learning program, course, workshop, or event name"
+                                           {...field}
+                                           value={field.value || ""}
+                                         />
+                                       </FormControl>
+                                       <FormMessage />
+                                     </FormItem>
+                                   )}
+                                 />
+                               </div>
+                             )}
 
                             {/* Conditional Vipassana Fields */}
                             {(isAdminVipassanaCourse || isAdminVipassanaSeva) && (
@@ -2934,7 +2922,6 @@ export default function LeavesPage() {
                                         <FileUploadField
                                           label="Upload the booking confirmation and/or completion certificate"
                                           accept="image/*,application/pdf"
-                                          multiple
                                           value={field.value}
                                           onChange={field.onChange}
                                           error={adminApplyLeaveForm.formState.errors.vipassanaDocuments?.message as string}

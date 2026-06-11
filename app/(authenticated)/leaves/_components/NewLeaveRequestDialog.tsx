@@ -63,6 +63,22 @@ interface LeaveTypeWithBalance {
   balanceHours: number;
 }
 
+interface RawLeaveType {
+  id: number;
+  code: string;
+  name: string;
+  paid: boolean;
+  requiresApproval: boolean;
+  description?: string;
+  maxPerRequestHours?: number;
+}
+
+interface RawLeaveBalance {
+  leaveTypeId: number;
+  balanceHours: number;
+  leaveType?: RawLeaveType;
+}
+
 const formSchema = z
   .object({
     employeeEmail: z.string().email(),
@@ -91,7 +107,7 @@ const formSchema = z
     examHallTicket: z.any().optional(),
     
     // Vipassana fields
-    vipassanaDocuments: z.array(z.any()).optional(),
+    vipassanaDocuments: z.any().optional(),
   })
   .superRefine((data, ctx) => {
     const code = (data.leaveType || "").toLowerCase().trim();
@@ -169,6 +185,8 @@ const formSchema = z
           path: ["examCourseName"],
         });
       }
+    }
+    if (isExam) {
       if (!data.examHallTicket) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -180,10 +198,16 @@ const formSchema = z
 
     // 7. Vipassana Validation
     if (isVipassanaCourse || isVipassanaSeva) {
-      if (!data.vipassanaDocuments || data.vipassanaDocuments.length === 0) {
+      if (!data.vipassanaDocuments) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: "At least one booking confirmation or completion certificate is required.",
+          path: ["vipassanaDocuments"],
+        });
+      } else if (data.vipassanaDocuments instanceof File && data.vipassanaDocuments.size > 10 * 1024 * 1024) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "File size must not exceed 10 MB.",
           path: ["vipassanaDocuments"],
         });
       }
@@ -355,54 +379,127 @@ export function NewLeaveRequestDialog({
     if (!open) return;
     let isMounted = true;
     async function fetchLeaveTypes() {
+      let balances: RawLeaveBalance[] = [];
+      let types: RawLeaveType[] = [];
+
       try {
         const res = await apiClient.get(API_PATHS.LEAVES_BALANCES);
-        const balances = Array.isArray(res.data?.balances)
+        balances = Array.isArray(res.data?.balances)
           ? res.data.balances
           : Array.isArray(res.data)
             ? res.data
             : [];
-        const filtered = balances
-          .filter((b: any) => (b.balanceHours ?? 0) > 0)
-          .map((b: any) => {
-            const lt = b.leaveType || {};
-            return {
-              id: lt.id ?? b.leaveTypeId,
-              code: lt.code,
-              name: lt.name,
-              paid: lt.paid,
-              requiresApproval: lt.requiresApproval,
-              description: lt.description,
-              maxPerRequestHours: lt.maxPerRequestHours,
-              balanceHours: b.balanceHours ?? 0,
-            } as LeaveTypeWithBalance;
+      } catch (error) {
+        console.error("Error fetching leave balances:", error);
+      }
+
+      try {
+        const res2 = await apiClient.get(API_PATHS.LEAVES_TYPES);
+        types = Array.isArray(res2.data) ? res2.data : [];
+      } catch (error) {
+        console.error("Error fetching leave types:", error);
+      }
+
+      const mergedList: LeaveTypeWithBalance[] = [];
+      const seenCodes = new Set<string>();
+
+      // 1. Process active balances with balanceHours > 0
+      balances.forEach((b: RawLeaveBalance) => {
+        const lt = b.leaveType || ({} as RawLeaveType);
+        const code = (lt.code || "").toLowerCase().trim();
+        if (code && (b.balanceHours ?? 0) > 0) {
+          seenCodes.add(code);
+          mergedList.push({
+            id: lt.id ?? b.leaveTypeId,
+            code: lt.code,
+            name: lt.name,
+            paid: lt.paid ?? true,
+            requiresApproval: lt.requiresApproval ?? true,
+            description: lt.description,
+            maxPerRequestHours: lt.maxPerRequestHours,
+            balanceHours: b.balanceHours ?? 0,
+          });
+        }
+      });
+
+      // 2. Ensure each of the 4 new leave types is in the list
+      const targets = [
+        { code: "maternity", name: "Maternity Leave", fallbackId: 101 },
+        { code: "parental", name: "Parental Leave", fallbackId: 102 },
+        { code: "srs", name: "SRS Leave", fallbackId: 103 },
+        { code: "adoption", name: "Adoption Leave", fallbackId: 104 },
+      ];
+
+      targets.forEach((target) => {
+        // Check if already added via balances
+        const isAlreadyAdded = Array.from(seenCodes).some(
+          (c) => c === target.code || c.includes(target.code)
+        ) || mergedList.some(
+          (lt) => lt.name.toLowerCase().trim() === target.name.toLowerCase().trim()
+        );
+
+        if (!isAlreadyAdded) {
+          // Find in types (fetched from /v1/leaves/types)
+          const apiType = types.find(
+            (t: RawLeaveType) =>
+              (t.code || "").toLowerCase().trim() === target.code ||
+              (t.name || "").toLowerCase().trim() === target.name.toLowerCase().trim()
+          );
+
+          // Find in balances even if balanceHours <= 0
+          const apiBalance = balances.find((b: RawLeaveBalance) => {
+            const lt = b.leaveType || ({} as RawLeaveType);
+            return (
+              (lt.code || "").toLowerCase().trim() === target.code ||
+              (lt.name || "").toLowerCase().trim() === target.name.toLowerCase().trim()
+            );
           });
 
-        if (isMounted) {
-          setLeaveTypes(filtered);
-        }
-      } catch (error) {
-        try {
-          const res2 = await apiClient.get(API_PATHS.LEAVES_TYPES);
-          const types = Array.isArray(res2.data) ? res2.data : [];
-          if (isMounted) {
-            setLeaveTypes(
-              types.map((lt: any) => ({
-                id: lt.id,
-                code: lt.code,
-                name: lt.name,
-                paid: lt.paid,
-                requiresApproval: lt.requiresApproval,
-                description: lt.description,
-                maxPerRequestHours: lt.maxPerRequestHours,
-                balanceHours: 0,
-              }))
-            );
+          const balanceHours = apiBalance ? (apiBalance.balanceHours ?? 0) : 0;
+
+          if (apiType) {
+            mergedList.push({
+              id: apiType.id,
+              code: apiType.code,
+              name: apiType.name,
+              paid: apiType.paid ?? true,
+              requiresApproval: apiType.requiresApproval ?? true,
+              description: apiType.description,
+              maxPerRequestHours: apiType.maxPerRequestHours,
+              balanceHours,
+            });
+            seenCodes.add((apiType.code || "").toLowerCase().trim());
+          } else if (apiBalance) {
+            const lt = apiBalance.leaveType || ({} as RawLeaveType);
+            mergedList.push({
+              id: lt.id ?? apiBalance.leaveTypeId,
+              code: lt.code,
+              name: lt.name,
+              paid: lt.paid ?? true,
+              requiresApproval: lt.requiresApproval ?? true,
+              description: lt.description,
+              maxPerRequestHours: lt.maxPerRequestHours,
+              balanceHours,
+            });
+            seenCodes.add((lt.code || "").toLowerCase().trim());
+          } else {
+            // Fallback static type definition
+            mergedList.push({
+              id: target.fallbackId,
+              code: target.code,
+              name: target.name,
+              paid: true,
+              requiresApproval: true,
+              description: target.name,
+              balanceHours: 0,
+            });
+            seenCodes.add(target.code);
           }
-        } catch (err) {
-          console.error("Error fetching leave types/balances:", error, err);
-          if (isMounted) setLeaveTypes([]);
         }
+      });
+
+      if (isMounted) {
+        setLeaveTypes(mergedList);
       }
     }
     fetchLeaveTypes();
@@ -426,7 +523,7 @@ export function NewLeaveRequestDialog({
       voterIdImage: undefined,
       examCourseName: "",
       examHallTicket: undefined,
-      vipassanaDocuments: [],
+      vipassanaDocuments: undefined,
     },
   });
 
@@ -472,7 +569,7 @@ export function NewLeaveRequestDialog({
     form.setValue("voterIdImage", undefined);
     form.setValue("examCourseName", "");
     form.setValue("examHallTicket", undefined);
-    form.setValue("vipassanaDocuments", []);
+    form.setValue("vipassanaDocuments", undefined);
     setSelectedDurationType("");
     setValidationError(null);
 
@@ -511,7 +608,7 @@ export function NewLeaveRequestDialog({
         voterIdImage: undefined,
         examCourseName: "",
         examHallTicket: undefined,
-        vipassanaDocuments: [],
+        vipassanaDocuments: undefined,
       });
       setSelectedDurationType("");
       setValidationError(null);
@@ -687,10 +784,8 @@ export function NewLeaveRequestDialog({
         }
       }
 
-      if ((isVipassanaCourse || isVipassanaSeva) && values.vipassanaDocuments && values.vipassanaDocuments.length > 0) {
-        values.vipassanaDocuments.forEach((file: any) => {
-          formData.append("document", file);
-        });
+      if ((isVipassanaCourse || isVipassanaSeva) && values.vipassanaDocuments) {
+        formData.append("document", values.vipassanaDocuments);
       }
 
       // Verify that files are present in the final payload before submission
@@ -736,7 +831,7 @@ export function NewLeaveRequestDialog({
           voterIdImage: undefined,
           examCourseName: "",
           examHallTicket: undefined,
-          vipassanaDocuments: [],
+          vipassanaDocuments: undefined,
         });
         setSelectedDurationType("");
         setValidationError(null);
@@ -998,24 +1093,6 @@ export function NewLeaveRequestDialog({
                     </FormItem>
                   )}
                 />
-
-                <FormField
-                  control={form.control}
-                  name="examHallTicket"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormControl>
-                        <FileUploadField
-                          label="Upload supporting document"
-                          accept="image/*,application/pdf"
-                          value={field.value}
-                          onChange={field.onChange}
-                          error={form.formState.errors.examHallTicket?.message as string}
-                        />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
               </div>
             )}
 
@@ -1031,7 +1108,6 @@ export function NewLeaveRequestDialog({
                         <FileUploadField
                           label="Upload your booking confirmation and/or completion certificate"
                           accept="image/*,application/pdf"
-                          multiple
                           value={field.value}
                           onChange={field.onChange}
                           error={form.formState.errors.vipassanaDocuments?.message as string}
