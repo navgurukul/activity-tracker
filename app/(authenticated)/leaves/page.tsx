@@ -247,7 +247,7 @@ export default function LeavesPage() {
       examHallTicket: z.any().optional(),
       
       // Vipassana fields
-      vipassanaDocuments: z.any().optional(),
+      vipassanaDocuments: z.array(z.any()).optional(),
     })
     .superRefine((data, ctx) => {
       const selectedType = adminLeaveTypes.find((t) => String(t.id) === data.leaveType);
@@ -341,18 +341,23 @@ export default function LeavesPage() {
 
       // 7. Vipassana Validation
       if (isVipassanaCourse || isVipassanaSeva) {
-        if (!data.vipassanaDocuments) {
+        if (!data.vipassanaDocuments || (Array.isArray(data.vipassanaDocuments) && data.vipassanaDocuments.length === 0)) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
             message: "At least one booking confirmation or completion certificate is required.",
             path: ["vipassanaDocuments"],
           });
-        } else if (data.vipassanaDocuments instanceof File && data.vipassanaDocuments.size > 10 * 1024 * 1024) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: "File size must not exceed 10 MB.",
-            path: ["vipassanaDocuments"],
-          });
+        } else if (Array.isArray(data.vipassanaDocuments)) {
+          for (const file of data.vipassanaDocuments) {
+            if (file instanceof File && file.size > 10 * 1024 * 1024) {
+              ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: "File size must not exceed 10 MB.",
+                path: ["vipassanaDocuments"],
+              });
+              break;
+            }
+          }
         }
       }
     });
@@ -371,7 +376,7 @@ export default function LeavesPage() {
       voterIdImage: undefined,
       examCourseName: "",
       examHallTicket: undefined,
-      vipassanaDocuments: undefined,
+      vipassanaDocuments: [],
     },
   });
 
@@ -416,7 +421,7 @@ export default function LeavesPage() {
     adminApplyLeaveForm.setValue("voterIdImage", undefined);
     adminApplyLeaveForm.setValue("examCourseName", "");
     adminApplyLeaveForm.setValue("examHallTicket", undefined);
-    adminApplyLeaveForm.setValue("vipassanaDocuments", undefined);
+    adminApplyLeaveForm.setValue("vipassanaDocuments", []);
     setAdminLeaveValidationError(null);
 
     previousAdminLeaveTypeRef.current = watchAdminLeaveType;
@@ -488,7 +493,7 @@ export default function LeavesPage() {
         voterIdImage: undefined,
         examCourseName: "",
         examHallTicket: undefined,
-        vipassanaDocuments: undefined,
+        vipassanaDocuments: [],
       });
       setAdminLeaveDateRange(undefined);
       setAdminLeaveValidationError(null);
@@ -509,7 +514,7 @@ export default function LeavesPage() {
       voterIdImage: undefined,
       examCourseName: "",
       examHallTicket: undefined,
-      vipassanaDocuments: undefined,
+      vipassanaDocuments: [],
     });
     setAdminLeaveDateRange(undefined);
     setAdminLeaveValidationError(null);
@@ -993,7 +998,14 @@ export default function LeavesPage() {
         }
 
         if ((isVipassanaCourse || isVipassanaSeva) && values.vipassanaDocuments) {
-          formData.append("document", values.vipassanaDocuments);
+          const docs = Array.isArray(values.vipassanaDocuments)
+            ? values.vipassanaDocuments
+            : [values.vipassanaDocuments];
+          docs.forEach((doc) => {
+            if (doc instanceof File) {
+              formData.append("document", doc);
+            }
+          });
         }
 
         const response = await apiClient.post(
@@ -1029,7 +1041,7 @@ export default function LeavesPage() {
             voterIdImage: undefined,
             examCourseName: "",
             examHallTicket: undefined,
-            vipassanaDocuments: undefined,
+            vipassanaDocuments: [],
           });
           setAdminLeaveDateRange(undefined);
           setIsAdminDatePickerOpen(false);
@@ -2922,6 +2934,7 @@ export default function LeavesPage() {
                                         <FileUploadField
                                           label="Upload the booking confirmation and/or completion certificate"
                                           accept="image/*,application/pdf"
+                                          multiple={true}
                                           value={field.value}
                                           onChange={field.onChange}
                                           error={adminApplyLeaveForm.formState.errors.vipassanaDocuments?.message as string}

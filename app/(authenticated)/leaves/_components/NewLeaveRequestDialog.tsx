@@ -107,7 +107,7 @@ const formSchema = z
     examHallTicket: z.any().optional(),
     
     // Vipassana fields
-    vipassanaDocuments: z.any().optional(),
+    vipassanaDocuments: z.array(z.any()).optional(),
   })
   .superRefine((data, ctx) => {
     const code = (data.leaveType || "").toLowerCase().trim();
@@ -198,18 +198,23 @@ const formSchema = z
 
     // 7. Vipassana Validation
     if (isVipassanaCourse || isVipassanaSeva) {
-      if (!data.vipassanaDocuments) {
+      if (!data.vipassanaDocuments || (Array.isArray(data.vipassanaDocuments) && data.vipassanaDocuments.length === 0)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: "At least one booking confirmation or completion certificate is required.",
           path: ["vipassanaDocuments"],
         });
-      } else if (data.vipassanaDocuments instanceof File && data.vipassanaDocuments.size > 10 * 1024 * 1024) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "File size must not exceed 10 MB.",
-          path: ["vipassanaDocuments"],
-        });
+      } else if (Array.isArray(data.vipassanaDocuments)) {
+        for (const file of data.vipassanaDocuments) {
+          if (file instanceof File && file.size > 10 * 1024 * 1024) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: "File size must not exceed 10 MB.",
+              path: ["vipassanaDocuments"],
+            });
+            break;
+          }
+        }
       }
     }
   });
@@ -304,9 +309,9 @@ export function FileUploadField({
               key={idx}
               className="flex items-center justify-between p-2.5 bg-muted/30 rounded-md border text-sm"
             >
-              <div className="flex items-center space-x-2.5 truncate">
+              <div className="flex items-center space-x-2.5 min-w-0">
                 <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                <span className="font-medium truncate max-w-[200px] sm:max-w-xs">
+                <span className="font-medium truncate max-w-[200px] sm:max-w-xs min-w-0">
                   {file.name}
                 </span>
                 <span className="text-xs text-muted-foreground flex-shrink-0">
@@ -523,7 +528,7 @@ export function NewLeaveRequestDialog({
       voterIdImage: undefined,
       examCourseName: "",
       examHallTicket: undefined,
-      vipassanaDocuments: undefined,
+      vipassanaDocuments: [],
     },
   });
 
@@ -569,7 +574,7 @@ export function NewLeaveRequestDialog({
     form.setValue("voterIdImage", undefined);
     form.setValue("examCourseName", "");
     form.setValue("examHallTicket", undefined);
-    form.setValue("vipassanaDocuments", undefined);
+    form.setValue("vipassanaDocuments", []);
     setSelectedDurationType("");
     setValidationError(null);
 
@@ -608,7 +613,7 @@ export function NewLeaveRequestDialog({
         voterIdImage: undefined,
         examCourseName: "",
         examHallTicket: undefined,
-        vipassanaDocuments: undefined,
+        vipassanaDocuments: [],
       });
       setSelectedDurationType("");
       setValidationError(null);
@@ -785,7 +790,14 @@ export function NewLeaveRequestDialog({
       }
 
       if ((isVipassanaCourse || isVipassanaSeva) && values.vipassanaDocuments) {
-        formData.append("document", values.vipassanaDocuments);
+        const docs = Array.isArray(values.vipassanaDocuments)
+          ? values.vipassanaDocuments
+          : [values.vipassanaDocuments];
+        docs.forEach((doc) => {
+          if (doc instanceof File) {
+            formData.append("document", doc);
+          }
+        });
       }
 
       // Verify that files are present in the final payload before submission
@@ -831,7 +843,7 @@ export function NewLeaveRequestDialog({
           voterIdImage: undefined,
           examCourseName: "",
           examHallTicket: undefined,
-          vipassanaDocuments: undefined,
+          vipassanaDocuments: [],
         });
         setSelectedDurationType("");
         setValidationError(null);
@@ -1108,6 +1120,7 @@ export function NewLeaveRequestDialog({
                         <FileUploadField
                           label="Upload your booking confirmation and/or completion certificate"
                           accept="image/*,application/pdf"
+                          multiple={true}
                           value={field.value}
                           onChange={field.onChange}
                           error={form.formState.errors.vipassanaDocuments?.message as string}
