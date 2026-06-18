@@ -49,19 +49,10 @@ import {
   checkLeaveConflictWithTimesheet,
   invalidateMonthlyTimesheetCache,
   isNonWorkingDay,
+  LeaveTypeResponse,
+  LeaveApplicationFormProps,
 } from "@/lib/leave-timesheet-validator";
 
-// TypeScript interfaces for API response
-interface LeaveTypeResponse {
-  id: number;
-  code: string;
-  name: string;
-  paid: boolean;
-  requiresApproval: boolean;
-  description?: string;
-  maxPerRequestHours?: number;
-  balanceHours?: number;
-}
 
 const formSchema = z
   .object({
@@ -87,11 +78,6 @@ const formSchema = z
     path: ["endDate"],
   });
 
-interface LeaveApplicationFormProps {
-  userEmail: string;
-  fetchLeaves: () => Promise<void>;
-  prefilledDate?: string;
-}
 
 export function LeaveApplicationForm({
   userEmail,

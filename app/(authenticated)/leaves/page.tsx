@@ -80,53 +80,17 @@ import {
   calculateLeaveDays,
 } from "@/lib/leave-timesheet-validator";
 
-interface LeaveRequest {
-  id: number;
-  user: { id: number; name: string; email: string };
-  managerId: number;
-  leaveType: { id: number; name: string; code: string };
-  state: "pending" | "approved" | "rejected";
-  startDate: string;
-  endDate: string;
-  durationType: "full_day" | "half_day";
-  halfDaySegment: "first_half" | "second_half" | null;
-  hours: number;
-  reason: string;
-  requestedAt: string;
-  updatedAt: string;
-  decidedByUserId: number | null;
-}
-
-interface LeaveBalanceItem {
-  id: number;
-  userId?: number;
-  leaveTypeId: number;
-  balanceHours: number;
-  pendingHours: number;
-  bookedHours: number;
-  allocatedHours: number;
-  asOfDate: string;
-  leaveType: {
-    id: number;
-    code: string;
-    name: string;
-    paid: boolean;
-    requiresApproval: boolean;
-  };
-}
-
-type LeavesMainTab = "leaves" | "my_reportees" | "all_org";
+import {
+  LeaveRequest,
+  LeaveBalanceItem,
+  LeavesMainTab,
+  PersistedLeavesState,
+} from "@/lib/leave-types";
 
 const getDashboardHighlightUrl = (dateApi: string) => {
   const normalized = dateApi.trim();
   return normalized ? `/?date=${encodeURIComponent(normalized)}` : "/";
 };
-
-interface PersistedLeavesState {
-  activeMainTab?: LeavesMainTab;
-  isTeamEmployeeBalanceView?: boolean;
-  teamEmployeeEmail?: string;
-}
 
 export default function LeavesPage() {
   const searchParams = useSearchParams();
@@ -302,21 +266,37 @@ export default function LeavesPage() {
       }
 
       // 4. Wedding Validation
-      if (isWedding && !data.weddingCardImage) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "Wedding card invitation is required.",
-          path: ["weddingCardImage"],
-        });
+      if (isWedding) {
+        if (!data.weddingCardImage) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Wedding card invitation is required.",
+            path: ["weddingCardImage"],
+          });
+        } else if (data.weddingCardImage instanceof File && data.weddingCardImage.size > 2 * 1024 * 1024) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "File size must not exceed 2MB.",
+            path: ["weddingCardImage"],
+          });
+        }
       }
 
       // 5. Election Validation
-      if (isElection && !data.voterIdImage) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "Voter ID card is required.",
-          path: ["voterIdImage"],
-        });
+      if (isElection) {
+        if (!data.voterIdImage) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Voter ID card is required.",
+            path: ["voterIdImage"],
+          });
+        } else if (data.voterIdImage instanceof File && data.voterIdImage.size > 2 * 1024 * 1024) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "File size must not exceed 2MB.",
+            path: ["voterIdImage"],
+          });
+        }
       }
 
       // 6. Exam / L&D Validation
@@ -336,6 +316,12 @@ export default function LeavesPage() {
             message: "Hall ticket or exam schedule image is required.",
             path: ["examHallTicket"],
           });
+        } else if (data.examHallTicket instanceof File && data.examHallTicket.size > 2 * 1024 * 1024) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "File size must not exceed 2MB.",
+            path: ["examHallTicket"],
+          });
         }
       }
 
@@ -349,10 +335,10 @@ export default function LeavesPage() {
           });
         } else if (Array.isArray(data.vipassanaDocuments)) {
           for (const file of data.vipassanaDocuments) {
-            if (file instanceof File && file.size > 10 * 1024 * 1024) {
+            if (file instanceof File && file.size > 2 * 1024 * 1024) {
               ctx.addIssue({
                 code: z.ZodIssueCode.custom,
-                message: "File size must not exceed 10 MB.",
+                message: "File size must not exceed 2MB.",
                 path: ["vipassanaDocuments"],
               });
               break;
@@ -364,6 +350,8 @@ export default function LeavesPage() {
 
   const adminApplyLeaveForm = useForm<z.infer<typeof adminApplyLeaveFormSchema>>({
     resolver: zodResolver(adminApplyLeaveFormSchema),
+    mode: "onChange",
+    reValidateMode: "onChange",
     defaultValues: {
       leaveType: "",
       startDate: undefined,
@@ -2746,7 +2734,7 @@ export default function LeavesPage() {
                                       ))}
                                     </SelectContent>
                                   </Select>
-                                  <FormMessage />
+                                  <FormMessage className="text-red-500" />
                                 </FormItem>
                               )}
                             />
@@ -2781,7 +2769,7 @@ export default function LeavesPage() {
                                           </SelectItem>
                                         </SelectContent>
                                       </Select>
-                                      <FormMessage />
+                                      <FormMessage className="text-red-500" />
                                     </FormItem>
                                   )}
                                 />
@@ -2800,7 +2788,7 @@ export default function LeavesPage() {
                                             value={field.value || ""}
                                           />
                                         </FormControl>
-                                        <FormMessage />
+                                        <FormMessage className="text-red-500" />
                                       </FormItem>
                                     )}
                                   />
@@ -2828,10 +2816,12 @@ export default function LeavesPage() {
                                           label="Upload an image of the wedding card invitation"
                                           accept="image/*"
                                           value={field.value}
-                                          onChange={field.onChange}
-                                          error={adminApplyLeaveForm.formState.errors.weddingCardImage?.message as string}
+                                          onChange={(val) => {
+                                            field.onChange(val);
+                                          }}
                                         />
                                       </FormControl>
+                                      <FormMessage className="text-red-500" />
                                     </FormItem>
                                   )}
                                 />
@@ -2851,10 +2841,12 @@ export default function LeavesPage() {
                                           label="Upload the Voter ID card"
                                           accept="image/*"
                                           value={field.value}
-                                          onChange={field.onChange}
-                                          error={adminApplyLeaveForm.formState.errors.voterIdImage?.message as string}
+                                          onChange={(val) => {
+                                            field.onChange(val);
+                                          }}
                                         />
                                       </FormControl>
+                                      <FormMessage className="text-red-500" />
                                     </FormItem>
                                   )}
                                 />
@@ -2877,7 +2869,7 @@ export default function LeavesPage() {
                                           value={field.value || ""}
                                         />
                                       </FormControl>
-                                      <FormMessage />
+                                      <FormMessage className="text-red-500" />
                                     </FormItem>
                                   )}
                                 />
@@ -2892,10 +2884,12 @@ export default function LeavesPage() {
                                           label="Upload the hall ticket or exam schedule image with the university’s letterhead"
                                           accept="image/*,application/pdf"
                                           value={field.value}
-                                          onChange={field.onChange}
-                                          error={adminApplyLeaveForm.formState.errors.examHallTicket?.message as string}
+                                          onChange={(val) => {
+                                            field.onChange(val);
+                                          }}
                                         />
                                       </FormControl>
+                                      <FormMessage className="text-red-500" />
                                     </FormItem>
                                   )}
                                 />
@@ -2918,7 +2912,7 @@ export default function LeavesPage() {
                                            value={field.value || ""}
                                          />
                                        </FormControl>
-                                       <FormMessage />
+                                       <FormMessage className="text-red-500" />
                                      </FormItem>
                                    )}
                                  />
@@ -2939,10 +2933,12 @@ export default function LeavesPage() {
                                           accept="image/*,application/pdf"
                                           multiple={true}
                                           value={field.value}
-                                          onChange={field.onChange}
-                                          error={adminApplyLeaveForm.formState.errors.vipassanaDocuments?.message as string}
+                                          onChange={(val) => {
+                                            field.onChange(val);
+                                          }}
                                         />
                                       </FormControl>
+                                      <FormMessage className="text-red-500" />
                                     </FormItem>
                                   )}
                                 />
@@ -3013,7 +3009,7 @@ export default function LeavesPage() {
                                       ? "Click to select the date of the election leave"
                                       : "Click to select start date, then click end date for range"}
                                   </FormDescription>
-                                  <FormMessage />
+                                  <FormMessage className="text-red-500" />
                                 </FormItem>
                               )}
                             />
@@ -3038,7 +3034,7 @@ export default function LeavesPage() {
                                       ))}
                                     </SelectContent>
                                   </Select>
-                                  <FormMessage />
+                                  <FormMessage className="text-red-500" />
                                 </FormItem>
                               )}
                             />
@@ -3061,7 +3057,7 @@ export default function LeavesPage() {
                                         <SelectItem value="second_half">Second Half</SelectItem>
                                       </SelectContent>
                                     </Select>
-                                    <FormMessage />
+                                    <FormMessage className="text-red-500" />
                                   </FormItem>
                                 )}
                               />

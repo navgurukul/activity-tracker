@@ -51,33 +51,13 @@ import {
   calculateLeaveDays,
 } from "@/lib/leave-timesheet-validator";
 import { cn } from "@/lib/utils";
-
-interface LeaveTypeWithBalance {
-  id: number;
-  code: string;
-  name: string;
-  paid: boolean;
-  requiresApproval: boolean;
-  description?: string;
-  maxPerRequestHours?: number;
-  balanceHours: number;
-}
-
-interface RawLeaveType {
-  id: number;
-  code: string;
-  name: string;
-  paid: boolean;
-  requiresApproval: boolean;
-  description?: string;
-  maxPerRequestHours?: number;
-}
-
-interface RawLeaveBalance {
-  leaveTypeId: number;
-  balanceHours: number;
-  leaveType?: RawLeaveType;
-}
+import {
+  LeaveTypeWithBalance,
+  RawLeaveType,
+  RawLeaveBalance,
+  FileUploadFieldProps,
+  NewLeaveRequestDialogProps,
+} from "@/lib/leave-types";
 
 const formSchema = z
   .object({
@@ -159,21 +139,37 @@ const formSchema = z
     }
 
     // 4. Wedding Validation
-    if (isWedding && !data.weddingCardImage) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Wedding card invitation is required.",
-        path: ["weddingCardImage"],
-      });
+    if (isWedding) {
+      if (!data.weddingCardImage) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Wedding card invitation is required.",
+          path: ["weddingCardImage"],
+        });
+      } else if (data.weddingCardImage instanceof File && data.weddingCardImage.size > 2 * 1024 * 1024) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "File size must not exceed 2MB.",
+          path: ["weddingCardImage"],
+        });
+      }
     }
 
     // 5. Election Validation
-    if (isElection && !data.voterIdImage) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Voter ID card is required.",
-        path: ["voterIdImage"],
-      });
+    if (isElection) {
+      if (!data.voterIdImage) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Voter ID card is required.",
+          path: ["voterIdImage"],
+        });
+      } else if (data.voterIdImage instanceof File && data.voterIdImage.size > 2 * 1024 * 1024) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "File size must not exceed 2MB.",
+          path: ["voterIdImage"],
+        });
+      }
     }
 
     // 6. Exam / L&D Validation
@@ -193,6 +189,12 @@ const formSchema = z
           message: "Hall ticket or exam schedule image is required.",
           path: ["examHallTicket"],
         });
+      } else if (data.examHallTicket instanceof File && data.examHallTicket.size > 2 * 1024 * 1024) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "File size must not exceed 2MB.",
+          path: ["examHallTicket"],
+        });
       }
     }
 
@@ -206,10 +208,10 @@ const formSchema = z
         });
       } else if (Array.isArray(data.vipassanaDocuments)) {
         for (const file of data.vipassanaDocuments) {
-          if (file instanceof File && file.size > 10 * 1024 * 1024) {
+          if (file instanceof File && file.size > 2 * 1024 * 1024) {
             ctx.addIssue({
               code: z.ZodIssueCode.custom,
-              message: "File size must not exceed 10 MB.",
+              message: "File size must not exceed 2MB.",
               path: ["vipassanaDocuments"],
             });
             break;
@@ -219,14 +221,6 @@ const formSchema = z
     }
   });
 
-interface FileUploadFieldProps {
-  label: string;
-  accept: string;
-  multiple?: boolean;
-  value: any;
-  onChange: (value: any) => void;
-  error?: string;
-}
 
 export function FileUploadField({
   label,
@@ -341,12 +335,6 @@ export function FileUploadField({
   );
 }
 
-interface NewLeaveRequestDialogProps {
-  userEmail: string;
-  onSuccess: (submittedDate: string) => void;
-  forceOpen?: boolean;
-  prefilledDate?: string;
-}
 
 export function NewLeaveRequestDialog({
   userEmail,
@@ -515,6 +503,8 @@ export function NewLeaveRequestDialog({
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
+    mode: "onChange",
+    reValidateMode: "onChange",
     defaultValues: {
       employeeEmail: userEmail,
       leaveType: "",
@@ -1011,7 +1001,9 @@ export function NewLeaveRequestDialog({
                           label="Upload an image of your wedding card invitation"
                           accept="image/*"
                           value={field.value}
-                          onChange={field.onChange}
+                          onChange={(val) => {
+                            field.onChange(val);
+                          }}
                           error={form.formState.errors.weddingCardImage?.message as string}
                         />
                       </FormControl>
@@ -1034,7 +1026,9 @@ export function NewLeaveRequestDialog({
                           label="Upload your Voter ID card"
                           accept="image/*"
                           value={field.value}
-                          onChange={field.onChange}
+                          onChange={(val) => {
+                            field.onChange(val);
+                          }}
                           error={form.formState.errors.voterIdImage?.message as string}
                         />
                       </FormControl>
@@ -1075,7 +1069,9 @@ export function NewLeaveRequestDialog({
                           label="Upload your hall ticket or exam schedule image with the university’s letterhead"
                           accept="image/*,application/pdf"
                           value={field.value}
-                          onChange={field.onChange}
+                          onChange={(val) => {
+                            field.onChange(val);
+                          }}
                           error={form.formState.errors.examHallTicket?.message as string}
                         />
                       </FormControl>
@@ -1122,7 +1118,9 @@ export function NewLeaveRequestDialog({
                           accept="image/*,application/pdf"
                           multiple={true}
                           value={field.value}
-                          onChange={field.onChange}
+                          onChange={(val) => {
+                            field.onChange(val);
+                          }}
                           error={form.formState.errors.vipassanaDocuments?.message as string}
                         />
                       </FormControl>

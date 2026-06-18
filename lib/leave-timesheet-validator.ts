@@ -516,3 +516,21 @@ export async function calculateLeaveDays(
   return count;
 }
 
+export interface LeaveTypeResponse {
+  id: number;
+  code: string;
+  name: string;
+  paid: boolean;
+  requiresApproval: boolean;
+  description?: string;
+  maxPerRequestHours?: number;
+  balanceHours?: number;
+}
+
+export interface LeaveApplicationFormProps {
+  userEmail: string;
+  fetchLeaves: () => Promise<void>;
+  prefilledDate?: string;
+}
+
+
