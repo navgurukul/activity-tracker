@@ -216,10 +216,10 @@ const formSchema = z
           path: ["vipassanaDocuments"],
         });
       } else if (Array.isArray(data.vipassanaDocuments)) {
-        if (data.vipassanaDocuments.length > 10) {
+        if (data.vipassanaDocuments.length > 2) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
-            message: "Maximum 10 documents should be allowed.",
+            message: "Maximum 2 documents should be allowed.",
             path: ["vipassanaDocuments"],
           });
         }
@@ -702,7 +702,10 @@ export function NewLeaveRequestDialog({
         (t) => t.code === values.leaveType
       );
       if (!selectedLeaveType) {
-        toast.error("Invalid leave type selected");
+        form.setError("leaveType", {
+          type: "manual",
+          message: "Invalid leave type selected",
+        });
         setIsSubmitting(false);
         return;
       }
@@ -910,12 +913,16 @@ export function NewLeaveRequestDialog({
         <Form {...form}>
           <form
             onSubmit={form.handleSubmit(onSubmit, (errors) => {
-              const errorMessages = Object.values(errors)
-                .map((err: any) => err.message)
-                .filter(Boolean);
-              if (errorMessages.length > 0) {
+              const dateRangeErrors = [];
+              if (errors.startDate?.message) {
+                dateRangeErrors.push(errors.startDate.message as string);
+              }
+              if (errors.endDate?.message) {
+                dateRangeErrors.push(errors.endDate.message as string);
+              }
+              if (dateRangeErrors.length > 0) {
                 toast.error("Validation Error", {
-                  description: errorMessages.join(". "),
+                  description: dateRangeErrors.join(". "),
                 });
               }
             })}
