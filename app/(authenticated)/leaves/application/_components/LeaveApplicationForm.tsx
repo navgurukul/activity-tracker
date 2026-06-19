@@ -58,12 +58,6 @@ const formSchema = z
   .object({
     employeeEmail: z.string().email(),
     leaveType: z.string().min(1, "Please select a leave type."),
-    reason: z
-      .string()
-      .min(
-        VALIDATION.MIN_LEAVE_REASON_LENGTH,
-        `Please provide at least ${VALIDATION.MIN_LEAVE_REASON_LENGTH} characters for the reason.`
-      ),
     startDate: z.date({
       message: "Start date is required.",
     }),
@@ -157,7 +151,6 @@ export function LeaveApplicationForm({
     defaultValues: {
       employeeEmail: userEmail,
       leaveType: "",
-      reason: "",
       startDate: undefined,
       endDate: undefined,
       durationType: "",
@@ -288,7 +281,6 @@ export function LeaveApplicationForm({
         startDate: string;
         endDate: string;
         hours: number;
-        reason: string;
         durationType: string;
         halfDaySegment?: string;
       } = {
@@ -296,7 +288,6 @@ export function LeaveApplicationForm({
         startDate: format(values.startDate, DATE_FORMATS.API),
         endDate: format(values.endDate, DATE_FORMATS.API),
         hours: hours,
-        reason: values.reason,
         durationType: values.durationType,
       };
 
@@ -331,7 +322,6 @@ export function LeaveApplicationForm({
         form.reset({
           employeeEmail: userEmail,
           leaveType: "",
-          reason: "",
           startDate: undefined,
           endDate: undefined,
           durationType: "",
@@ -409,27 +399,6 @@ export function LeaveApplicationForm({
                     </Select>
                     <FormDescription>
                       Choose the type of leave you are applying for
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="reason"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Reason for Leave</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder="Please provide a reason for your leave request..."
-                        className="min-h-[100px] resize-none"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      Provide a detailed reason for your leave request
                     </FormDescription>
                     <FormMessage />
                   </FormItem>

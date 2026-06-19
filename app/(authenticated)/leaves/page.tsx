@@ -587,7 +587,7 @@ export default function LeavesPage() {
           orgId: user.orgId,
           q: query,
           page: 1,
-          limit: 8,
+          limit: 1000,
           managerId: user.id,
         };
 
@@ -629,7 +629,7 @@ export default function LeavesPage() {
             orgId: user.orgId,
             q: query,
             page: 1,
-            limit: 8,
+            limit: 1000,
           },
         });
 
@@ -2179,7 +2179,6 @@ export default function LeavesPage() {
                         <TableHead className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Type</TableHead>
                         <TableHead className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Period</TableHead>
                         <TableHead className="text-center px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Duration</TableHead>
-                        <TableHead className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Reason</TableHead>
                         <TableHead className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -2233,9 +2232,6 @@ export default function LeavesPage() {
                               <span className="inline-flex items-center justify-center min-w-[2.5rem] rounded-md bg-secondary-background border border-border px-2 py-0.5 text-xs font-semibold text-foreground tabular-nums">
                                 {formatDays(leave)}
                               </span>
-                            </TableCell>
-                            <TableCell className="px-4 py-3.5 text-muted-foreground max-w-[220px] truncate text-sm">
-                              {leave.reason}
                             </TableCell>
                             <TableCell className="px-4 py-3.5 text-right">
                               {getStatusBadge(leave.state)}
