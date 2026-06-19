@@ -2779,7 +2779,7 @@ export default function LeavesPage() {
                                         <SelectContent>
                                           <SelectItem value="Parent">Parent</SelectItem>
                                           <SelectItem value="Child">Child</SelectItem>
-                                          <SelectItem value="Other Immediate Family Member">
+                                          <SelectItem value="other_immediate_family_member">
                                             Other Immediate Family Member
                                           </SelectItem>
                                         </SelectContent>
@@ -2789,7 +2789,7 @@ export default function LeavesPage() {
                                   )}
                                 />
 
-                                {watchAdminBereavementRelationship === "Other Immediate Family Member" && (
+                                {watchAdminBereavementRelationship === "other_immediate_family_member" && (
                                   <FormField
                                     control={adminApplyLeaveForm.control}
                                     name="bereavementRelationshipOther"
