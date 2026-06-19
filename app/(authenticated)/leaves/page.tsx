@@ -83,6 +83,7 @@ import {
 import {
   LeaveRequest,
   LeaveBalanceItem,
+  LeaveSummary,
   LeavesMainTab,
   PersistedLeavesState,
 } from "@/lib/leave-types";
@@ -135,6 +136,7 @@ export default function LeavesPage() {
   const [leaveHistory, setLeaveHistory] = useState<LeaveRequest[]>([]);
   const [teamLeaveHistory, setTeamLeaveHistory] = useState<TeamLeaveRequest[]>([]);
   const [balances, setBalances] = useState<LeaveBalanceItem[]>([]);
+  const [leaveSummary, setLeaveSummary] = useState<LeaveSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isTeamLoading, setIsTeamLoading] = useState(true);
   const [isBalancesLoading, setIsBalancesLoading] = useState(true);
@@ -538,6 +540,9 @@ export default function LeavesPage() {
     try {
       const res = await apiClient.get(API_PATHS.LEAVES_BALANCES);
       setBalances(Array.isArray(res.data?.balances) ? res.data.balances : []);
+      if (res.data?.summary) {
+        setLeaveSummary(res.data.summary);
+      }
     } catch {
       setBalances([]);
     } finally {
@@ -1397,20 +1402,13 @@ export default function LeavesPage() {
     });
   }, [balances]);
 
-  // Summary stats from balances
-  const summaryStats = useMemo(() => {
-    const firstBalance = visibleBalances[0];
-    const allocated = (firstBalance?.allocatedHours ?? 0) / 8;
-    const available = (firstBalance?.balanceHours ?? 0) / 8;
-    const pending = visibleBalances.reduce((sum, b) => sum + b.pendingHours / 8, 0);
-    const approved = visibleBalances.reduce((sum, b) => sum + b.bookedHours / 8, 0);
-    return {
-      available,
-      allocated,
-      pending,
-      approved,
-    };
-  }, [visibleBalances]);
+  // Summary stats from balances API summary field
+  const summaryStats = useMemo(() => ({
+    available: leaveSummary?.availableEarnedLeaves ?? 0,
+    allocated: leaveSummary?.totalAllocatedEarnedLeaves ?? 0,
+    pending: leaveSummary?.pending ?? 0,
+    approved: leaveSummary?.approved ?? 0,
+  }), [leaveSummary]);
 
   // Filtered leave requests
   const filteredLeaves = useMemo(() => {
