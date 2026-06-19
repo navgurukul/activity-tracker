@@ -97,7 +97,7 @@ const formSchema = z
     const isElection = (code.includes("election") || code === "ecl") && !isExam;
     const isLAndD = code.includes("lnd") || code.includes("l&d") || code.includes("learning") || code === "ld" || code === "ldl";
     const isVipassanaCourse = code.includes("vipassana_course") || code.includes("vipassana-course") || code.includes("vipassana course") || code === "vcl";
-    const isVipassanaSeva = code.includes("vipassana_seva") || code.includes("vipassana-seva") || code.includes("vipassana seva") || code === "vs";
+    const isVipassanaSeva = code.includes("vipassana_seva") || code.includes("vipassana-seva") || code.includes("vipassana seva") || code.includes("seva") || code === "vs" || code === "vsl";
 
     // 1. Date Range
     if (data.startDate && data.endDate && data.endDate < data.startDate) {
@@ -126,15 +126,24 @@ const formSchema = z
           path: ["bereavementRelationship"],
         });
       }
-      if (
-        data.bereavementRelationship === "Other Immediate Family Member" &&
-        !data.bereavementRelationshipOther?.trim()
-      ) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "Please mention your relationship with them.",
-          path: ["bereavementRelationshipOther"],
-        });
+      const isOther =
+        data.bereavementRelationship === "other_immediate_family_member" ||
+        data.bereavementRelationship === "Other Immediate Family Member";
+      if (isOther) {
+        const otherVal = data.bereavementRelationshipOther?.trim() || "";
+        if (!otherVal) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Please mention your relationship with them.",
+            path: ["bereavementRelationshipOther"],
+          });
+        } else if (/\d/.test(otherVal)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Relationship must be valid text. Numbers are not accepted.",
+            path: ["bereavementRelationshipOther"],
+          });
+        }
       }
     }
 
@@ -207,6 +216,13 @@ const formSchema = z
           path: ["vipassanaDocuments"],
         });
       } else if (Array.isArray(data.vipassanaDocuments)) {
+        if (data.vipassanaDocuments.length > 10) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Maximum 10 documents should be allowed.",
+            path: ["vipassanaDocuments"],
+          });
+        }
         for (const file of data.vipassanaDocuments) {
           if (file instanceof File && file.size > 2 * 1024 * 1024) {
             ctx.addIssue({
@@ -328,9 +344,7 @@ export function FileUploadField({
           ))}
         </div>
       )}
-      {error && (
-        <p className="text-[0.8rem] font-medium text-destructive">{error}</p>
-      )}
+
     </div>
   );
 }
@@ -535,7 +549,7 @@ export function NewLeaveRequestDialog({
   const isElection = (typeName.includes("election") || typeCode === "ecl") && !isExam;
   const isLAndD = typeName.includes("lnd") || typeName.includes("l&d") || typeName.includes("learning") || typeCode === "ld" || typeCode === "ldl";
   const isVipassanaCourse = typeName.includes("vipassana_course") || typeName.includes("vipassana-course") || typeName.includes("vipassana course") || typeCode === "vcl";
-  const isVipassanaSeva = typeName.includes("vipassana_seva") || typeName.includes("vipassana-seva") || typeName.includes("vipassana seva") || typeCode === "vs";
+  const isVipassanaSeva = typeName.includes("vipassana_seva") || typeName.includes("vipassana-seva") || typeName.includes("vipassana seva") || typeName.includes("seva") || typeCode === "vs" || typeCode === "vsl";
 
   // Reset all fields whenever leaveType changes (on selecting leave type)
   useEffect(() => {
@@ -730,7 +744,7 @@ export function NewLeaveRequestDialog({
       const isElection = (code.includes("election") || code === "ecl") && !isExam;
       const isLAndD = code.includes("lnd") || code.includes("l&d") || code.includes("learning") || code === "ld" || code === "ldl";
       const isVipassanaCourse = code.includes("vipassana_course") || code.includes("vipassana-course") || code.includes("vipassana course") || code === "vcl";
-      const isVipassanaSeva = code.includes("vipassana_seva") || code.includes("vipassana-seva") || code.includes("vipassana seva") || code === "vs";
+      const isVipassanaSeva = code.includes("vipassana_seva") || code.includes("vipassana-seva") || code.includes("vipassana seva") || code.includes("seva") || code === "vs" || code === "vsl";
 
       const formData = new FormData();
       formData.append("leaveTypeId", String(selectedLeaveType.id));
@@ -895,7 +909,16 @@ export function NewLeaveRequestDialog({
 
         <Form {...form}>
           <form
-            onSubmit={form.handleSubmit(onSubmit)}
+            onSubmit={form.handleSubmit(onSubmit, (errors) => {
+              const errorMessages = Object.values(errors)
+                .map((err: any) => err.message)
+                .filter(Boolean);
+              if (errorMessages.length > 0) {
+                toast.error("Validation Error", {
+                  description: errorMessages.join(". "),
+                });
+              }
+            })}
             className="space-y-4 mt-2"
           >
             <FormField
@@ -1007,6 +1030,7 @@ export function NewLeaveRequestDialog({
                           error={form.formState.errors.weddingCardImage?.message as string}
                         />
                       </FormControl>
+                      <FormMessage />
                     </FormItem>
                   )}
                 />
@@ -1032,6 +1056,7 @@ export function NewLeaveRequestDialog({
                           error={form.formState.errors.voterIdImage?.message as string}
                         />
                       </FormControl>
+                      <FormMessage />
                     </FormItem>
                   )}
                 />
@@ -1075,6 +1100,7 @@ export function NewLeaveRequestDialog({
                           error={form.formState.errors.examHallTicket?.message as string}
                         />
                       </FormControl>
+                      <FormMessage />
                     </FormItem>
                   )}
                 />
@@ -1124,6 +1150,7 @@ export function NewLeaveRequestDialog({
                           error={form.formState.errors.vipassanaDocuments?.message as string}
                         />
                       </FormControl>
+                      <FormMessage />
                     </FormItem>
                   )}
                 />
@@ -1211,6 +1238,11 @@ export function NewLeaveRequestDialog({
                       : "Click to select start date, then click end date for range"}
                   </FormDescription>
                   <FormMessage />
+                  {form.formState.errors.endDate?.message && (
+                    <p className="text-[0.8rem] font-medium text-destructive mt-1">
+                      {form.formState.errors.endDate.message as string}
+                    </p>
+                  )}
                 </FormItem>
               )}
             />
