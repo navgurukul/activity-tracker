@@ -254,14 +254,22 @@ export default function LeavesPage() {
           });
         }
         if (
-          data.bereavementRelationship === "Other Immediate Family Member" &&
-          !data.bereavementRelationshipOther?.trim()
+          data.bereavementRelationship === "Other Immediate Family Member"
         ) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: "Please mention your relationship with them.",
-            path: ["bereavementRelationshipOther"],
-          });
+          const otherVal = data.bereavementRelationshipOther?.trim() || "";
+          if (!otherVal) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: "Please mention your relationship with them.",
+              path: ["bereavementRelationshipOther"],
+            });
+          } else if (/\d/.test(otherVal)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: "Relationship must be valid text. Numbers are not accepted.",
+              path: ["bereavementRelationshipOther"],
+            });
+          }
         }
       }
 
@@ -334,6 +342,13 @@ export default function LeavesPage() {
             path: ["vipassanaDocuments"],
           });
         } else if (Array.isArray(data.vipassanaDocuments)) {
+          if (data.vipassanaDocuments.length > 2) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: "Maximum 2 documents should be allowed.",
+              path: ["vipassanaDocuments"],
+            });
+          }
           for (const file of data.vipassanaDocuments) {
             if (file instanceof File && file.size > 2 * 1024 * 1024) {
               ctx.addIssue({
@@ -2875,24 +2890,25 @@ export default function LeavesPage() {
                                 />
 
                                 <FormField
-                                  control={adminApplyLeaveForm.control}
-                                  name="examHallTicket"
-                                  render={({ field }) => (
-                                    <FormItem>
-                                      <FormControl>
-                                        <FileUploadField
-                                          label="Upload the hall ticket or exam schedule image with the university’s letterhead"
-                                          accept="image/*,application/pdf"
-                                          value={field.value}
-                                          onChange={(val) => {
-                                            field.onChange(val);
-                                          }}
-                                        />
-                                      </FormControl>
-                                      <FormMessage className="text-red-500" />
-                                    </FormItem>
-                                  )}
-                                />
+                                   control={adminApplyLeaveForm.control}
+                                   name="examHallTicket"
+                                   render={({ field, fieldState }) => (
+                                     <FormItem>
+                                       <FormControl>
+                                         <FileUploadField
+                                           label="Upload the hall ticket or exam schedule image with the university’s letterhead"
+                                           accept="image/*,application/pdf"
+                                           value={field.value}
+                                           onChange={(val) => {
+                                             field.onChange(val);
+                                           }}
+                                           error={fieldState.error?.message}
+                                         />
+                                       </FormControl>
+                                       <FormMessage className="text-red-500" />
+                                     </FormItem>
+                                   )}
+                                 />
                               </div>
                             )}
 
