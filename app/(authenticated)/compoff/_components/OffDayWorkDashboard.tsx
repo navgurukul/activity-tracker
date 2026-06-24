@@ -85,10 +85,17 @@ const parseDateValue = (value: unknown): Date | null => {
   if (value instanceof Date && isValid(value)) return value;
   if (typeof value !== "string" || !value.trim()) return null;
 
-  const iso = parseISO(value);
+  const trimmed = value.trim();
+    const dateOnlyMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (dateOnlyMatch) {
+    const [, year, month, day] = dateOnlyMatch;
+    const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+    if (isValid(date)) return date;
+  }
+  const iso = parseISO(trimmed);
   if (isValid(iso)) return iso;
 
-  const fallback = new Date(value);
+  const fallback = new Date(trimmed);
   return isValid(fallback) ? fallback : null;
 };
 
@@ -147,22 +154,13 @@ const pickFormattedValue = (
 };
 
 const normalizeState = (raw: OffDayWorkResponseItem): CreditState => {
-  const explicit = toText(raw.state ?? raw.status ?? raw.creditStatus ?? raw.lifecycleState).toLowerCase();
-  if (explicit.includes("expired")) return "expired";
-  if (explicit.includes("pending")) return "pending";
-  if (explicit.includes("availed")) return "availed";
-  if (explicit.includes("granted") || explicit.includes("approved") || explicit.includes("credited")) {
-    return "granted";
+  const status = toText(raw.state ?? raw.status ?? raw.creditStatus ?? raw.lifecycleState).toLowerCase().trim();
+    const validStatuses: CreditState[] = ["pending", "granted", "availed", "expired", "partial_availed", "warning"];
+  if (validStatuses.includes(status as CreditState)) {
+    return status as CreditState;
   }
-
-  const availedOn = raw.availedOn ?? raw.availedDate ?? raw.leaveTakenOn ?? raw.usedOn;
-  if (availedOn) return "availed";
-
-  const expiresOn = getDateTs(raw.expiresOn ?? raw.expiryDate ?? raw.validUntil);
-  if (expiresOn !== null && expiresOn < todayStart) return "expired";
-
-  const creditedHours = toFiniteNumber(raw.creditedHours ?? raw.creditHours ?? raw.credited ?? raw.creditDays);
-  return creditedHours && creditedHours > 0 ? "granted" : "pending";
+  // Default fallback if status is not recognized
+  return "pending";
 };
 
 const normalizeRow = (raw: OffDayWorkResponseItem, index: number): OffDayWorkRow => {
@@ -397,10 +395,8 @@ export function OffDayWorkDashboard() {
   );
 
   useEffect(() => {
-    if (!loadedByTab[activeTab]) {
-      void fetchTabRows(activeTab);
-    }
-  }, [activeTab, fetchTabRows, loadedByTab]);
+    void fetchTabRows(activeTab);
+  }, [activeTab, fetchTabRows]);
 
   useEffect(() => {
     if (activeTab === "my-off-day-work") {
@@ -458,7 +454,7 @@ export function OffDayWorkDashboard() {
                 onSearchValueChange={setMySearch}
                 statusFilter={myStatus}
                 onStatusFilterChange={setMyStatus}
-                searchPlaceholder="Search by holiday type or date..."
+                searchPlaceholder="Search by holiday  or date..."
                 loading={loadingByTab["my-off-day-work"]}
                 error={errorByTab["my-off-day-work"]}
               />
@@ -473,7 +469,7 @@ export function OffDayWorkDashboard() {
                   onSearchValueChange={setTeamSearch}
                   statusFilter={teamStatus}
                   onStatusFilterChange={setTeamStatus}
-                  searchPlaceholder="Search employee, holiday type..."
+                  searchPlaceholder="Search employee, holiday..."
                   loading={loadingByTab["my-reportees"]}
                   error={errorByTab["my-reportees"]}
                 />
@@ -489,7 +485,7 @@ export function OffDayWorkDashboard() {
                   onSearchValueChange={setAllSearch}
                   statusFilter={allStatus}
                   onStatusFilterChange={setAllStatus}
-                  searchPlaceholder="Search employee, holiday type..."
+                  searchPlaceholder="Search employee, holiday ..."
                   loading={loadingByTab["all-org"]}
                   error={errorByTab["all-org"]}
                 />

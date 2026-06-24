@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { startOfDay } from "date-fns";
+import { isValid, parse, startOfDay } from "date-fns";
 import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -16,12 +16,20 @@ import type {
 import { cn } from "@/lib/utils";
 
 const todayStart = startOfDay(new Date()).getTime();
+const june1stStart = startOfDay(new Date(2026, 5, 1)).getTime();
+const getWorkDateStart = (workDate: string, workDateTs: number | null) => {
+  if (workDateTs !== null) return workDateTs;
+  const parsed = parse(workDate, "dd MMM yyyy", new Date());
+  return isValid(parsed) ? startOfDay(parsed).getTime() : null;
+};
 
 const statusMeta: Record<CreditState, CreditStatusMeta> = {
   pending: { label: "Pending", className: "dashboard-status-pill dashboard-status-pill--yellow" },
   granted: { label: "Granted", className: "dashboard-status-pill dashboard-status-pill--green" },
   availed: { label: "Availed", className: "dashboard-status-pill dashboard-status-pill--khaki" },
   expired: { label: "Expired", className: "dashboard-status-pill dashboard-status-pill--red" },
+  partial_availed: { label: "Partially Availed", className: "dashboard-status-pill dashboard-status-pill--orange" },
+  warning: { label: "Warning", className: "dashboard-status-pill dashboard-status-pill--warning" },
 };
 
 const statusOptions: StatusOption[] = [
@@ -30,6 +38,8 @@ const statusOptions: StatusOption[] = [
   { value: "granted", label: "Granted" },
   { value: "availed", label: "Availed" },
   { value: "expired", label: "Expired" },
+  { value: "partial_availed", label: "Partially Availed" },
+  { value: "warning", label: "Warning" },
 ];
 
 export function OffDayWorkTable({
@@ -49,7 +59,9 @@ export function OffDayWorkTable({
     return [...rows]
       .filter((row) => {
         const matchesStatus = statusFilter === "all" || row.state === statusFilter;
-        if (!query) return matchesStatus;
+        const workDateStart = getWorkDateStart(row.workDate, row.workDateTs);
+        const isAfterJune1st = workDateStart !== null && workDateStart >= june1stStart;
+        if (!query) return matchesStatus && isAfterJune1st;
 
         const haystack = [
           row.employeeName,
@@ -60,18 +72,17 @@ export function OffDayWorkTable({
           row.timesheet,
           row.credited,
           row.availedOn,
-          row.expiresOn,
           statusMeta[row.state].label,
         ]
           .filter(Boolean)
           .join(" ")
           .toLowerCase();
 
-        return matchesStatus && haystack.includes(query);
+        return matchesStatus && isAfterJune1st && haystack.includes(query);
       })
       .sort((a, b) => {
-        const aTs = a.workDateTs ?? 0;
-        const bTs = b.workDateTs ?? 0;
+        const aTs = getWorkDateStart(a.workDate, a.workDateTs) ?? 0;
+        const bTs = getWorkDateStart(b.workDate, b.workDateTs) ?? 0;
         return bTs - aTs;
       });
   }, [rows, searchValue, statusFilter]);
@@ -115,18 +126,21 @@ export function OffDayWorkTable({
         {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
       </div>
 
+      <div className="offday-dashboard-note text-xs p-3 bg-secondary-background/50 rounded-lg border border-border">
+        Your comp-off will expire within one month from your work date.
+      </div>
+
       <div className="offday-table-shell overflow-x-auto rounded-lg">
         <Table className="min-w-[920px] text-sm">
           <TableHeader>
             <TableRow className="offday-table-head">
               {showEmployee && <TableHead className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-inherit">Employee</TableHead>}
               <TableHead className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-inherit">Work Date</TableHead>
-              <TableHead className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-inherit">Holiday Type</TableHead>
+              <TableHead className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-inherit">Holiday</TableHead>
               <TableHead className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-inherit">Duration</TableHead>
               <TableHead className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-inherit">Timesheet</TableHead>
               <TableHead className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-inherit">Credited</TableHead>
               <TableHead className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-inherit">Availed On</TableHead>
-              <TableHead className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-inherit">Expires On</TableHead>
               <TableHead className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-inherit">Status</TableHead>
             </TableRow>
           </TableHeader>
@@ -134,7 +148,7 @@ export function OffDayWorkTable({
             {loading ? (
               Array.from({ length: 5 }).map((_, index) => (
                 <TableRow key={index} className="border-b border-border last:border-0">
-                  {Array.from({ length: showEmployee ? 9 : 8 }).map((__, cellIndex) => (
+                  {Array.from({ length: showEmployee ? 8 : 7 }).map((__, cellIndex) => (
                     <TableCell key={cellIndex} className="px-4 py-3.5">
                       <div className="h-4 animate-pulse rounded bg-secondary-background" />
                     </TableCell>
@@ -143,7 +157,7 @@ export function OffDayWorkTable({
               ))
             ) : filteredRows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={showEmployee ? 9 : 8} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={showEmployee ? 8 : 7} className="px-4 py-10 text-center text-sm text-muted-foreground">
                   No off-day work credits found.
                 </TableCell>
               </TableRow>
@@ -167,12 +181,6 @@ export function OffDayWorkTable({
                     <TableCell className="px-4 py-3.5 text-foreground">{row.timesheet}</TableCell>
                     <TableCell className="px-4 py-3.5 text-foreground">{row.credited}</TableCell>
                     <TableCell className="px-4 py-3.5 text-foreground">{row.availedOn ?? "—"}</TableCell>
-                    <TableCell className={cn("px-4 py-3.5", isExpired && "text-red-600")}>
-                      <div className="space-y-1">
-                        <div className="whitespace-nowrap">{row.expiresOn}</div>
-                        {expiresToday && <div className="offday-dashboard-note text-xs">1 comp-off leave expires.</div>}
-                      </div>
-                    </TableCell>
                     <TableCell className="px-4 py-3.5">
                       <span className={meta.className}>{meta.label}</span>
                     </TableCell>

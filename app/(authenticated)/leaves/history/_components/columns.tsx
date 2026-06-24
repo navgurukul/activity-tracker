@@ -29,6 +29,7 @@ import { DATE_FORMATS, API_PATHS, VALIDATION } from "@/lib/constants";
 import apiClient from "@/lib/api-client";
 import { toast } from "sonner";
 import { Spinner } from "@/components/ui/spinner";
+import { extractErrorMessage } from "@/lib/utils";
 
 export type LeaveRequest = {
   id: number;
@@ -49,7 +50,6 @@ export type LeaveRequest = {
   durationType: "full_day" | "half_day";
   halfDaySegment: "first_half" | "second_half" | null;
   hours: number;
-  reason: string;
   requestedAt: string;
   updatedAt: string;
   decidedByUserId: number | null;
@@ -87,6 +87,9 @@ function ActionsCell({
   hasMultipleSelectedRows?: boolean;
 }) {
   const [isApproving, setIsApproving] = useState(false);
+  const [isApproveDialogOpen, setIsApproveDialogOpen] = useState(false);
+  const [isPolicyAcknowledged, setIsPolicyAcknowledged] = useState(false);
+  const leavePolicyUrl = process.env.NEXT_PUBLIC_LEAVE_POLICY_URL?.trim() ?? "";
   const [isRejecting, setIsRejecting] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
@@ -104,7 +107,6 @@ function ActionsCell({
   const [halfDaySegment, setHalfDaySegment] = useState<"first_half" | "second_half" | "">(
     leave.halfDaySegment ?? ""
   );
-  const [reason, setReason] = useState(leave.reason ?? "");
 
   useEffect(() => {
     if (!isEditOpen || !canEditPendingRequests) {
@@ -165,7 +167,6 @@ function ActionsCell({
     setEndDate(leave.endDate?.slice(0, 10) ?? "");
     setDurationType(leave.durationType);
     setHalfDaySegment(leave.halfDaySegment ?? "");
-    setReason(leave.reason ?? "");
   };
 
   const handleApprove = async () => {
@@ -178,11 +179,13 @@ function ActionsCell({
       if (onUpdate) {
         onUpdate();
       }
+      return true;
     } catch (error) {
       console.error("Error approving leave request:", error);
       toast.error("Failed to approve leave request", {
-        description: "Unable to approve the leave request. Please try again.",
+        description: extractErrorMessage(error, "Unable to approve the leave request. Please try again."),
       });
+      return false;
     } finally {
       setIsApproving(false);
     }
@@ -201,7 +204,7 @@ function ActionsCell({
     } catch (error) {
       console.error("Error rejecting leave request:", error);
       toast.error("Failed to reject leave request", {
-        description: "Unable to reject the leave request. Please try again.",
+        description: extractErrorMessage(error, "Unable to reject the leave request. Please try again."),
       });
     } finally {
       setIsRejecting(false);
@@ -209,15 +212,8 @@ function ActionsCell({
   };
 
   const handleSaveEdit = async () => {
-    if (!leaveTypeId || !startDate || !endDate || !reason.trim()) {
+    if (!leaveTypeId || !startDate || !endDate) {
       toast.error("Please fill all required fields");
-      return;
-    }
-
-    if (reason.trim().length < VALIDATION.MIN_LEAVE_REASON_LENGTH) {
-      toast.error("Reason is too short", {
-        description: `Please provide at least ${VALIDATION.MIN_LEAVE_REASON_LENGTH} characters.`,
-      });
       return;
     }
 
@@ -252,7 +248,6 @@ function ActionsCell({
       startDate,
       endDate,
       durationType,
-      reason: reason.trim(),
       hours,
     };
 
@@ -280,8 +275,7 @@ function ActionsCell({
     } catch (error) {
       console.error("Error updating leave request:", error);
       toast.error("Failed to update leave request", {
-        description:
-          "Unable to update this leave request. If this date is a weekend or holiday, please select a valid working day and try again.",
+        description: extractErrorMessage(error, "Unable to update this leave request. If this date is a weekend or holiday, please select a valid working day and try again."),
       });
     } finally {
       setIsSavingEdit(false);
@@ -308,8 +302,7 @@ function ActionsCell({
     } catch (error) {
       console.error("Error deleting leave request:", error);
       toast.error("Failed to delete leave request", {
-        description:
-          "Unable to delete the approved leave request. Please try again.",
+        description: extractErrorMessage(error, "Unable to delete the approved leave request. Please try again."),
       });
     } finally {
       setIsDeleting(false);
@@ -498,16 +491,6 @@ function ActionsCell({
                   </div>
                 )}
               </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor={`reason-${leave.id}`}>Reason</Label>
-                <Textarea
-                  id={`reason-${leave.id}`}
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  className="min-h-[96px]"
-                />
-              </div>
             </div>
 
             <DialogFooter>
@@ -534,15 +517,89 @@ function ActionsCell({
           </DialogContent>
         </Dialog>
       )}
-      <Button
-        variant="default"
-        onClick={handleApprove}
-        disabled={isDisabled}
-        size="xs"
-        title={isBulkOperationInProgress ? "Bulk operation in progress" : ""}
+      <Dialog
+        open={isApproveDialogOpen}
+        onOpenChange={(open) => {
+          setIsApproveDialogOpen(open);
+          if (!open) {
+            setIsPolicyAcknowledged(false);
+          }
+        }}
       >
-        {isApproving ? <Spinner /> : <Check />}
-      </Button>
+        <DialogTrigger asChild>
+          <Button
+            variant="default"
+            disabled={isDisabled}
+            size="xs"
+            title={isBulkOperationInProgress ? "Bulk operation in progress" : ""}
+          >
+            {isApproving ? <Spinner /> : <Check />}
+          </Button>
+        </DialogTrigger>
+        <DialogContent className="sm:max-w-[460px] [&_[data-slot=dialog-close]>svg]:text-red-600">
+          <DialogTitle className="sr-only">Approve Leave Request</DialogTitle>
+
+          <div className="flex items-start gap-3 py-1">
+            <Checkbox
+              id={`leave-policy-ack-${leave.id}`}
+              checked={isPolicyAcknowledged}
+              onCheckedChange={(checked) => setIsPolicyAcknowledged(checked === true)}
+              disabled={isApproving}
+            />
+            <Label
+              htmlFor={`leave-policy-ack-${leave.id}`}
+              className="text-sm font-normal leading-relaxed text-muted-foreground"
+            >
+              <span>
+                I confirm that I have read the{' '}
+                {leavePolicyUrl ? (
+                  <a
+                    href={leavePolicyUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-700 underline"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    Leave Policy
+                  </a>
+                ) : (
+                  'Leave Policy'
+                )}
+                {' '}and that this leave request complies with the organisation's Leave Policy.
+              </span>
+            </Label>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="neutral"
+              onClick={() => setIsApproveDialogOpen(false)}
+              disabled={isApproving}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="default"
+              disabled={!isPolicyAcknowledged || isApproving}
+              onClick={async () => {
+                const isApproved = await handleApprove();
+                if (isApproved) {
+                  setIsApproveDialogOpen(false);
+                  setIsPolicyAcknowledged(false);
+                }
+              }}
+            >
+              {isApproving ? (
+                <>
+                  <Spinner className="mr-2 h-4 w-4" /> Approving...
+                </>
+              ) : (
+                "Approve"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Button
         variant="neutral"
         onClick={handleReject}
@@ -628,18 +685,6 @@ export const columns: ColumnDef<LeaveRequest>[] = [
     cell: ({ row }) => {
       return formatDuration(row.original);
     },
-  },
-  {
-    accessorKey: "reason",
-    header: "Reason",
-    cell: ({ row }) => (
-      <div
-        className="max-w-[200px] truncate text-muted-foreground"
-        title={row.original.reason}
-      >
-        {row.original.reason}
-      </div>
-    ),
   },
   {
     accessorKey: "state",

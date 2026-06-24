@@ -24,6 +24,7 @@ import { Spinner } from "@/components/ui/spinner";
 import apiClient from "@/lib/api-client";
 import { DATE_FORMATS, API_PATHS } from "@/lib/constants";
 import { toast } from "sonner";
+import { extractErrorMessage } from "@/lib/utils";
 import { LoadingState } from "./LoadingState";
 
 interface LeaveRequest {
@@ -45,7 +46,6 @@ interface LeaveRequest {
   durationType: "full_day" | "half_day";
   halfDaySegment: "first_half" | "second_half" | null;
   hours: number;
-  reason: string;
   requestedAt: string;
   updatedAt: string;
   decidedByUserId: number | null;
@@ -97,7 +97,7 @@ export function LeaveTable({
     } catch (error) {
       console.error("Error deleting leave request:", error);
       toast.error("Failed to delete leave request", {
-        description: "Unable to delete the approved leave request. Please try again.",
+        description: extractErrorMessage(error, "Unable to delete the approved leave request. Please try again."),
       });
     } finally {
       setDeletingId(null);
@@ -127,7 +127,6 @@ export function LeaveTable({
             <TableHead>Start Date</TableHead>
             <TableHead>End Date</TableHead>
             <TableHead>Duration</TableHead>
-            <TableHead>Reason</TableHead>
             {canDeleteApprovedRequests && <TableHead className="text-right">Actions</TableHead>}
           </TableRow>
         </TableHeader>
@@ -153,7 +152,6 @@ export function LeaveTable({
                 {format(parseISO(leave.endDate), DATE_FORMATS.DISPLAY)}
               </TableCell>
               <TableCell>{formatDuration(leave)}</TableCell>
-              <TableCell className="max-w-xs truncate">{leave.reason}</TableCell>
               {canDeleteApprovedRequests && (
                 <TableCell className="text-right">
                   <Button

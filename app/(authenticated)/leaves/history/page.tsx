@@ -45,7 +45,6 @@ interface LeaveRequest {
   durationType: "full_day" | "half_day";
   halfDaySegment: "first_half" | "second_half" | null;
   hours: number;
-  reason: string;
   requestedAt: string;
   updatedAt: string;
   decidedByUserId: number | null;
@@ -92,7 +91,7 @@ export default function LeaveHistoryPage() {
       setLeaveHistory,
       setIsLoading
     );
-  }, [fetchLeaveData]);
+  }, [fetchLeaveData, mainTab]);
 
   // Fetch team leave requests from API
   useEffect(() => {
@@ -101,7 +100,7 @@ export default function LeaveHistoryPage() {
       setTeamLeaveHistory,
       setIsTeamLoading
     );
-  }, [fetchLeaveData]);
+  }, [fetchLeaveData, mainTab]);
 
   // Refetch team leave requests after approval/rejection
   const refetchTeamLeaveRequests = useCallback(() => {
@@ -148,7 +147,6 @@ export default function LeaveHistoryPage() {
         "Leave Type",
         "Leave Dates",
         "Category",
-        "Reason",
         "Approval Status",
         "Approver Name",
         "Approval Date",
@@ -189,7 +187,6 @@ export default function LeaveHistoryPage() {
         const end = rec.endDate ? format(parseISO(rec.endDate), "yyyy-MM-dd") : "";
         const leaveDates = start && end ? (start === end ? start : `${start} to ${end}`) : start || end || "";
         const category = rec.leaveType?.code ?? "";
-        const reason = (rec.reason ?? "").replace(/\r?\n/g, " ");
         const approvalStatus =
           rec.state === "approved" ? "Approved" : rec.state === "rejected" ? "Rejected" : "Pending";
         const approverNameFromFields =
@@ -222,7 +219,6 @@ export default function LeaveHistoryPage() {
           leaveType,
           leaveDates,
           category,
-          reason,
           approvalStatus,
           approverName,
           approvalDate,
