@@ -71,6 +71,19 @@ const formatDuration = (leave: LeaveRequest) => {
   return days === 1 ? "1 Day" : `${days} Days`;
 };
 
+function isCompOffLeaveType(leaveType?: { name?: string; code?: string }) {
+  const normalizedName = String(leaveType?.name ?? "").trim().toLowerCase();
+  const normalizedCode = String(leaveType?.code ?? "").trim().toLowerCase();
+
+  return (
+    normalizedName === "comp off" ||
+    normalizedName === "compensatory leave" ||
+    normalizedCode === "compensatory_leave" ||
+    normalizedCode === "compensatory-leave" ||
+    normalizedCode === "compensatory"
+  );
+}
+
 function ActionsCell({
   leave,
   onUpdate,
@@ -87,10 +100,12 @@ function ActionsCell({
   hasMultipleSelectedRows?: boolean;
 }) {
   const [isApproving, setIsApproving] = useState(false);
-  const [isApproveDialogOpen, setIsApproveDialogOpen] = useState(false);
+  const [isRejecting, setIsRejecting] = useState(false);
+  const [confirmingAction, setConfirmingAction] = useState<"approve" | "reject" | null>(null);
+  const [validatingAction, setValidatingAction] = useState<"approve" | "reject" | null>(null);
+  const [wasPreValidated, setWasPreValidated] = useState(false);
   const [isPolicyAcknowledged, setIsPolicyAcknowledged] = useState(false);
   const leavePolicyUrl = process.env.NEXT_PUBLIC_LEAVE_POLICY_URL?.trim() ?? "";
-  const [isRejecting, setIsRejecting] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
@@ -127,12 +142,12 @@ function ActionsCell({
 
         const mapped = Array.isArray(source)
           ? source
-              .map((type: any) => ({
-                id: Number(type?.id),
-                name: String(type?.name ?? ""),
-                code: type?.code ? String(type.code) : undefined,
-              }))
-              .filter((type) => Number.isFinite(type.id) && type.id > 0 && type.name)
+            .map((type: any) => ({
+              id: Number(type?.id),
+              name: String(type?.name ?? ""),
+              code: type?.code ? String(type.code) : undefined,
+            }))
+            .filter((type) => Number.isFinite(type.id) && type.id > 0 && type.name)
           : [];
 
         if (isMounted) {
@@ -169,19 +184,37 @@ function ActionsCell({
     setHalfDaySegment(leave.halfDaySegment ?? "");
   };
 
+  const handlePreActionCheck = async (action: "approve" | "reject") => {
+    setValidatingAction(action);
+    try {
+      await apiClient.post(`${API_PATHS.LEAVES_APPROVE}/${leave.id}/${action}?validate=true`);
+      setWasPreValidated(true);
+      setConfirmingAction(action);
+    } catch (error) {
+      toast.error(`Failed to ${action} leave request`, {
+        description: extractErrorMessage(error, `Failed to validate ${action} action`),
+      });
+    } finally {
+      setValidatingAction(null);
+    }
+  };
+
   const handleApprove = async () => {
     setIsApproving(true);
     try {
-      await apiClient.post(`${API_PATHS.LEAVES_APPROVE}/${leave.id}/approve`);
+      if (!wasPreValidated) {
+        await apiClient.post(`${API_PATHS.LEAVES_APPROVE}/${leave.id}/approve`);
+      }
       toast.success("Leave request approved", {
         description: `Leave request for ${leave.user.name} has been approved.`,
       });
       if (onUpdate) {
         onUpdate();
       }
+      setWasPreValidated(false);
+      setConfirmingAction(null);
       return true;
     } catch (error) {
-      console.error("Error approving leave request:", error);
       toast.error("Failed to approve leave request", {
         description: extractErrorMessage(error, "Unable to approve the leave request. Please try again."),
       });
@@ -194,15 +227,18 @@ function ActionsCell({
   const handleReject = async () => {
     setIsRejecting(true);
     try {
-      await apiClient.post(`${API_PATHS.LEAVES_REJECT}/${leave.id}/reject`);
+      if (!wasPreValidated) {
+        await apiClient.post(`${API_PATHS.LEAVES_REJECT}/${leave.id}/reject`);
+      }
       toast.success("Leave request rejected", {
         description: `Leave request for ${leave.user.name} has been rejected.`,
       });
       if (onUpdate) {
         onUpdate();
       }
+      setWasPreValidated(false);
+      setConfirmingAction(null);
     } catch (error) {
-      console.error("Error rejecting leave request:", error);
       toast.error("Failed to reject leave request", {
         description: extractErrorMessage(error, "Unable to reject the leave request. Please try again."),
       });
@@ -309,11 +345,13 @@ function ActionsCell({
     }
   };
 
-  const isLoading = isApproving || isRejecting || isSavingEdit;
+  const isLoading = isApproving || isRejecting || isSavingEdit || validatingAction !== null;
   const isDisabled = isLoading || isBulkOperationInProgress || isDeleting;
   const canShowPendingActions = leave.state === "pending";
   const canShowApprovedDelete =
-    leave.state === "approved" && Boolean(canDeleteApprovedRequests);
+    leave.state === "approved" &&
+    Boolean(canDeleteApprovedRequests) &&
+    !isCompOffLeaveType(leave.leaveType);
 
   if (hasMultipleSelectedRows || (!canShowPendingActions && !canShowApprovedDelete)) {
     return null;
@@ -372,7 +410,7 @@ function ActionsCell({
 
   return (
     <div className="flex gap-2">
-      {canEditPendingRequests && (
+      {canEditPendingRequests && !isCompOffLeaveType(leave.leaveType) && (
         <Dialog
           open={isEditOpen}
           onOpenChange={(open) => {
@@ -518,33 +556,54 @@ function ActionsCell({
         </Dialog>
       )}
       <Dialog
-        open={isApproveDialogOpen}
+        open={confirmingAction !== null}
         onOpenChange={(open) => {
-          setIsApproveDialogOpen(open);
           if (!open) {
+            setConfirmingAction(null);
             setIsPolicyAcknowledged(false);
+            if (wasPreValidated) {
+              if (onUpdate) {
+                onUpdate();
+              }
+              setWasPreValidated(false);
+            }
           }
         }}
       >
-        <DialogTrigger asChild>
+        <div className="flex gap-2">
           <Button
             variant="default"
             disabled={isDisabled}
+            onClick={() => handlePreActionCheck("approve")}
             size="xs"
-            title={isBulkOperationInProgress ? "Bulk operation in progress" : ""}
+            title={isBulkOperationInProgress ? "Bulk operation in progress" : "Approve leave"}
           >
-            {isApproving ? <Spinner /> : <Check />}
+            {isApproving || validatingAction === "approve" ? <Spinner /> : <Check />}
           </Button>
-        </DialogTrigger>
+
+          <Button
+            variant="neutral"
+            onClick={() => handlePreActionCheck("reject")}
+            disabled={isDisabled}
+            size="xs"
+            className="text-red-600 hover:bg-red-50 border-red-200"
+            title={isBulkOperationInProgress ? "Bulk operation in progress" : "Reject leave"}
+          >
+            {isRejecting || validatingAction === "reject" ? <Spinner /> : <X />}
+          </Button>
+        </div>
+
         <DialogContent className="sm:max-w-[460px] [&_[data-slot=dialog-close]>svg]:text-red-600">
-          <DialogTitle className="sr-only">Approve Leave Request</DialogTitle>
+          <DialogTitle className="sr-only">
+            {confirmingAction === "approve" ? "Approve" : "Reject"} Leave Request
+          </DialogTitle>
 
           <div className="flex items-start gap-3 py-1">
             <Checkbox
               id={`leave-policy-ack-${leave.id}`}
               checked={isPolicyAcknowledged}
               onCheckedChange={(checked) => setIsPolicyAcknowledged(checked === true)}
-              disabled={isApproving}
+              disabled={isApproving || isRejecting}
             />
             <Label
               htmlFor={`leave-policy-ack-${leave.id}`}
@@ -573,43 +632,36 @@ function ActionsCell({
           <DialogFooter>
             <Button
               variant="neutral"
-              onClick={() => setIsApproveDialogOpen(false)}
-              disabled={isApproving}
+              onClick={() => setConfirmingAction(null)}
+              disabled={isApproving || isRejecting}
             >
               Cancel
             </Button>
             <Button
               variant="default"
-              disabled={!isPolicyAcknowledged || isApproving}
+              disabled={!isPolicyAcknowledged || isApproving || isRejecting}
+              className={confirmingAction === "reject" ? "bg-red-600 hover:bg-red-700 text-white" : ""}
               onClick={async () => {
-                const isApproved = await handleApprove();
-                if (isApproved) {
-                  setIsApproveDialogOpen(false);
-                  setIsPolicyAcknowledged(false);
+                if (confirmingAction === "approve") {
+                  const success = await handleApprove();
+                  if (success) setConfirmingAction(null);
+                } else if (confirmingAction === "reject") {
+                  await handleReject();
+                  setConfirmingAction(null);
                 }
               }}
             >
-              {isApproving ? (
+              {isApproving || isRejecting ? (
                 <>
-                  <Spinner className="mr-2 h-4 w-4" /> Approving...
+                  <Spinner className="mr-2 h-4 w-4" /> {confirmingAction === "approve" ? "Approving..." : "Rejecting..."}
                 </>
               ) : (
-                "Approve"
+                confirmingAction === "approve" ? "Approve" : "Reject"
               )}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <Button
-        variant="neutral"
-        onClick={handleReject}
-        disabled={isDisabled}
-        size="xs"
-        className="text-red-600 hover:bg-red-50 border-red-200"
-        title={isBulkOperationInProgress ? "Bulk operation in progress" : ""}
-      >
-        {isRejecting ? <Spinner /> : <X />}
-      </Button>
     </div>
   );
 }
