@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import { format, parseISO } from "date-fns";
 import { Calendar as CalendarIcon, X, TreePalm } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { LeaveRequest, LeaveBalanceItem } from "@/lib/leave-types";
+import { LeaveRequest, LeaveBalanceItem, LeaveHistoryTableProps } from "@/lib/leave-types";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -31,12 +31,6 @@ import {
   formatLeaveDaysValue,
   getDisplayLeaveTypeName,
 } from "@/lib/leave-helpers";
-
-interface LeaveHistoryTableProps {
-  leaveHistory: LeaveRequest[];
-  isLoading: boolean;
-  balances: LeaveBalanceItem[];
-}
 
 export function LeaveHistoryTable({
   leaveHistory,
@@ -373,12 +367,14 @@ export function LeaveHistoryTable({
                       No leave records found
                     </p>
                     {hasFilters && (
-                      <button
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={clearFilters}
-                        className="text-xs text-foreground underline underline-offset-2"
+                        className="h-auto p-0 text-xs font-normal text-foreground underline underline-offset-2 hover:bg-transparent"
                       >
                         Clear filters
-                      </button>
+                      </Button>
                     )}
                   </div>
                 </TableCell>

@@ -2,7 +2,8 @@
 
 import { CheckCircle2, X, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { LeaveBalanceItem } from "@/lib/leave-types";
+import { LeaveBalanceItem, AdminEmployeeLeaveBalanceTableProps } from "@/lib/leave-types";
+import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -18,17 +19,6 @@ import {
   getLeaveCategory,
   isCompOffLeaveType,
 } from "@/lib/leave-helpers";
-
-interface AdminEmployeeLeaveBalanceTableProps {
-  sortedAdminEmployeeBalances: LeaveBalanceItem[];
-  editingAllocatedBalance: LeaveBalanceItem | null;
-  editingAllocatedHours: string;
-  isUpdatingAllocated: boolean;
-  canEditTeamPendingRequests: boolean;
-  setEditingAllocatedHours: (value: string) => void;
-  setEditingAllocatedBalance: (value: LeaveBalanceItem | null) => void;
-  handleUpdateAllocatedBalance: () => Promise<void>;
-}
 
 export function AdminEmployeeLeaveBalanceTable({
   sortedAdminEmployeeBalances,
@@ -120,19 +110,20 @@ export function AdminEmployeeLeaveBalanceTable({
                             className="h-7 w-16 text-center text-sm"
                             disabled={isUpdatingAllocated}
                           />
-                          <button
+                          <Button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
                               void handleUpdateAllocatedBalance();
                             }}
                             disabled={isUpdatingAllocated}
-                            className="p-1 text-emerald-600 hover:bg-emerald-50 rounded transition-colors disabled:opacity-50"
+                            variant="ghost"
+                            size="icon"
                             title="Confirm"
                           >
                             <CheckCircle2 className="h-4 w-4" />
-                          </button>
-                          <button
+                          </Button>
+                          <Button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
@@ -140,18 +131,19 @@ export function AdminEmployeeLeaveBalanceTable({
                               setEditingAllocatedHours("");
                             }}
                             disabled={isUpdatingAllocated}
-                            className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-50"
+                            variant="ghost"
+                            size="icon"
                             title="Cancel"
                           >
                             <X className="h-4 w-4" />
-                          </button>
+                          </Button>
                         </div>
                       ) : (
                         <div className="flex items-center justify-center gap-2">
                           <span>{formatLeaveDaysValue(allocated)}</span>
                           {canEditTeamPendingRequests &&
                             !isCompOffLeaveType(balance.leaveType) && (
-                              <button
+                              <Button
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -160,11 +152,12 @@ export function AdminEmployeeLeaveBalanceTable({
                                     String(balance.allocatedHours / 8)
                                   );
                                 }}
-                                className="p-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+                                variant="ghost"
+                                size="icon"
                                 title="Edit allocated balance"
                               >
                                 <Pencil className="h-4 w-4" />
-                              </button>
+                              </Button>
                             )}
                         </div>
                       )}

@@ -14,11 +14,7 @@ import {
   formatLeaveDaysValue,
   getDisplayLeaveTypeName,
 } from "@/lib/leave-helpers";
-import type { LeaveRequest as TeamLeaveRequest } from "../history/_components";
-
-interface AdminEmployeeLeaveHistoryTableProps {
-  adminEmployeeHistory: TeamLeaveRequest[];
-}
+import type { LeaveRequest as TeamLeaveRequest, AdminEmployeeLeaveHistoryTableProps } from "@/lib/leave-types";
 
 export function AdminEmployeeLeaveHistoryTable({
   adminEmployeeHistory,

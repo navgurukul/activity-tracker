@@ -85,6 +85,7 @@ import {
   LeaveSummary,
   LeavesMainTab,
   PersistedLeavesState,
+  RawLeaveType,
 } from "@/lib/leave-types";
 import { LeaveBalanceTable } from "./_components/LeaveBalanceTable";
 import { LeaveHistoryTable } from "./_components/LeaveHistoryTable";
@@ -189,7 +190,7 @@ export default function LeavesPage() {
   const [adminEmployeeHistory, setAdminEmployeeHistory] = useState<
     TeamLeaveRequest[]
   >([]);
-  const [adminLeaveTypes, setAdminLeaveTypes] = useState<any[]>([]);
+  const [adminLeaveTypes, setAdminLeaveTypes] = useState<RawLeaveType[]>([]);
   const [adminLeaveDateRange, setAdminLeaveDateRange] = useState<DateRange | undefined>();
   const [isAdminDatePickerOpen, setIsAdminDatePickerOpen] = useState(false);
   const [adminLeaveValidationError, setAdminLeaveValidationError] = useState<string | null>(null);
@@ -896,8 +897,8 @@ export default function LeavesPage() {
       try {
         const res = await apiClient.get(API_PATHS.LEAVES_TYPES);
         const types = Array.isArray(res.data?.data) ? res.data.data : Array.isArray(res.data) ? res.data : [];
-        const filteredTypes = types.filter(
-          (type: any) =>
+          const filteredTypes = types.filter(
+            (type: RawLeaveType) =>
             String(type?.code ?? "").trim().toUpperCase() !== "CPL" &&
             String(type?.name ?? "").trim().toLowerCase() !== "compensatory leave"
         );

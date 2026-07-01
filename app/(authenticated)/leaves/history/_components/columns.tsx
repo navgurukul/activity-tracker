@@ -30,36 +30,8 @@ import apiClient from "@/lib/api-client";
 import { toast } from "sonner";
 import { Spinner } from "@/components/ui/spinner";
 import { extractErrorMessage } from "@/lib/utils";
-
-export type LeaveRequest = {
-  id: number;
-  user: {
-    id: number;
-    name: string;
-    email: string;
-  };
-  managerId: number;
-  leaveType: {
-    id: number;
-    name: string;
-    code: string;
-  };
-  state: "pending" | "approved" | "rejected";
-  startDate: string;
-  endDate: string;
-  durationType: "full_day" | "half_day";
-  halfDaySegment: "first_half" | "second_half" | null;
-  hours: number;
-  requestedAt: string;
-  updatedAt: string;
-  decidedByUserId: number | null;
-};
-
-type LeaveTypeOption = {
-  id: number;
-  name: string;
-  code?: string;
-};
+import type { LeaveRequest, LeaveTypeOption } from "@/lib/leave-types";
+import { isCompOffLeaveType } from "@/lib/leave-helpers";
 
 const formatDuration = (leave: LeaveRequest) => {
   if (leave.durationType === "half_day") {
@@ -70,19 +42,6 @@ const formatDuration = (leave: LeaveRequest) => {
   const days = leave.hours / 8;
   return days === 1 ? "1 Day" : `${days} Days`;
 };
-
-function isCompOffLeaveType(leaveType?: { name?: string; code?: string }) {
-  const normalizedName = String(leaveType?.name ?? "").trim().toLowerCase();
-  const normalizedCode = String(leaveType?.code ?? "").trim().toLowerCase();
-
-  return (
-    normalizedName === "comp off" ||
-    normalizedName === "compensatory leave" ||
-    normalizedCode === "compensatory_leave" ||
-    normalizedCode === "compensatory-leave" ||
-    normalizedCode === "compensatory"
-  );
-}
 
 function ActionsCell({
   leave,

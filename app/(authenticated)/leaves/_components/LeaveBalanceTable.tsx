@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { LeaveBalanceItem } from "@/lib/leave-types";
+import { LeaveBalanceItem, LeaveBalanceTableProps } from "@/lib/leave-types";
 import {
   Table,
   TableBody,
@@ -18,11 +18,6 @@ import {
   getDisplayLeaveTypeName,
   getLeaveCategory,
 } from "@/lib/leave-helpers";
-
-interface LeaveBalanceTableProps {
-  balances: LeaveBalanceItem[];
-  isLoading: boolean;
-}
 
 export function LeaveBalanceTable({ balances, isLoading }: LeaveBalanceTableProps) {
   const sortedBalances = useMemo(() => {
