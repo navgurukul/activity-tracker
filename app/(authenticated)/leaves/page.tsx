@@ -454,7 +454,8 @@ export default function LeavesPage() {
         const result = await checkLeaveConflictWithTimesheet(
           startDate,
           endDate,
-          durationType as "full_day" | "half_day"
+          durationType as "full_day" | "half_day",
+          adminApplyEmployeeUserId
         );
         if (result.hasConflict) {
           setAdminLeaveValidationError(result.message || "Conflict detected");
@@ -467,7 +468,7 @@ export default function LeavesPage() {
         setAdminLeaveIsValidating(false);
       }
     },
-    []
+    [adminApplyEmployeeUserId]
   );
 
   useEffect(() => {
@@ -946,7 +947,8 @@ export default function LeavesPage() {
         const conflict = await checkLeaveConflictWithTimesheet(
           values.startDate,
           values.endDate,
-          values.durationType as "full_day" | "half_day"
+          values.durationType as "full_day" | "half_day",
+          adminApplyEmployeeUserId
         );
         if (conflict.hasConflict) {
           toast.error("Conflict with timesheet entries", {
@@ -956,7 +958,11 @@ export default function LeavesPage() {
           return;
         }
 
-        const netDays = await calculateLeaveDays(values.startDate, values.endDate);
+        const netDays = await calculateLeaveDays(
+          values.startDate,
+          values.endDate,
+          adminApplyEmployeeUserId
+        );
         if (netDays === 0) {
           toast.error("Selected date range consists only of non-working days or holidays");
           setAdminApplyLeaveSubmitting(false);
