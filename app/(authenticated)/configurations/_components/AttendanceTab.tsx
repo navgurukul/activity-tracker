@@ -17,21 +17,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Pagination,
-  PaginationContent,
-  PaginationEllipsis,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from "@/components/ui/pagination";
 import { TableLoadingState } from "@/components/ui/table-loading-state";
 import { Spinner } from "@/components/ui/spinner";
 import apiClient from "@/lib/api-client";
 import { API_PATHS } from "@/lib/constants";
 import { SalarySummaryRow } from "@/lib/config";
 import { exportSalarySummaryCsv } from "@/lib/csv-helper";
+import { AppPagination } from "@/components/ui/app-pagination";
 
 export function AttendanceTab() {
   const [currentMonth, setCurrentMonth] = useState<Date>(() => {
@@ -167,23 +159,7 @@ export function AttendanceTab() {
   };
 
 
-  const getPageNumbers = (): (number | "ellipsis")[] => {
-    const pages: (number | "ellipsis")[] = [];
-    if (totalPages <= 7) {
-      for (let i = 1; i <= totalPages; i++) pages.push(i);
-    } else {
-      pages.push(1);
-      if (page > 3) pages.push("ellipsis");
-      const start = Math.max(2, page - 1);
-      const end = Math.min(totalPages - 1, page + 1);
-      for (let i = start; i <= end; i++) pages.push(i);
-      if (page < totalPages - 2) pages.push("ellipsis");
-      if (totalPages > 1) pages.push(totalPages);
-    }
-    return pages;
-  };
 
-  const pageNumbers = getPageNumbers();
 
   const getStatusBadgeStyle = (status?: string) => {
     const norm = (status || "").toLowerCase();
@@ -395,47 +371,16 @@ export function AttendanceTab() {
           </div>
         )}
 
-        {/* Pagination */}
-        {showPagination && !loading && total > 0 && (
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2">
-            <div className="text-xs text-muted-foreground">
-              Showing {(page - 1) * limit + 1}-{Math.min(page * limit, total)} of {total} employees
-            </div>
-            <Pagination>
-              <PaginationContent>
-                <PaginationItem>
-                  <PaginationPrevious
-                    onClick={() => page > 1 && setPage(page - 1)}
-                    className={page === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
-                  />
-                </PaginationItem>
-                {pageNumbers.map((num, idx) =>
-                  num === "ellipsis" ? (
-                    <PaginationItem key={`ell-${idx}`}>
-                      <PaginationEllipsis />
-                    </PaginationItem>
-                  ) : (
-                    <PaginationItem key={num}>
-                      <PaginationLink
-                        onClick={() => setPage(num)}
-                        isActive={page === num}
-                        className="cursor-pointer"
-                      >
-                        {num}
-                      </PaginationLink>
-                    </PaginationItem>
-                  )
-                )}
-                <PaginationItem>
-                  <PaginationNext
-                    onClick={() => page < totalPages && setPage(page + 1)}
-                    className={page === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
-                  />
-                </PaginationItem>
-              </PaginationContent>
-            </Pagination>
-          </div>
-        )}
+        <AppPagination
+          page={page}
+          totalPages={totalPages}
+          total={total}
+          limit={limit}
+          onPageChange={setPage}
+          loading={loading}
+          itemLabel="employee"
+          itemLabelPlural="employees"
+        />
       </CardContent>
     </Card>
   );

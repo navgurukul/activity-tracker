@@ -31,20 +31,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Pagination,
-  PaginationContent,
-  PaginationEllipsis,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from "@/components/ui/pagination";
 import { TableLoadingState } from "@/components/ui/table-loading-state";
 import { Spinner } from "@/components/ui/spinner";
 import { useAuth } from "@/hooks/use-auth";
 import apiClient from "@/lib/api-client";
 import { API_PATHS } from "@/lib/constants";
+import { AppPagination } from "@/components/ui/app-pagination";
 
 import { RoleUser } from "@/lib/config";
 
@@ -271,24 +263,6 @@ export function RoleManagementTab() {
     }
     return "bg-[var(--color-gray-bg)] text-[var(--color-gray-text)] border-[var(--color-gray-text)]/30 hover:bg-[var(--color-gray-bg)]";
   };
-
-  const getPageNumbers = (): (number | "ellipsis")[] => {
-    const pages: (number | "ellipsis")[] = [];
-    if (totalPages <= 7) {
-      for (let i = 1; i <= totalPages; i++) pages.push(i);
-    } else {
-      pages.push(1);
-      if (page > 3) pages.push("ellipsis");
-      const start = Math.max(2, page - 1);
-      const end = Math.min(totalPages - 1, page + 1);
-      for (let i = start; i <= end; i++) pages.push(i);
-      if (page < totalPages - 2) pages.push("ellipsis");
-      if (totalPages > 1) pages.push(totalPages);
-    }
-    return pages;
-  };
-
-  const pageNumbers = getPageNumbers();
 
   const isRoleElevated = (role?: string) => {
     const norm = (role || "").toLowerCase();
@@ -543,47 +517,16 @@ export function RoleManagementTab() {
           </div>
         )}
 
-        {/* Pagination controls */}
-        {showPagination && !loading && users.length > 0 && (
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2">
-            <div className="text-xs text-muted-foreground">
-              Showing {(page - 1) * limit + 1}-{Math.min(page * limit, total)} of {total} users
-            </div>
-            <Pagination>
-              <PaginationContent>
-                <PaginationItem>
-                  <PaginationPrevious
-                    onClick={() => page > 1 && setPage(page - 1)}
-                    className={page === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
-                  />
-                </PaginationItem>
-                {pageNumbers.map((num, idx) =>
-                  num === "ellipsis" ? (
-                    <PaginationItem key={`ell-${idx}`}>
-                      <PaginationEllipsis />
-                    </PaginationItem>
-                  ) : (
-                    <PaginationItem key={num}>
-                      <PaginationLink
-                        onClick={() => setPage(num)}
-                        isActive={page === num}
-                        className="cursor-pointer"
-                      >
-                        {num}
-                      </PaginationLink>
-                    </PaginationItem>
-                  )
-                )}
-                <PaginationItem>
-                  <PaginationNext
-                    onClick={() => page < totalPages && setPage(page + 1)}
-                    className={page === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
-                  />
-                </PaginationItem>
-              </PaginationContent>
-            </Pagination>
-          </div>
-        )}
+        <AppPagination
+          page={page}
+          totalPages={totalPages}
+          total={total}
+          limit={limit}
+          onPageChange={setPage}
+          loading={loading}
+          itemLabel="user"
+          itemLabelPlural="users"
+        />
 
         {/* Dialog: Assign Role */}
         <Dialog open={isAssignOpen} onOpenChange={setIsAssignOpen}>

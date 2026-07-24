@@ -18,15 +18,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Pagination,
-  PaginationContent,
-  PaginationEllipsis,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from "@/components/ui/pagination";
 import { TableLoadingState } from "@/components/ui/table-loading-state";
 import apiClient from "@/lib/api-client";
 import { API_PATHS } from "@/lib/constants";
@@ -35,6 +26,7 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover
 import { Checkbox } from "@/components/ui/checkbox";
 import { Calendar } from "@/components/ui/calendar";
 import { AuditLog } from "@/lib/config";
+import { AppPagination } from "@/components/ui/app-pagination";
 
 export function AdminLogsTab() {
   const { user: currentUser } = useAuth();
@@ -218,21 +210,7 @@ export function AdminLogsTab() {
       .join("\n");
   };
 
-  const getPageNumbers = (): (number | "ellipsis")[] => {
-    const pages: (number | "ellipsis")[] = [];
-    if (totalPages <= 7) {
-      for (let i = 1; i <= totalPages; i++) pages.push(i);
-    } else {
-      pages.push(1);
-      if (page > 3) pages.push("ellipsis");
-      const start = Math.max(2, page - 1);
-      const end = Math.min(totalPages - 1, page + 1);
-      for (let i = start; i <= end; i++) pages.push(i);
-      if (page < totalPages - 2) pages.push("ellipsis");
-      if (totalPages > 1) pages.push(totalPages);
-    }
-    return pages;
-  };
+
 
   const getTargetEmail = (log: AuditLog) => {
     const target = log.targetUser || (log.targetUserId ? usersMap[log.targetUserId] : null);
@@ -252,7 +230,6 @@ export function AdminLogsTab() {
     return entries.map(([k, v]) => `${k}: ${v}`).join(", ");
   };
 
-  const pageNumbers = getPageNumbers();
 
   return (
     <Card className="w-full border-2 border-border rounded-base bg-background shadow-shadow">
@@ -553,47 +530,16 @@ export function AdminLogsTab() {
           </div>
         )}
 
-        {/* Pagination controls */}
-        {showPagination && !loading && total > 0 && (
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2">
-            <div className="text-xs text-muted-foreground">
-              Showing {(page - 1) * limit + 1}-{Math.min(page * limit, total)} of {total} logs
-            </div>
-            <Pagination>
-              <PaginationContent>
-                <PaginationItem>
-                  <PaginationPrevious
-                    onClick={() => page > 1 && setPage(page - 1)}
-                    className={page === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
-                  />
-                </PaginationItem>
-                {pageNumbers.map((num, idx) =>
-                  num === "ellipsis" ? (
-                    <PaginationItem key={`ell-${idx}`}>
-                      <PaginationEllipsis />
-                    </PaginationItem>
-                  ) : (
-                    <PaginationItem key={num}>
-                      <PaginationLink
-                        onClick={() => setPage(num)}
-                        isActive={page === num}
-                        className="cursor-pointer"
-                      >
-                        {num}
-                      </PaginationLink>
-                    </PaginationItem>
-                  )
-                )}
-                <PaginationItem>
-                  <PaginationNext
-                    onClick={() => page < totalPages && setPage(page + 1)}
-                    className={page === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
-                  />
-                </PaginationItem>
-              </PaginationContent>
-            </Pagination>
-          </div>
-        )}
+        <AppPagination
+          page={page}
+          totalPages={totalPages}
+          total={total}
+          limit={limit}
+          onPageChange={setPage}
+          loading={loading}
+          itemLabel="log"
+          itemLabelPlural="logs"
+        />
       </CardContent>
     </Card>
   );
