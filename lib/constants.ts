@@ -56,6 +56,9 @@ export const API_PATHS = {
   PROJECTS: "/v1/projects",
   DEPARTMENTS: "/v1/departments",
   SALARY_SUMMARY: "/v1/timesheets/salary-summary",
+  USERS_ROLE: "/v1/users/role",
+  ADMIN_USER_ROLE: "/v1/admin/users/{userId}/role",
+  AUDIT_LOGS: "/v1/audit/logs",
 } as const;
 
 export type ApiPathKey = keyof typeof API_PATHS;
