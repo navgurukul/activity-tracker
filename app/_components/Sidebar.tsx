@@ -14,6 +14,7 @@ import {
   Target,
   TreePalm,
   Settings,
+  Network,
 } from "lucide-react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -88,6 +89,11 @@ const navLinks: NavItem[] = [
     title: "Off Day Work",
     url: "/compoff",
     icon: CalendarSync,
+  },
+  {
+    title: "Team Structure",
+    url: "/team-structure",
+    icon: Network,
   },
 
   // {
